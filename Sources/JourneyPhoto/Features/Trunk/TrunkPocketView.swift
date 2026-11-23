@@ -4,7 +4,8 @@ import SwiftUI
 ///
 /// 上の札: まだ貼っていないラベルの数と上限の棒・いっぱいの間の説明・Pro の案内。
 /// 格子は3列（#121212 の札 104・選んでいる札は真鍮の 2pt の縁と右上のチェック）。
-/// 下の帯: 選んでいるラベル → 貼る（真鍮の塗り）・作り直す（PRO）・削除（危険の字）。
+/// 下の帯: 選んでいるラベル → 貼る（真鍮の塗り）・好きなデザインで作る（作れる回数があるときだけ・#706）・削除（危険の字）。
+/// 2026-11-23（札 #706）: Pro の月3回の作り直しはやめた（作り直しは届いた画面で、全員が1枚につき3回）。
 /// **「捨てる」とは言わない**（削除）。削除は確認してから（戻せない）。
 struct TrunkPocketView: View {
     @ObservedObject var model: TrunkViewModel
@@ -12,7 +13,12 @@ struct TrunkPocketView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @State private var selectedId: String?
     @State private var confirmDelete = false
-    @State private var rerollTarget: TrunkLabel?
+    /// 好きなデザインで作るラベル（#706）
+    @State private var customTarget: TrunkLabel?
+    /// 作り直しの最中・届かなかった（届いた画面と同じ部品 `TrunkRedoButton`・#706）
+    @State private var rolling = false
+    @State private var redoFailed = false
+    @EnvironmentObject private var connectivity: Connectivity
     @State private var showPaywall = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
@@ -26,6 +32,8 @@ struct TrunkPocketView: View {
             }
         }
         .webScreen()
+        // 選ぶラベルが替わったら、前のラベルの「届かなかった」を持ち越さない
+        .onChange(of: selectedId) { _, _ in redoFailed = false }
         .navigationTitle(L("手持ちのラベル", "Label pocket"))
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(L("このラベルを削除しますか？", "Delete this label?"), isPresented: $confirmDelete,
@@ -36,11 +44,11 @@ struct TrunkPocketView: View {
             Text(L("削除したラベルは戻せません。同じ写真のラベルは、もう一度は届きません。",
                    "A deleted label can\u{2019}t be restored, and the same photo won\u{2019}t bring it again."))
         }
-        .fullScreenCover(item: $rerollTarget) { label in
-            TrunkRerollView(model: model, labelId: label.id)
+        .fullScreenCover(item: $customTarget) { label in
+            TrunkCustomView(model: model, labelId: label.id)
         }
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
-            // 買えたかもしれない: 上限（150 枚）と作り直しを読み直す
+            // 買えたかもしれない: 上限（150 枚）を読み直す
             Task { await model.refreshAfterPaywall() }
         }) { PaywallView(origin: .trunk) }
         // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
@@ -71,8 +79,8 @@ struct TrunkPocketView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            // 下の帯の高さぶん空ける
-            .padding(.bottom, state.pocket.isEmpty ? 24 : 150)
+            // 下の帯の高さぶん空ける（作り直しの列が出ている間は、その高さも）
+            .padding(.bottom, state.pocket.isEmpty ? 24 : (redoShown(state) ? 330 : 150))
         }
         .overlay(alignment: .bottom) {
             if !state.pocket.isEmpty { actionBar(state) }
@@ -178,7 +186,12 @@ struct TrunkPocketView: View {
         .accessibilityIdentifier("trunk.pocket.cell")
     }
 
-    /// 下の帯のボタン（貼る・作り直す・削除）
+    /// 好きなデザインで作れるか（サーバーが対応していて、使える回数がある）
+    private func canMakeCustom(_ state: TrunkState) -> Bool {
+        state.supportsLabelReroll && (state.custom?.tickets ?? 0) > 0
+    }
+
+    /// 下の帯のボタン（貼る・好きなデザインで作る・削除）
     @ViewBuilder
     private func actionButtons(_ state: TrunkState, selected: TrunkLabel?) -> some View {
         Button {
@@ -194,25 +207,17 @@ struct TrunkPocketView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("trunk.pocket.stick")
-        Button {
-            guard let selected else { return }
-            if state.isPro { rerollTarget = selected } else { showPaywall = true }
-        } label: {
-            HStack(spacing: 6) {
-                Text(L("作り直す", "Redo"))
-                    .font(JPFont.bodyEmphasis)
-                    .foregroundStyle(WebTheme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                TrunkProTag()
+        // 作れる回数があるときだけ出す（無い人に押せないボタンを見せない・#706）
+        if canMakeCustom(state) {
+            Button {
+                guard let selected else { return }
+                customTarget = selected
+            } label: {
+                TrunkButtonFace(title: TrunkText.customPocketTitle, kind: .secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("trunk.pocket.custom")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("作り直す（Pro）", "Redo (Pro)"))
-        .accessibilityIdentifier("trunk.pocket.reroll")
         Button {
             guard selected != nil else { return }
             confirmDelete = true
@@ -223,16 +228,28 @@ struct TrunkPocketView: View {
         .accessibilityIdentifier("trunk.pocket.delete")
     }
 
-    /// 下の帯（選んでいるラベル・貼る・作り直す・削除）
+    /// 選んでいるラベルを作り直せるか（2026-11-23 確かめ役の指摘: 何枚も一緒に届いた2枚目から先も、手持ちから作り直せるように）
+    private func redoShown(_ state: TrunkState) -> Bool {
+        guard let selected = state.pocket.first(where: { $0.id == selectedId }) else { return false }
+        return TrunkText.redoStep(state, label: selected) != .hidden
+    }
+
+    /// 下の帯（選んでいるラベル・作り直しの列・貼る・好きなデザインで作る・削除）
     private func actionBar(_ state: TrunkState) -> some View {
         let selected = state.pocket.first { $0.id == selectedId }
         return VStack(spacing: 10) {
+            // 作り直し（#706）: 届いた画面と同じ候補の列とボタン。回数が残っているラベルだけ
+            if let selected, redoShown(state) {
+                TrunkCandidatesRow(model: model, label: selected, rolling: rolling, idPrefix: "trunk.pocket")
+                TrunkRedoButton(model: model, label: selected, offline: connectivity.isOffline, rolling: $rolling,
+                                failed: $redoFailed, idPrefix: "trunk.pocket")
+            }
             Text(selected.map { L("\(TrunkLabelDesign.caption($0)) を選んでいます", "\(TrunkLabelDesign.caption($0)) selected") }
                  ?? L("ラベルを選んでください", "Choose a label"))
                 .font(JPFont.footnote)
                 .foregroundStyle(TrunkStyle.muted)
                 .lineLimit(1)
-            // 横に入らない大きさ（文字の大きさの設定）では3つのボタンを縦に積む（2026-10-21・横 3 つでは「作り直す」が切れる）
+            // 横に入らない大きさ（文字の大きさの設定）では3つのボタンを縦に積む（2026-10-21・横 3 つでは字が切れる）
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { actionButtons(state, selected: selected) }
                 VStack(spacing: 8) { actionButtons(state, selected: selected) }

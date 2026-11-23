@@ -153,8 +153,8 @@ final class TrunkModelTests: XCTestCase {
         XCTAssertEqual(TrunkText.remaining(count: 30, limit: 30), L("いっぱいです", "Full"))
         XCTAssertTrue(TrunkText.isFull(count: 30, limit: 30))
         XCTAssertFalse(TrunkText.isFull(count: 29, limit: 30))
-        XCTAssertEqual(TrunkText.rerollsLeft(2), L("あと 2 回", "2 left"))
-        XCTAssertEqual(TrunkText.rerollsLeft(-1), L("あと 0 回", "0 left"))
+        XCTAssertEqual(TrunkText.redoTitle(left: 2), L("作り直す\u{2002}あと 2 回", "Redo\u{2002}2 left"))
+        XCTAssertEqual(TrunkText.redoTitle(left: -1), L("作り直す\u{2002}あと 0 回", "Redo\u{2002}0 left"))
     }
 
     /// 数え札（貼ったラベル・か国・地域・年から）
@@ -187,21 +187,19 @@ final class TrunkModelTests: XCTestCase {
         XCTAssertEqual(stuck.stuck.first?.id, first, "貼ったものは新しい順の先頭")
         XCTAssertEqual(TrunkLocal.stick(free, id: "nope"), free)
         XCTAssertEqual(TrunkLocal.remove(free, id: first).pocket.count, free.pocket.count - 1)
-        // 作り直しは Pro だけ・回数が残っているときだけ
-        XCTAssertNil(TrunkLocal.reroll(free, id: first, seeds: [1, 2, 3]).pendingReroll)
+        // 作り直しは全員・ラベルごとに3回（#706・2026-11-23）。1回で種1つを候補に足し、その種を選んだ状態にする
         let pro = TrunkSample.state(isPro: true)
-        let rolled = TrunkLocal.reroll(pro, id: first, seeds: [1, 2, 3])
-        XCTAssertEqual(rolled.pendingReroll, TrunkPendingReroll(labelId: first, seeds: [1, 2, 3]))
-        XCTAssertEqual(rolled.rerollsLeft, pro.rerollsLeft - 1)
-        XCTAssertEqual(TrunkLocal.reroll(rolled, id: first, seeds: [4, 5, 6]), rolled, "選びかけがあれば回数を使わない")
-        // 候補にない種は選べない・候補か、いまの種なら選べる
+        let rolled = TrunkLocal.reroll(free, id: first, seed: 2)
+        XCTAssertEqual(rolled.pocket.first { $0.id == first }?.seed, 2)
+        XCTAssertEqual(rolled.pocket.first { $0.id == first }?.candidates, [free.pocket[0].seed, 2])
+        // 候補にない種は選べない・候補（最初の1枚を含む）なら選べる
         let bogus = TrunkLocal.choose(rolled, id: first, seed: 999)
-        XCTAssertEqual(bogus.pocket.first { $0.id == first }?.seed, pro.pocket[0].seed)
-        let chosen = TrunkLocal.choose(rolled, id: first, seed: 2)
-        XCTAssertEqual(chosen.pocket.first { $0.id == first }?.seed, 2)
-        XCTAssertNil(chosen.pendingReroll)
-        // 貼ったら選びかけは消える
-        XCTAssertNil(TrunkLocal.stick(rolled, id: first).pendingReroll)
+        XCTAssertEqual(bogus.pocket.first { $0.id == first }?.seed, 2)
+        let chosen = TrunkLocal.choose(rolled, id: first, seed: free.pocket[0].seed)
+        XCTAssertEqual(chosen.pocket.first { $0.id == first }?.seed, free.pocket[0].seed)
+        // 貼ったら候補は消える（回数は残る）
+        XCTAssertEqual(TrunkLocal.stick(rolled, id: first).stuck.first?.candidates, [])
+        XCTAssertEqual(TrunkLocal.stick(rolled, id: first).stuck.first?.rerolls, 1)
         // Pro の型は Pro だけ
         XCTAssertEqual(TrunkLocal.setModel(free, .captain).model, .leather)
         XCTAssertEqual(TrunkLocal.setModel(pro, .captain).effectiveModel, .captain)

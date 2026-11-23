@@ -70,7 +70,9 @@ enum TrunkSpinDiskCache {
         [label.id, label.photoId, label.kind.rawValue,
          [label.place.name, label.place.latin ?? NSNull(), label.place.country ?? NSNull()] as [Any],
          label.season?.rawValue ?? NSNull(), label.timeslot?.rawValue ?? NSNull(), label.milestone?.rawValue ?? NSNull(),
-         label.seed, label.at, label.foil, label.pos.map { [$0.x, $0.y, $0.rot] } ?? NSNull(), label.slot ?? NSNull()]
+         label.seed, label.at, label.foil, label.pos.map { [$0.x, $0.y, $0.rot] } ?? NSNull(), label.slot ?? NSNull(),
+         // 作り直し・好きなデザイン（#706）。好きなデザインは絵を替えるので、違えば別の絵として持つ
+         label.rerolls, label.candidates, label.custom.map { [$0.shape, $0.palette, $0.art] } ?? NSNull()]
     }
 
     /// 付けている部品の欄を全部（`TrunkEquipped` の欄が増えたら `TrunkSpinCacheTests` が落ちる）

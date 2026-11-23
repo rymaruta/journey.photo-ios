@@ -548,6 +548,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// 旅のトランクの見本を「好きなデザインで作れる」状態にする（Debug のみ・札 #706）。`-JPPreviewTrunkCustomReady YES` で
+    /// 進みが 0・使える回数が 1（届いた画面の主ボタンが「好きなデザインで作る」になる絵）。見本の起動のときだけ効く。
+    /// Release では必ず false
+    static let trunkCustomReadyKey = "JPPreviewTrunkCustomReady"
+
+    static var trunkCustomReady: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: trunkCustomReadyKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストで、起動のときに「ラベルが届きました」の画面を1回出す（Debug のみ）。`-JPPreviewTrunkArrived YES`。
     /// 投稿しないと届かないので、見本の1枚（`TrunkSample.arrived`）で出す。入っている見本の利用者のときだけ。
     /// Release では必ず false

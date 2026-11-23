@@ -150,7 +150,7 @@ final class TrunkEasy183Tests: XCTestCase {
         let arrivals = TrunkArrivals()
         arrivals.noteStuckFromArrival(count: 2, left: 1)
         XCTAssertEqual(arrivals.stuckNotice, "2 枚貼りました。1 枚は手持ちにあります")
-        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("left: ids.count - stuck.count"))
+        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("left: ids.count + customStuck.count - stuck.count"), "好きなデザインで貼った分（#706）も数えて残りを言っていない")
     }
 
     // MARK: カプセルの機械（ボタン1つ＋ハンドル）

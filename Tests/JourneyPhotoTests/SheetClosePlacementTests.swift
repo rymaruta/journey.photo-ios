@@ -180,10 +180,11 @@ final class SheetClosePlacementTests: XCTestCase {
              ["SheetCloseButton(onContent: true)", "\"trunk.arrived.close\"", "Spacer()"]),
             ("Features/Trunk/TrunkGachaView.swift",          // カプセルを開けた
              ["SheetCloseButton(onContent: true)", "\"trunk.gachaOpen.close\"", "Spacer()"]),
-            ("Features/Trunk/TrunkRerollView.swift",         // 図柄を作り直す
-             ["SheetCloseButton(onContent: true)", "\"trunk.reroll.close\"", "Spacer()"]),
+            ("Features/Trunk/TrunkCustomView.swift",         // 好きなデザインで作る（#706・作り直しの画面はやめた）
+             ["SheetCloseButton(onContent: true)", "\"trunk.custom.close\"", "Spacer()"]),
+            // 部品を押したシート（trunk.partSheet）は #711 でやめ、部品箱でその場で付ける。眉は和文の字間（Text(eyebrow:)）
             ("Features/Trunk/TrunkPartsBoxView.swift",       // 持っていない部品のシート（2026-11-23・札 #711）
-             ["SheetCloseButton(onContent: true)", "\"trunk.missingSheet.close\"", "Text(part.kind.tabName)", "Spacer()"]),
+             ["SheetCloseButton(onContent: true)", "\"trunk.missingSheet.close\"", "Text(eyebrow: part.kind.tabName)", "Spacer()"]),
             ("Features/Drafts/DraftsView.swift",             // 下書きについて
              ["SheetCloseButton(onContent: true)", "DraftsText.aboutTitle", "Spacer(minLength: 0)"]),
             ("Features/Stories/StoryInsightsView.swift",     // ストーリーの反応（前は見出しの行の右端→見出しの上の別の行）
@@ -256,7 +257,7 @@ final class SheetClosePlacementTests: XCTestCase {
             ("Features/Trunk/TrunkWelcomeView.swift", "\\(copy.id).close"),
             ("Features/Trunk/LabelArrivedView.swift", "trunk.arrived.close"),
             ("Features/Trunk/TrunkGachaView.swift", "trunk.gachaOpen.close"),
-            ("Features/Trunk/TrunkRerollView.swift", "trunk.reroll.close"),
+            ("Features/Trunk/TrunkCustomView.swift", "trunk.custom.close"),
             ("Features/Trunk/TrunkPartsBoxView.swift", "trunk.missingSheet.close"),
         ]
         for (path, id) in kept {

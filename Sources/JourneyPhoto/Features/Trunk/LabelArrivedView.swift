@@ -4,7 +4,14 @@ import SwiftUI
 ///
 /// 投稿が全部上がったあと、投稿の画面と共有の画面が閉じてから `RootView` が出す（`TrunkArrivals`）。
 /// 眉ラベル → 明朝の見出し「京都のラベルが届きました」→ お礼の一行 → 大きいラベル（後ろに真鍮の淡い光）→
-/// どんな図柄かの札 → 手持ちの棒 → 「トランクに貼る」「あとで貼る（手持ちへ）」「図柄を作り直す PRO」。
+/// どんな図柄かの札 → 手持ちの棒 → 「トランクに貼る」「あとで貼る（手持ちへ）」。
+///
+/// **作り直しは届いた画面のまま（札 #706・2026-11-23 owner 承認）**: 全員が1枚につき3回まで。押すたびに候補の列
+/// （最初の1枚と、作り直した1回目〜3回目の4つの枠）が横に増え、新しい図柄が選ばれた状態になる。候補を押すと
+/// その場でサーバーへ送る（`reroll/choose`）。**選ばずに閉じても、いま大きく見えている図柄で決まる**（決めるボタンを置かない）。
+/// 何もしなければ今までどおり「トランクに貼る」の1回で貼れる。進み具合は2行（「好きなデザインで作れるまで」／点と
+/// 「あと N 回の投稿」）。作れるようになった投稿では、主ボタンが「好きなデザインで作る」（`TrunkCustomView`）、副が「このまま貼る」。
+/// サーバーが対応していない（`custom` の欄が無い）ときは、作り直しも進み具合も出さない。Pro の月3回の作り直しはやめた
 ///
 /// **静かな祝い（2026-11-08・楽しさの案 A・札 #502）**: 投稿した写真が先に現れ、続いてラベルが落ちて貼りつく
 /// （軽い触覚が 1 回）。最後に、言えるときだけ事実の一文（「京都、はじめての1枚です」・`ArrivalFact`）。
@@ -27,10 +34,16 @@ struct LabelArrivedView: View {
     /// 画面写真の見本（`-JPPreviewTrunkArrived`）ではサーバーを読まず、見本の手持ちを出す
     @StateObject private var model = TrunkViewModel(preview: PreviewSession.opensTrunkArrived ? .sample
                                                              : PreviewSession.trunkSample)
-    @State private var showReroll = false
-    @State private var showPaywall = false
-    /// 作り直しで替わった種（届いた1枚の図柄を、選んだ候補に描き替える）
-    @State private var seed: Int?
+    /// 好きなデザインで作る画面（#706）
+    @State private var showCustom = false
+    /// 作り直しが届かなかった（ボタンを「もう一度作り直す」にする。断りでなければ「回数は減っていません」と言う）
+    @State private var redoFailed = false
+    /// 作り直しを頼んでいる最中（次の枠に回る印を出す）
+    @State private var rolling = false
+    /// いま見ている1枚の番号（何枚も届いたとき、好きなデザインで1枚貼ったら次の1枚へ進む・#706）
+    @State private var current = 0
+    /// 好きなデザインで作って貼った分（閉じたあとの知らせと「取り消す」に入れる）
+    @State private var customStuck: [String] = []
     /// 祝いの動きの進み（写真 → ラベル → 一文）。動きを減らす設定では `shown` が最初から全部を出す
     @State private var step: ArrivalSequence.Step = .start
     /// ラベルが貼りついた瞬間に軽い触覚を 1 回鳴らすための数
@@ -44,12 +57,24 @@ struct LabelArrivedView: View {
     @EnvironmentObject private var connectivity: Connectivity
 
     /// 届いた枚数（何枚もなら「まとめて貼る」）
-    private var count: Int { batch.arrivals.count }
+    private var count: Int { remaining.count }
 
-    private var arrival: TrunkArrivals.Arrival { batch.first }
+    /// まだ貼っていない届いた分（いま見ている1枚から後ろ）
+    private var remaining: [TrunkArrivals.Arrival] { Array(batch.arrivals.dropFirst(min(current, batch.arrivals.count - 1))) }
+
+    private var arrival: TrunkArrivals.Arrival { remaining.first ?? batch.first }
+    /// 届いた1枚。作り直し・候補を選ぶ・好きなデザインは手持ちの状態（サーバーの応答）にそのまま映る
     private var label: TrunkLabel {
-        let base = model.state?.pocket.first { $0.id == arrival.label.id } ?? arrival.label
-        return seed.map { base.withSeed($0) } ?? base
+        model.state?.pocket.first { $0.id == arrival.label.id }
+            ?? model.state?.stuck.first { $0.id == arrival.label.id }
+            ?? arrival.label
+    }
+
+    /// この投稿で好きなデザインで作れるようになった（主ボタンが替わる）
+    private var customOffer: Bool {
+        guard let progress = model.state?.custom, model.state?.supportsLabelReroll == true else { return false }
+        // 使える回数があれば出す（使わずに次を投稿して進みが 1 以上になっても・確かめ役の指摘 2026-11-23）
+        return progress.canMake && label.custom == nil && model.state?.pocket.contains(where: { $0.id == label.id }) == true
     }
 
     /// 写真があるときだけ、写真の札を出す
@@ -76,8 +101,13 @@ struct LabelArrivedView: View {
                     VStack(spacing: 0) {
                         heading
                         stage
+                        TrunkCandidatesRow(model: model, label: label, rolling: rolling, idPrefix: "trunk.arrived")
+                            .padding(.horizontal, 20)
+                            .padding(.top, 4)
+                            .padding(.bottom, 8)
                         factLine
                         chips
+                        progress
                         pocket
                     }
                 }
@@ -94,18 +124,14 @@ struct LabelArrivedView: View {
         // 一文のための自分の写真の一覧（読めなければ nil＝言わない。見本の入り方では読まない）
         .task { await decideSentence() }
         .sensoryFeedback(.impact(weight: .light), trigger: landed)
-        .fullScreenCover(isPresented: $showReroll, onDismiss: {
-            // 作り直しで決めた図柄に描き替える（手持ちの状態は作り直しの画面が読み直している）
-            if let chosen = model.state?.pocket.first(where: { $0.id == arrival.label.id }) { seed = chosen.seed }
-        }) {
-            TrunkRerollView(model: model, labelId: arrival.label.id)
+        .fullScreenCover(isPresented: $showCustom) {
+            // 作ったらそのまま貼る（届いた画面も閉じる）。貼れなかったら届いた画面に戻る（手持ちに入っている）
+            TrunkCustomView(model: model, labelId: arrival.label.id, sticks: true) { stuck in
+                guard stuck else { return }
+                finishCustom(arrival.label.id)
+            }
         }
-        .fullScreenCover(isPresented: $showPaywall, onDismiss: {
-            // 買えたかもしれない: 作り直せるか読み直す
-            Task { await model.refreshAfterPaywall() }
-        }) { PaywallView(origin: .trunk) }
-        // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（作り直しの「図柄を決めました」・
-        // 貼れなかったときの知らせ。`NameSideBadgeView` と同じ）
+        // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（貼れなかったときの知らせ。`NameSideBadgeView` と同じ）
         .overlay(alignment: .top) { ToastOverlay() }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
         .accessibilityElement(children: .contain)
@@ -127,7 +153,7 @@ struct LabelArrivedView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
                 .accessibilityAddTraits(.isHeader)
-            Text(TrunkArrivalCopy.thanks(count: count, photoTitle: arrival.photoTitle))
+            Text(customOffer ? TrunkText.customThanks : TrunkArrivalCopy.thanks(count: count, photoTitle: arrival.photoTitle))
                 .font(.subheadline)
                 .foregroundStyle(TrunkStyle.muted)
                 .multilineTextAlignment(.center)
@@ -150,7 +176,7 @@ struct LabelArrivedView: View {
                     .scaleEffect(shown(.photo) ? 1 : 0.96)
             }
             // 何枚も届いたら、残りのラベルを後ろに重ねて見せる（2 枚まで・2026-11-12 判断・案の「3 枚届きました」）
-            ForEach(Array(batch.arrivals.dropFirst().prefix(2).enumerated()), id: \.offset) { i, other in
+            ForEach(Array(remaining.dropFirst().prefix(2).enumerated()), id: \.offset) { i, other in
                 TrunkLabelThumb(label: other.label, maxWidth: 200, maxHeight: 136, rot: i == 0 ? 8 : -12)
                     .offset(x: (photoURL == nil ? 0 : 38) + (i == 0 ? 56 : -56), y: (photoURL == nil ? -14 : 30))
                     .opacity(shown(.label) ? 0.9 : 0)
@@ -165,6 +191,46 @@ struct LabelArrivedView: View {
         }
         .frame(height: 270)
         .padding(.top, 16)
+    }
+
+    // MARK: 好きなデザインで作るまでの進み（#706）
+
+    /// 2行（「好きなデザインで作れるまで」／点と「あと N 回の投稿」）。作れる回数を持ちきっているか、この投稿で
+    /// 作れるようになったときは「好きなデザインで作れます」。サーバーが対応していなければ出さない
+    @ViewBuilder
+    private var progress: some View {
+        if let p = model.state?.custom {
+            let ready = p.canMake
+            VStack(spacing: 4) {
+                if !ready {
+                    Text(TrunkText.customProgressTitle)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(TrunkStyle.muted)
+                }
+                HStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        ForEach(0..<p.every, id: \.self) { i in
+                            Circle()
+                                .fill(ready || i < p.posts ? WebTheme.accent : WebTheme.hairline)
+                                .frame(width: 10, height: 10)
+                        }
+                    }
+                    if ready {
+                        Text(TrunkText.customReady(tickets: p.tickets))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.accent)
+                    } else {
+                        Text(TrunkText.customPostsLeft(p.postsLeft))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.text)
+                    }
+                }
+            }
+            .padding(.top, 18)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(TrunkText.customProgressAccessibility(p))
+            .accessibilityIdentifier("trunk.arrived.progress")
+        }
     }
 
     /// 投稿した写真の札（150×196・角は写真の札 14・細い縁）。読めなければ札ごと外す
@@ -314,45 +380,32 @@ struct LabelArrivedView: View {
                     .foregroundStyle(WebTheme.danger)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("trunk.arrived.offline")
-            } else if let error = model.actionError {
+            } else if let error = model.actionError, !(redoFailed && !model.lastWriteRefused) {
+                // 作り直しが届かなかったときの一言は作り直すボタンの上（`TrunkRedoButton`）
                 Text(error)
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.danger)
                     .multilineTextAlignment(.center)
             }
-            Button { Task { await stickAll() } } label: {
-                // 写真のある画面の主ボタンは白（板 05・2026-11-12 判断）
-                TrunkButtonFace(title: TrunkArrivalCopy.stickTitle(count: count), kind: .mainOnPhoto)
-            }
-            .buttonStyle(.plain)
-            .disabled(model.busy)
-            .accessibilityIdentifier("trunk.arrived.stick")
-            Button { dismiss() } label: {
-                TrunkButtonFace(title: TrunkArrivalCopy.laterTitle, kind: .secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("trunk.arrived.keep")
-            // 作り直す（Pro）と共有は1行に（文字のボタン・当たり 44）
-            HStack(spacing: 8) {
-                Button {
-                    if model.state?.isPro == true { showReroll = true } else { showPaywall = true }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "dice")
-                            .font(.callout)
-                            .accessibilityHidden(true)
-                        Text(L("図柄を作り直す", "Redo the design"))
-                            .font(.subheadline)
-                            .underline()
-                        TrunkProTag()
-                    }
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
+            if customOffer {
+                customActions
+            } else {
+                TrunkRedoButton(model: model, label: label, offline: connectivity.isOffline, rolling: $rolling,
+                                failed: $redoFailed, idPrefix: "trunk.arrived")
+                Button { Task { await stickAll() } } label: {
+                    // 写真のある画面の主ボタンは白（板 05・2026-11-12 判断）
+                    TrunkButtonFace(title: TrunkArrivalCopy.stickTitle(count: count), kind: .mainOnPhoto)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("図柄を作り直す（Pro）", "Redo the design (Pro)"))
-                .accessibilityIdentifier("trunk.arrived.reroll")
+                .disabled(model.busy)
+                .accessibilityIdentifier("trunk.arrived.stick")
+                Button { dismiss() } label: {
+                    TrunkButtonFace(title: TrunkArrivalCopy.laterTitle, kind: .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("trunk.arrived.keep")
+            }
+            HStack(spacing: 8) {
                 // 共有は任意の副ボタン（公開の投稿だけ・押さなければ何も起きない・44pt）
                 if arrival.shareable,
                    let url = PhotoLink.url(photoId: arrival.label.photoId, isPublished: false) {
@@ -377,23 +430,70 @@ struct LabelArrivedView: View {
         .padding(.bottom, 28)
     }
 
+    /// 作れるようになった投稿の主ボタンと副（「好きなデザインで作る」「このまま貼る」・#706）
+    @ViewBuilder
+    private var customActions: some View {
+        Button { showCustom = true } label: {
+            TrunkButtonFace(title: TrunkText.customTitle, kind: .mainOnPhoto)
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy)
+        .accessibilityIdentifier("trunk.arrived.custom")
+        Button { Task { await stickAll() } } label: {
+            TrunkButtonFace(title: count > 1 ? TrunkArrivalCopy.stickTitle(count: count) : TrunkText.customKeepTitle,
+                            kind: .secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy)
+        .accessibilityIdentifier("trunk.arrived.stick")
+        Text(TrunkText.customLaterNote)
+            .font(JPFont.footnote)
+            .foregroundStyle(TrunkStyle.faint)
+            .multilineTextAlignment(.center)
+    }
+
     /// 届いたラベルを全部貼る（1 枚なら今までどおり1枚）。貼れたら閉じ、閉じたあとの知らせに「取り消す」を添える。
     /// まだ読めていなければ読んでから貼る（`stickEnsuringLoaded`）。電波が無くて貼れなければ手持ちにあると言う
     private func stickAll() async {
         offlineFailed = false
-        let ids = batch.arrivals.map(\.label.id)
+        let ids = remaining.map(\.label.id)
         guard await model.stickEnsuringLoaded(ids[0], offline: connectivity.isOffline) else {
             offlineFailed = connectivity.isOffline || model.phase == .offline
             return
         }
         let rest = await model.stickAll(Array(ids.dropFirst()))
-        let stuck = [ids[0]] + rest
+        let stuck = customStuck + [ids[0]] + rest
         // 知らせは閉じ切ってから全体で1つだけ（ここで出すと、閉じる間に届いた画面と全体で2つ見える）
         // 途中で貼れなかった分は手持ちに残る（閉じたあとの知らせで枚数を言う）。取り消しは戻せたかを返す
-        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: ids.count - stuck.count) { [model] in
+        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: ids.count + customStuck.count - stuck.count) { [model] in
             await model.unstickAll(stuck) == stuck.count
         }
         dismiss()
+    }
+
+    /// 好きなデザインで1枚作って貼った（#706）。**残りがあれば閉じずに次の1枚へ**（2枚目から先も作り直し・好きなデザインを
+    /// 使えるように・確かめ役の指摘 2026-11-23）。最後の1枚なら閉じて、貼った全部を知らせる
+    private func finishCustom(_ id: String) {
+        customStuck.append(id)
+        let next = TrunkArrivalCursor.next(after: current, count: batch.arrivals.count)
+        guard let next else {
+            let stuck = customStuck
+            TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: 0) { [model] in
+                await model.unstickAll(stuck) == stuck.count
+            }
+            dismiss()
+            return
+        }
+        current = next
+        redoFailed = false
+        rolling = false
+    }
+}
+
+/// 届いた画面の「いま見ている1枚」の進め方（何枚も届いたとき・#706）。次の番号、最後なら nil
+enum TrunkArrivalCursor {
+    static func next(after current: Int, count: Int) -> Int? {
+        current + 1 < count ? current + 1 : nil
     }
 }
 

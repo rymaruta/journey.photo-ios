@@ -49,7 +49,7 @@ final class PassTrunkDynamicTypeTests: XCTestCase {
         "Trunk/TrunkParts.swift",
         "Trunk/TrunkPartsBoxView.swift",
         "Trunk/TrunkPocketView.swift",
-        "Trunk/TrunkRerollView.swift",
+        "Trunk/TrunkCustomView.swift",
         "Trunk/TrunkSpinViewer.swift",
         "Trunk/TrunkStickView.swift",
         "Trunk/TrunkView.swift",
@@ -103,9 +103,6 @@ final class PassTrunkDynamicTypeTests: XCTestCase {
               "HStack(spacing: 8) { chipItems }"]),
             ("Trunk/TrunkSpinViewer.swift", "private var viewButtons: some View {",
              ["count: typeSize.isAccessibilitySize ? 2 : 4"]),
-            // 既定の大きさは 96 ちょうど（下限だけにすると既定でも札が縦に伸びる・Mac run 639）
-            ("Trunk/TrunkRerollView.swift", "private func candidate(",
-             ["maxHeight: typeSize.isAccessibilitySize ? nil : 96", "vertical: typeSize.isAccessibilitySize"]),
             ("Trunk/TrunkView.swift", "private func statCell(", ["lineLimit(typeSize.isAccessibilitySize ? 3 : 1)"]),
             ("Trunk/TrunkParts.swift", "struct TrunkButtonFace: View {", ["lineLimit(typeSize.isAccessibilitySize ? 3 : 1)"]),
             ("Pass/PassViewerView.swift", "private func actions(_ content: PassCardContent) -> some View {",

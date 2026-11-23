@@ -80,6 +80,8 @@ final class TrunkSpinCacheTests: XCTestCase {
                        pos: TrunkPos(x: 0.1, y: 0.2, rot: 4)),
         ]
         for other in others { XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(stuck: [other])), base) }
+        // 好きなデザイン（#706）が違えば合図が変わる（作る前の絵を使い回さない）
+        XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(stuck: [one.withCustom(TrunkLabelCustom(shape: 1, palette: 2, art: 3))])), base)
         for parts in [TrunkEquipped(handle: "rope"), TrunkEquipped(pins: ["a"]), TrunkEquipped(patches: ["b"])] {
             XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(parts: parts)), TrunkSpinDiskCache.signature(key()))
         }
