@@ -207,7 +207,8 @@ final class TripAIJobs: ObservableObject {
                 return
             }
             TripAINotes.shared.set(planId, TripAINote(reason: result.reason, mode: result.mode,
-                                                      removed: result.removed, candidates: result.candidates))
+                                                      removed: result.removed, candidates: result.candidates,
+                                                      autoPlace: job.ask.autoPlaced ? job.ask.place : nil))
             job.state = .saved(planId: planId)
             TripPlanChanges.shared.changed(planId)
             // 終わった作業は片づける（日程の画面は job を持っているので消えない）

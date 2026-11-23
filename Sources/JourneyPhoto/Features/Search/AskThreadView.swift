@@ -204,7 +204,7 @@ struct AskThreadView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("search.ask.note")
                 }
-                // 2026-11-22 判断: 答えごとの「どこで答えたか」の1行は出さない（`AskText.serverNotice` を注意書きの所に1か所だけ）
+                // 2026-11-22 判断: 答えごとの「どこで答えたか」の1行は出さない（送ることは送る前の同意の画面で知らせる・2026-11-23）
             }
         }
         .accessibilityElement(children: .contain)

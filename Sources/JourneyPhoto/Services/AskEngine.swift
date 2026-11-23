@@ -35,7 +35,7 @@ final class AskEngine: ObservableObject {
         /// サーバーの AI に送ってよいか（同意のシート・`AIServerConsent.request`。2026-11-22 判断・審査 5.1.2(i)）。
         /// 画面は `AIServerConsent.shared.request` を渡す。試験の既定は同意済み（送る口 `AskService.ask` も別に見張る）
         var serverConsent: () async -> Bool = { true }
-        /// サーバーへ送りそうか（`AskServerNotice.shows` と同じ見立て）。無料と分かっている人には、回数を取る前に聞かない
+        /// サーバーへ送りそうか（`AskServerNotice.shows` の見立て）。無料と分かっている人には、回数を取る前に聞かない
         /// （サーバーが Pro だけと答えて送らないのに、同意を聞くことになる）
         var serverLikely: () -> Bool = { true }
         /// いま同意済みか（聞かずに読む・`AIServerConsent.acceptedNow`）。会話の中で「やめる」のあと設定でオンにした人に送るため
@@ -299,12 +299,9 @@ final class AskEngine: ObservableObject {
 
     /// 旅行プランの AI ができた（保存まで終わった）。頭の文、日ごとの観光スポット、保存したプランを答えにする。
     /// 理由の文は見張り（`AskGuard.screened`）を通し、台帳に無い場所らしい名前があれば決まり文に替える
-    func finishPlan(_ question: String, result: TripAIResult, planId: String?, onDevice: Bool, userId: String?,
-                    askedServer: Bool = false) {
+    func finishPlan(_ question: String, result: TripAIResult, planId: String?, onDevice: Bool, userId: String?) {
         guard pending == question else { return }
-        // 2026-11-22 判断: サーバーへ送った回は、断りや AI なしの答えでも「送った」を残す（下の欄の知らせを出し続ける）
-        var refusal = AskAnswer.refused(care: false)
-        if askedServer { refusal.serverSent = true }
+        let refusal = AskAnswer.refused(care: false)
         if result.refused {
             appendPlain(AskExchange(question: question, answer: refusal), userId: userId)
             return
@@ -326,16 +323,14 @@ final class AskEngine: ObservableObject {
         answer.spotIds = spots.map(\.spotId)
         answer.plan = AskPlanAnswer(title: result.title, planId: planId, days: days.map { $0.map(\.spotId) })
         answer.note = AskPlanFlowText.modeNote(result.mode)
-        if askedServer { answer.serverSent = true }
         appendPlain(AskExchange(question: question, answer: answer), userId: userId)
     }
 
     /// 旅行プランを作れなかった（圏外、候補が無い、保存できない）。やり直しは答えの「もう一度」から
-    func failPlan(_ question: String, line: String, userId: String?, askedServer: Bool = false) {
+    func failPlan(_ question: String, line: String, userId: String?) {
         guard pending == question else { return }
         var answer = AskAnswer(engine: .table, state: .failed, text: line)
         answer.kind = .plan
-        if askedServer { answer.serverSent = true }
         appendPlain(AskExchange(question: question, answer: answer), userId: userId)
     }
 

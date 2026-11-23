@@ -231,6 +231,84 @@ final class TripAITests: XCTestCase {
         XCTAssertTrue(TripAISuggestion.make(spots: rows, wishlist: [], now: november).allSatisfy { $0.kind == .season })
     }
 
+    // MARK: - 行き先はおまかせ（2026-11-23 owner「めんどいから行き先指定なしでも作れるようにして」）
+
+    /// 決め方の順: 頼みの文の地名 → 行きたい場所の多い県 → 今の季節の案内が多い県 → 載っている数が多い県
+    func testAutoPlaceOrder() throws {
+        let november = Date(timeIntervalSince1970: 1_794_700_000)   // 2026-11
+        let rows = [
+            try spot("a1", prefecture: "石川県", seasons: ["autumn"]),
+            try spot("b1", prefecture: "香川県"), try spot("b2", prefecture: "香川県"),
+            try spot("c1", prefecture: "長野県"), try spot("c2", prefecture: "長野県"), try spot("c3", prefecture: "長野県"),
+            try spot("d1", prefecture: "京都府", seasons: ["spring"]),
+        ]
+        // 1. 頼みの文に地名があればそれ（行きたい場所より先）
+        let text = try XCTUnwrap(TripAIAutoPlace.choose(text: "香川でうどん", spots: rows, wishlist: ["sp_c1"], now: november))
+        XCTAssertEqual(text.source, .text)
+        XCTAssertEqual(text.prefectures, ["香川県"])
+        // 2. 行きたい場所の多い県
+        let wished = try XCTUnwrap(TripAIAutoPlace.choose(text: "", spots: rows, wishlist: ["sp_b1", "sp_b2", "sp_a1"], now: november))
+        XCTAssertEqual(wished.source, .wishlist)
+        XCTAssertEqual(wished.prefectures, ["香川県"])
+        XCTAssertEqual(wished.place, "香川")
+        // 3. 今の季節（11月は秋）の案内がある観光スポットが多い県（春の京都は数えない）
+        let season = try XCTUnwrap(TripAIAutoPlace.choose(text: "", spots: rows, wishlist: [], now: november))
+        XCTAssertEqual(season.source, .season)
+        XCTAssertEqual(season.prefectures, ["石川県"])
+        // 4. どれも無ければ、載っている数が多い県
+        let plain = rows.filter { $0.seasonKeys.isEmpty }
+        let popular = try XCTUnwrap(TripAIAutoPlace.choose(text: "", spots: plain, wishlist: [], now: november))
+        XCTAssertEqual(popular.source, .popular)
+        XCTAssertEqual(popular.prefectures, ["長野県"])
+        // 台帳が空なら決めない（行き先の札を開く）
+        XCTAssertNil(TripAIAutoPlace.choose(text: "", spots: [], wishlist: [], now: november))
+    }
+
+    /// 行き先なしで押せる: 行き先が空でも日数があれば、アプリが行き先を埋めて作れる形になる。選んだ行き先は替えない
+    func testAskWithoutPlaceBecomesComplete() throws {
+        let november = Date(timeIntervalSince1970: 1_794_700_000)
+        let rows = [try spot("c1", prefecture: "長野県"), try spot("b1", prefecture: "香川県", seasons: ["autumn"])]
+        let empty = TripAIAsk(place: "", prefectures: [], cities: [], days: 2, preference: nil)
+        XCTAssertFalse(empty.isComplete)
+        let made = empty.withAutoPlace(spots: rows, wishlist: [], now: november)
+        XCTAssertTrue(made.isComplete)
+        XCTAssertTrue(made.autoPlaced)
+        XCTAssertEqual(made.prefectures, ["香川県"])
+        XCTAssertTrue(made.requestText.hasPrefix("香川"), "AI に渡す文に行き先が入っていない（サーバーの道）")
+        let chosen = TripAIAsk(place: "長野", prefectures: ["長野県"], cities: [], days: 2, preference: nil)
+        let kept = chosen.withAutoPlace(spots: rows, wishlist: [], now: november)
+        XCTAssertEqual(kept, chosen)
+        XCTAssertFalse(kept.autoPlaced)
+    }
+
+    /// 作ったプランの上の1行
+    func testAutoPlaceLine() {
+        XCTAssertEqual(TripAIAutoPlace.line(place: "香川"), L("行き先はおまかせで、香川にしました", "No place chosen, so we picked 香川"))
+        XCTAssertFalse(TripAIAutoPlace.line(place: "香川").contains("・"))
+        XCTAssertEqual(TripAIAutoPlace.slotLabel, L("おまかせ", "Any"))
+    }
+
+    /// 頼みのシート: 行き先の札は既定で「おまかせ」（真鍮で光らせない）、押したら行き先を埋めてから作る。
+    /// 作った行き先は控え（`TripAINote.autoPlace`）に残り、作っている画面とできたプランの上に1行出す
+    func testAskSheetStartsWithoutPlace() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let read: (String) throws -> String = { try String(contentsOf: root.appendingPathComponent($0), encoding: .utf8) }
+        let views = try read("Sources/JourneyPhoto/Features/Trips/AI/TripAIViews.swift")
+        XCTAssertTrue(views.contains("ask.hasPlace ? ask.place : TripAIAutoPlace.slotLabel"))
+        XCTAssertTrue(views.contains("let made = ask.withAutoPlace(spots: index, wishlist: wishlist)"))
+        XCTAssertTrue(views.contains("start(made)"))
+        XCTAssertFalse(views.contains("if !ask.hasPlace { editing = .place }"), "開いたときに行き先を選ばせている")
+        XCTAssertTrue(views.contains("if job.ask.autoPlaced {"))
+        let jobs = try read("Sources/JourneyPhoto/Features/Trips/AI/TripAIJobs.swift")
+        XCTAssertTrue(jobs.contains("autoPlace: job.ask.autoPlaced ? job.ask.place : nil"))
+        let detail = try read("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
+        XCTAssertTrue(detail.contains("if let place = aiNotes.note(planId)?.autoPlace {"))
+        XCTAssertTrue(detail.contains("autoPlace: note.autoPlace"), "組み直しで1行が消える")
+        // 行きたい場所を両方の入口から渡す
+        XCTAssertTrue(try read("Sources/JourneyPhoto/Features/Trips/TripPlansView.swift").contains("wishlist: wishlist.spotIds)"))
+        XCTAssertTrue(try read("Sources/JourneyPhoto/Features/Search/AskScreen.swift").contains("index: index, wishlist: wishlist.spotIds)"))
+    }
+
     // MARK: - 替える（AI を使わない）
 
     func testSwapOffersNearestUnusedCandidates() throws {

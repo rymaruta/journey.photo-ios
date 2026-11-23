@@ -819,6 +819,10 @@ struct TripPlanDetailView: View {
                 // AI の札は1行に畳んで出す（2026-11-16 判断・A6・`TripAICard.open`）。
                 // 2026-11-20 判断（札 #667）: 「元に戻す」は下の組み直しの列に1つだけ置く（札の中には出さない）。
                 // 組み直しの帯を出している間・組んでいる間は札の帯を出さない（帯を2本重ねない）
+                // 行き先を選ばずに作った: アプリが決めた行き先を1行（2026-11-23 owner・`TripAIAutoPlace`）
+                if let place = aiNotes.note(planId)?.autoPlace {
+                    TripAIAutoPlaceLine(place: place)
+                }
                 if let note = aiNotes.note(planId), TripAICard.hasContent(note) {
                     TripAICard(note: note, usage: aiRunner.usage, working: replanWorking != nil,
                                online: !connectivity.isOffline,
@@ -831,16 +835,9 @@ struct TripPlanDetailView: View {
                 if hasReplanSpots || replan != nil || !aiHistory.isEmpty {
                     TripReplanBar(working: replanWorking, proposed: replan?.label, notice: replanNotice,
                                   noticeOpensPro: replanNoticePro, canUndo: !aiHistory.isEmpty && replan == nil,
-                                  serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: aiRunner.onDevice,
-                                                                      tier: aiRunner.usage?.tier, profilePro: nil, admin: auth.isAdmin),
                                   run: { label, request, typed in runReplan(label: label, request: request, typed: typed) },
                                   undo: undoAI,
                                   openPro: { aiShowPro = true })
-                    // 送る前の知らせを Pro かどうかで出し分けるため、端末の AI が無い iPhone だけ回数を先に読む（無料の人に出さない）
-                    .task(id: auth.userId) {
-                        guard !aiRunner.onDevice, auth.userId != nil, aiRunner.usage == nil else { return }
-                        await aiRunner.loadUsage(service: environment.tripAI)
-                    }
                 }
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
@@ -1720,7 +1717,7 @@ struct TripPlanDetailView: View {
         toasts.show(L("プランを入れ替えました", "Plan replaced"))
         if let note = aiNotes.note(planId) {
             aiNotes.set(planId, TripAINote(reason: proposal.reason.isEmpty ? note.reason : proposal.reason, mode: .ai,
-                                           removed: [], candidates: note.candidates))
+                                           removed: [], candidates: note.candidates, autoPlace: note.autoPlace))
         }
     }
 
