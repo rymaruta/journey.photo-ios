@@ -4,6 +4,9 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+// 見本の登録の確認で Cognito と同じ失敗を返す（`AuthError`・`AWSCognitoAuthError.codeMismatch`）
+import Amplify
+import AWSCognitoAuthPlugin
 
 /// **端末の中だけで答える見本の通信**（UI テストだけ・Debug のみ・2026-10-22）。`-JPPreviewLocalBackend YES`。
 ///
@@ -32,6 +35,9 @@ enum PreviewBackend {
     /// 見本の認証で通るメールアドレスとパスワード（資格情報ではない・端末の中だけ）
     static let email = "preview@journey-photo.test"
     static let password = "Preview-1234"
+    /// 見本の登録の確認（`-JPPreviewVerificationCode YES`）で通る確認コードと、控えの登録の ID（資格情報ではない・端末の中だけ）
+    static let verificationCode = "482913"
+    static let signUpUsername = "preview-signup"
 
     static var isOn: Bool { PreviewSession.localBackend }
 
@@ -86,7 +92,14 @@ enum PreviewBackend {
                 guard email.trimmingCharacters(in: .whitespacesAndNewlines) == PreviewBackend.email,
                       password == PreviewBackend.password else { throw WrongCredentials() }
                 return true
-            }
+            },
+            // 登録の確認（2026-11-23）: 見本のコードだけ通し、ほかは Cognito と同じ「コードが違う」で断る
+            confirmSignUp: { username, code in
+                guard username == PreviewBackend.signUpUsername, code == PreviewBackend.verificationCode else {
+                    throw AuthError.service("", "", AWSCognitoAuthError.codeMismatch)
+                }
+            },
+            resendSignUpCode: { _ in }
         )
     }
 

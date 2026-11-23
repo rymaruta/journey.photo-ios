@@ -890,6 +890,30 @@ final class CriticalFlowTests: JPUITestCase {
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
     }
 
+    /// **確認コードは6桁そろったら自動で確かめる**（2026-11-23・模型 NL2x「登録の確認コード」・`VerificationCodeEntry`）。
+    /// 見本の認証で登録の確認コードの画面から開き（`-JPPreviewVerificationCode`・見本のコードは `PreviewBackend.verificationCode`）:
+    /// 違う6桁 → 押さずに確かめて「コードが違います」が箱の上に出る → 箱が空に戻る → 正しい6桁 → 押さずに確かめてログインし、
+    /// マイページに戻る（「登録を完了する」のボタンは無い）
+    func testVerificationCodeConfirmsAtSixDigits() {
+        let app = launch(["-JPPreviewVerificationCode", "YES"])
+        let (nameLine, form) = signOutToForm(app)
+
+        let field = app.textFields["signin.code"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "確認コードの画面が開かない")
+        XCTAssertFalse(app.buttons["登録を完了する"].exists, "「登録を完了する」のボタンが残っている")
+        enter("000000", into: field, "確認コードの欄")
+        let error = app.descendants(matching: .any)["signin.code.error"].firstMatch
+        XCTAssertTrue(error.waitForExistence(timeout: 15), "違う6桁で押さずに確かめない（失敗の文が出ない）")
+        // 箱が空に戻る（揺らしてから 0.6 秒）
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertEqual((field.value as? String) ?? "", "", "違うコードのあと箱が空に戻らない")
+        field.typeText("4829")
+        XCTAssertTrue(error.waitForNonExistence(timeout: 5), "打ち直しても違うコードの文が残る")
+        field.typeText("13")
+        XCTAssertTrue(nameLine.waitForExistence(timeout: 30), "正しい6桁で押さずに確かめてログインしない")
+        XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのに確認コードの画面が残っている")
+    }
+
     /// **ログインに失敗した文は、欄のすぐ上に見える所で出る**（2026-11-23・模型 NL2x「失敗の文が下端より下に押し出されて見えない」）。
     /// 違うパスワードでログイン → 失敗の文（`signin.error`）が出る・キーボードを下ろした1画面で送らずに見える・メールの欄のすぐ上・
     /// 主ボタンも1画面に残る。

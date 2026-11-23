@@ -292,7 +292,7 @@ final class AppleSignInTests: XCTestCase {
 
     /// ログインの画面と知らせの文は話し言葉で短く（2026-11-23 owner「結ばれました、は日常会話で使わない」「長すぎる」）。
     /// 「結ぶ」「連携」と中黒を、ログインまわりの `L("…")` の日本語に入れない
-    func testSignInWordingIsPlain() throws {
+    func testSignInWordingIsPlain() async throws {
         let src = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
         let dirs = ["Features/Auth", "Core/Auth", "Services"].map { src.appendingPathComponent($0) }

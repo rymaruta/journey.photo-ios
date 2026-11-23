@@ -520,7 +520,7 @@ final class AuthStore: ObservableObject {
     func resendSignUpCode(username: String) async -> Bool {
         var ok = false
         await run {
-            try await AuthGateway.resendSignUpCode(username: username)
+            try await gateway.resendSignUpCode(username)
             ok = true
         }
         return ok
@@ -583,7 +583,7 @@ final class AuthStore: ObservableObject {
     func confirmSignUp(username: String, code: String) async -> Bool {
         var ok = false
         await run {
-            try await AuthGateway.confirmSignUp(username: username, code: code)
+            try await gateway.confirmSignUp(username, code)
             ok = true
         }
         // 🔴 **「もう確認済み」は成功として扱う**（Web の `confirmSignUp` と同じ）。確認は
@@ -651,6 +651,14 @@ struct AuthStoreGateway: Sendable {
     }
     /// 外のアカウントの部品の中のログインを外す（ログアウト・退会のとき・`GoogleSignInClient.signOut`）。試験で差し替える
     var forgetProviderSessions: @MainActor @Sendable () -> Void = { GoogleSignInClient.signOut() }
+    /// 登録の確認コードを確かめる・送り直す（`AuthGateway.confirmSignUp`・`resendSignUpCode`）。UI テストの見本の認証で差し替える
+    /// （確認コードの画面の6桁で自動で確かめる流れ・2026-11-23）
+    var confirmSignUp: @Sendable (_ username: String, _ code: String) async throws -> Void = { username, code in
+        try await AuthGateway.confirmSignUp(username: username, code: code)
+    }
+    var resendSignUpCode: @Sendable (_ username: String) async throws -> Void = { username in
+        try await AuthGateway.resendSignUpCode(username: username)
+    }
     /// Apple・Google でのログインの最後の段（`AuthGateway.signInWithTicket`）。試験で差し替える
     var signInWithTicket: @Sendable (_ username: String, _ challengeAnswer: String) async throws -> Bool = { username, answer in
         try await AuthGateway.signInWithTicket(username: username, challengeAnswer: answer)
@@ -761,6 +769,11 @@ enum AuthMessage {
     static let passwordRule =
         L("パスワードは8文字以上で、英大文字、小文字、数字、記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
           "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
+
+    /// 確認コードの画面の新しいパスワードの欄の下の短い決まり（模型 NL2x「パスワードの再設定」・2026-11-23）
+    static let passwordRuleShort =
+        L("8文字以上で、英大文字、小文字、数字、記号をそれぞれ1文字以上",
+          "At least 8 characters, with an uppercase letter, a lowercase letter, a number and a symbol")
 
     static func text(for failure: AuthFailure) -> String {
         switch failure {
