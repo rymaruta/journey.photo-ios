@@ -1335,6 +1335,41 @@ final class ScreenshotTests: JPUITestCase {
     /// 写真の裾の「撮影スポット · ◯◯」の札（20g）と、題の下の本人だけの「外す」の札（20h）を撮る。
     /// 🔴 **「違う場所なので外す」は押さない**（本番の写真の行に外した印を書いてしまう）。
     /// 自動で結ばれた写真が無い・表が読めない回は**落とす**（札 #531）
+    /// **写真の色の日本の色の名前と「この色の写真」**（札 #710 の案10）。マイページの写真を開き、色の名前の行が出たら撮って押す。
+    /// 出なければ撮らずに抜ける
+    func testCapturesJapaneseColorName() {
+        let app = XCUIApplication.jp()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let photos = app.buttons.matching(identifier: "mypage.photo")
+        guard photos.firstMatch.waitForExistence(timeout: 15), photos.firstMatch.isHittable else { return }
+        photos.firstMatch.tap()
+        let line = app.descendants(matching: .any).matching(identifier: "photo.japaneseColor").firstMatch
+        var pushes = 0
+        while !(line.exists && line.isHittable), pushes < 5 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard line.exists, line.isHittable else { return }
+        shoot(app, "20k-写真の詳細（日本の色の名前）")
+        line.tap()
+        guard app.descendants(matching: .any).matching(identifier: "japaneseColor.photos").firstMatch
+            .waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "20l-この色の写真")
+    }
+
     func testCapturesSpotAutoNotice() {
         let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
