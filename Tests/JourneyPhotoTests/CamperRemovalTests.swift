@@ -66,11 +66,12 @@ final class CamperRemovalTests: XCTestCase {
         XCTAssertTrue(menu.contains("note: TrunkEntryText.stock(trunkEntry.summary),"))
         XCTAssertTrue(menu.contains("badge: TrunkEntryText.badge(trunkEntry.summary))"))
         XCTAssertTrue(menu.contains("CountBadge(count: badge, maximum: 99)"), "メニューの行に件数バッジが無い")
+        // マイページは荷札（札 #714）。件数バッジは同じ数、「いま何があるか」は読み上げで言う
         let page = try String(contentsOf: root.appendingPathComponent("Features/Profile/MyPageView.swift"), encoding: .utf8)
-        XCTAssertTrue(page.contains("detail: TrunkEntryText.stock(trunkEntry.summary),"))
-        XCTAssertTrue(page.contains("badge: TrunkEntryText.badge(trunkEntry.summary))"))
-        let parts = try String(contentsOf: root.appendingPathComponent("Core/Design/FormParts.swift"), encoding: .utf8)
-        XCTAssertTrue(parts.contains("CountBadge(count: badge, maximum: 99)"), "マイページの行に件数バッジが無い")
+        XCTAssertTrue(page.contains("TripToolTag(title: TripTool.trunk.title, badge: TrunkEntryText.badge(trunkEntry.summary))"))
+        XCTAssertTrue(page.contains(".accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))"))
+        let tag = try String(contentsOf: root.appendingPathComponent("Features/Profile/TripToolTag.swift"), encoding: .utf8)
+        XCTAssertTrue(tag.contains("CountBadge(count: badge, maximum: 99)"), "マイページの札に件数バッジが無い")
     }
 
     // MARK: - 退会で、端末に残ったとおまわり号の控えを消す

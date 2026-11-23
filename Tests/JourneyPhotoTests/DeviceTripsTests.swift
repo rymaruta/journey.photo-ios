@@ -164,7 +164,8 @@ final class DeviceTripsTests: XCTestCase {
         let mine = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Profile/MyPageView.swift"),
                               encoding: .utf8)
         XCTAssertTrue(mine.contains("DeviceTripSection(store:"))
-        XCTAssertTrue(screen.contains("store.books(posted: posted, isMine: true)"))
+        // 端末の旅は本棚に投稿した旅と一緒に並ぶ（札 #714）。投稿済みの日がある旅を外すのは今までどおり
+        XCTAssertTrue(mine.contains("deviceTrips.books(posted: posted, isMine: true)"))
     }
 
     // MARK: - 地名（一冊につき1回）
@@ -217,8 +218,11 @@ final class DeviceTripsTests: XCTestCase {
         XCTAssertEqual(DeviceTrips.tripTitle(of: trip, name: "京都市"), "京都市の旅")
         XCTAssertEqual(DeviceTrips.tripTitle(of: trip, name: nil), LibraryTrips.periodText(trip))
         XCTAssertTrue(DevelopTrips.cardLine(trip, name: "京都市").hasPrefix("京都市の旅、"))
-        XCTAssertEqual(DeviceTripText.line(trip, name: nil), LibraryTrips.countText(trip))
-        XCTAssertTrue(DeviceTripText.line(trip, name: "京都市").hasPrefix(LibraryTrips.periodText(trip)))
+        // 本棚の背の読み上げ（札 #714）: 題、年月、枚数、端末の中だけ
+        let book = TripBookshelf.book(trip, name: "京都市")
+        XCTAssertTrue(TripBookshelf.spokenLabel(book).hasPrefix("旅、京都市、"))
+        XCTAssertTrue(TripBookshelf.spokenLabel(book).hasSuffix("端末の中だけ"))
+        XCTAssertEqual(TripBookshelf.book(trip, name: nil).title, LibraryTrips.periodText(trip))
     }
 
     // MARK: - 投稿の流れへ

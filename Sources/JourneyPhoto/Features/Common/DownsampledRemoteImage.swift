@@ -368,3 +368,20 @@ private actor GridImageDecodeInFlight {
         return result
     }
 }
+
+extension DownsampledRemoteImage {
+    /// 画面に出す前に、縮めて展開した絵を控えに入れておく（札 #714・旅の本の表紙）。
+    /// 控えは格子と同じ `memory`、通信と展開の共有も同じ。読めなければ nil
+    static func preload(_ url: URL, pixels: Int) async -> UIImage? {
+        if let cached = memory.entry(for: url, atLeast: pixels) { return cached.image }
+        guard let data = try? await GridImageInFlight.shared.data(for: url),
+              let decoded = await GridImageDecodeInFlight.shared.image(data: data, for: url, pixels: pixels) else { return nil }
+        memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
+        return decoded.image
+    }
+
+    /// 控えに在る絵だけを返す（取りに行かない）
+    static func cached(_ url: URL, pixels: Int) -> UIImage? {
+        memory.entry(for: url, atLeast: pixels)?.image
+    }
+}

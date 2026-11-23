@@ -5808,6 +5808,99 @@ final class ScreenshotTests: JPUITestCase {
         return false
     }
 
+    // MARK: - 旅の記録の本棚（札 #714）
+
+    /// **旅が無いとき**（`-JPPreviewTripShelf empty`）: 頭の荷札の列と、旅が無いときの1行だけ
+    func testCapturesTripShelfEmpty() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "empty"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let start = app.buttons["trips.emptyStart"].firstMatch
+        guard start.waitForExistence(timeout: 15) else { return XCTFail("旅が無いのに「まだ旅はありません」の次の一手が無い") }
+        XCTAssertFalse(app.descendants(matching: .any)["trips.book"].firstMatch.exists, "旅が無いのに背表紙がある")
+        XCTAssertTrue(app.staticTexts["同じ旅で撮った写真を2枚載せると、旅の記録が一冊できます"].firstMatch.exists,
+                      "旅が無いときの1行が無い")
+        assertToolTags(app)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "34a-旅の記録（旅が無いとき）")
+    }
+
+    /// **旅が増えたとき**（`-JPPreviewTripShelf many`・3年で14冊）: 年ごとの段と背表紙。説明の文は出さない
+    func testCapturesTripShelfMany() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let spine = app.descendants(matching: .any)["trips.book"].firstMatch
+        guard spine.waitForExistence(timeout: 20) else { return XCTFail("旅が増えたのに背表紙が無い") }
+        XCTAssertFalse(app.staticTexts["同じ旅で撮った写真を2枚載せると、旅の記録が一冊できます"].firstMatch.exists,
+                       "旅があるのに説明の1行が出ている")
+        assertToolTags(app)
+        // 背表紙の当たり: 高さは 44pt 以上、幅は背の幅＋間で、隣の背の当たりと重ならない（細い背の右を押して隣が開かない）
+        XCTAssertGreaterThanOrEqual(spine.frame.height, 44, "背表紙の押せる高さが 44pt 未満")
+        let spines = app.descendants(matching: .any).matching(identifier: "trips.book")
+        if spines.count > 1 {
+            let first = spines.element(boundBy: 0).frame, second = spines.element(boundBy: 1).frame
+            if abs(first.maxY - second.maxY) < 1 {
+                XCTAssertLessThanOrEqual(first.maxX, second.minX + 0.5, "隣の背表紙の当たりが重なっている（\(first) と \(second)）")
+            }
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "34b-旅の記録（旅が増えたとき）")
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "34c-旅の記録（下の年の段）")
+    }
+
+    /// **背表紙を押して本が開いたとき**: 開き切った一冊。左へ払って次の日へめくる。「戻る」で棚へ閉じる
+    func testCapturesTripBookOpened() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let spine = app.descendants(matching: .any)["trips.book"].firstMatch
+        guard spine.waitForExistence(timeout: 20) else { return XCTFail("背表紙が無い") }
+        var pushes = 0
+        while !spine.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard spine.isHittable else { return XCTFail("背表紙を押せない") }
+        spine.tap()
+        // 開く動きは約 0.55 秒。開き切ってから撮る
+        let share = app.buttons["trips.share"].firstMatch
+        guard share.waitForExistence(timeout: 15) else { return XCTFail("背表紙を押しても一冊が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "34d-旅の一冊（本が開いた）")
+        // 表紙を読んでいる所で左へ払うと、1日目の見出しが画面の上へ来る（日がめくれた）
+        let day1 = app.descendants(matching: .any)["trips.day.1"].firstMatch
+        let before = day1.exists ? day1.frame.minY : nil
+        app.swipeLeft()
+        Thread.sleep(forTimeInterval: 2)
+        guard day1.waitForExistence(timeout: 5) else { return XCTFail("左へ払っても1日目の見出しが出ない（日がめくれない）") }
+        let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : 100
+        XCTAssertLessThan(day1.frame.minY, top + 120,
+                          "左へ払っても1日目の見出しが上へ来ない（前 \(before.map { "\($0)" } ?? "無し")、後 \(day1.frame.minY)）")
+        shoot(app, "34e-旅の一冊（次の日へめくった）")
+        let back = app.navigationBars.buttons.firstMatch
+        guard back.waitForExistence(timeout: 5) else { return XCTFail("一冊に戻るボタンが無い") }
+        back.tap()
+        XCTAssertTrue(spine.waitForExistence(timeout: 10), "「戻る」で棚へ戻らない")
+    }
+
+    /// 旅の記録のタブを選ぶ（マイページ → 旅の記録）
+    private func openTripShelf(_ app: XCUIApplication) -> Bool {
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        return selectTripsTab(app)
+    }
+
+    /// 頭の荷札の列（旅行プランと共同アルバムは必ず在る・高さ 44pt）
+    private func assertToolTags(_ app: XCUIApplication) {
+        for id in ["trips.plans", "trips.albums"] {
+            let tag = app.buttons[id].firstMatch
+            guard tag.waitForExistence(timeout: 10) else { XCTFail("荷札 \(id) が無い"); continue }
+            XCTAssertGreaterThanOrEqual(tag.frame.height, 44, "荷札 \(id) が 44pt 未満")
+        }
+    }
+
     // MARK: - 旅の記録の行を開く・送る（2026-11-23 にとおまわり号の試験を消したときに残した道具・札 #709）
 
     /// マイページ → 旅の記録のタブ → 行 `id` を押す。押せたら true

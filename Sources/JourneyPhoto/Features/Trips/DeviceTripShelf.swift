@@ -4,23 +4,24 @@ import Photos
 /// マイページの「旅の記録」の、**端末の写真の一冊**の段（2026-10-16 owner 決定・決まりは `DeviceTrips`）。
 ///
 /// - まだ許可を尋ねていなければ、説明の札（何に使うか・端末の中だけ・どこにも送らない）と許可の主ボタン
-/// - 許されていれば、見つかった旅を「端末の中だけ」の印つきの行で並べる（見つかった順に増える）
+/// - 許されていれば、見つかった旅は**本棚に投稿した旅と一緒に並ぶ**（背に iPhone の印・`TripShelfList`）。
+///   ここに出すのは、探している間の1行と、一部だけ許可しているときの「写真を追加で選ぶ」だけ
 /// - 断られていれば何も出さない（今までどおり投稿した写真の一冊だけ）
 ///
+/// 2026-11-23 owner 判断（札 #714）: 棚に説明の文を出さない。端末の旅のプライバシーの文は初めの許可の札
+/// （`DeviceTripIntroCard`）に残し、「端末の中だけ」の眉、撮影日時と場所の説明、「家から50km」の文は外した。
+///
 /// **本人のマイページだけに置く**（人のプロフィールには置かない・`DeviceTrips.books(isMine:)`）。
-/// 黒地の上なので、眉ラベルと文字のリンクは真鍮、主ボタンは真鍮の塗りに墨（写真の無い札・CLAUDE.md）
+/// 黒地の上なので文字のリンクは真鍮、主ボタンは真鍮の塗りに墨（写真の無い札・CLAUDE.md）
 struct DeviceTripSection: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var store: DeviceTripShelfStore
-    /// 自分の投稿（投稿済みの日がある旅を外す・`LibraryTrips.postedDays`）
-    let posted: [LibraryTrips.PostedShot]
 
     var body: some View {
-        let books = store.books(posted: posted, isMine: true)
         Group {
             if PhotoLibrary.canRead(store.status) {
-                shelf(books)
+                status
             } else if store.status == .notDetermined && !store.introDismissed {
                 DeviceTripIntroCard(onAllow: { Task { await store.requestAccess() } },
                                     onLater: { store.dismissIntro() })
@@ -33,52 +34,22 @@ struct DeviceTripSection: View {
         }
     }
 
-    private func shelf(_ books: [LibraryTrip]) -> some View {
-        VStack(alignment: .leading, spacing: JPSpace.xs) {
-            HStack(spacing: JPSpace.xs) {
-                Text(eyebrow: L("端末の中だけ", "On this iPhone only"))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
+    @ViewBuilder
+    private var status: some View {
+        if store.isScanning || store.status == .limited {
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
                 if store.isScanning {
-                    ProgressView().tint(WebTheme.text3).controlSize(.small)
-                    Text(L("写真から旅を探しています", "Looking for trips in your photos"))
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                }
-            }
-            Text(L("端末の写真の撮影日時と場所から見つけた旅です。どこにも送らず、ほかの人には見えません。投稿は任意です",
-                   "Trips found from when and where your photos were taken. Nothing is uploaded and no one else can see them. Posting is up to you."))
-                .font(JPFont.caption)
-                .lineSpacing(3)
-                .foregroundStyle(WebTheme.text3)
-                .fixedSize(horizontal: false, vertical: true)
-            if store.status == .limited { limitedBar }
-            if books.isEmpty {
-                if store.hasCompleted && !store.isScanning {
-                    Text(L("家から50km以上離れた場所で撮った写真のまとまりは、まだ見つかっていません",
-                           "No groups of photos taken 50 km or more from home yet."))
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, JPSpace.xxs)
-                }
-            } else {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(books) { trip in
-                        NavigationLink {
-                            DeviceTripBookView(trip: trip, name: store.names[trip.id])
-                        } label: {
-                            DeviceTripRow(trip: trip, name: store.names[trip.id])
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("trips.deviceBook")
+                    HStack(spacing: JPSpace.xs) {
+                        ProgressView().tint(WebTheme.text3).controlSize(.small)
+                        Text(L("写真から旅を探しています", "Looking for trips in your photos"))
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                     }
                 }
+                if store.status == .limited { limitedBar }
             }
+            .padding(.horizontal, JPSpace.gutter)
         }
-        .padding(.horizontal, JPSpace.gutter)
     }
 
     /// 一部だけ許可しているときの1行（「旅の写真から」の一覧と同じ形）。黒地の文字リンクなので真鍮
@@ -102,7 +73,7 @@ struct DeviceTripSection: View {
     }
 }
 
-/// 「端末の中だけ」の線の札（黒地の上: text-2 の字に白 14% の線・`UploadDateChip` と同じ形）。
+/// 「端末の中だけ」の線の札（黒地の上: text-2 の字に白 14% の線）。開いた一冊の頭に出す。
 /// **色だけで言わない**——印（iPhone）と字で、投稿した一冊と見分ける
 struct DeviceOnlyChip: View {
     var body: some View {
@@ -120,61 +91,8 @@ struct DeviceOnlyChip: View {
     }
 }
 
-/// 端末の一冊の行（投稿した一冊の行 `TripShelfRow` と同じ寸法: 高さ 72・左に 72×56 の写真）。
-/// 表紙は**画面に出たときに小さく読む**（`LibraryThumbView`）
-struct DeviceTripRow: View {
-
-    let trip: LibraryTrip
-    let name: String?
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Group {
-                if let cover = trip.cover {
-                    LibraryThumbView(id: cover.id, side: TripStyle.rowThumb.width)
-                } else {
-                    WebTheme.card
-                }
-            }
-            .frame(width: TripStyle.rowThumb.width, height: TripStyle.rowThumb.height)
-            .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
-            .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(DeviceTrips.title(of: trip, name: name))
-                    .font(JPFont.rowTitle)
-                    .foregroundStyle(WebTheme.text)
-                    .lineLimit(2)
-                    // 題は場所の名前だけ（2026-11-15）。読み上げは「旅、金沢市」
-                    .accessibilityLabel(DeviceTrips.spokenTitle(of: trip, name: name))
-                Text(DeviceTripText.line(trip, name: name))
-                    .font(JPFont.meta)
-                    .foregroundStyle(WebTheme.text3)
-                    .lineLimit(1)
-                    .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.meta))
-                DeviceOnlyChip()
-                    .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, JPSpace.xs)
-        .frame(minHeight: TripStyle.rowMinHeight)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// 端末の一冊の字
-enum DeviceTripText {
-    /// 行の等幅の1行。地名が題なら「期間 · 日数・枚数」、期間が題なら「日数・枚数」
-    static func line(_ trip: LibraryTrip, name: String?) -> String {
-        let count = LibraryTrips.countText(trip)
-        guard let name, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return count }
-        return LibraryTrips.periodText(trip) + "\u{2002}" + count
-    }
-}
+/// 端末の一冊の字（説明の札の約束は下の extension）
+enum DeviceTripText {}
 
 /// 写真を許可する前の説明の札（**何に使うかを許可の前に言う**・2026-10-16）。
 /// 写真の無い札なので主ボタンは真鍮の塗りに墨
@@ -294,6 +212,8 @@ struct DeviceTripBookView: View {
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, JPSpace.gutter)
                             .accessibilityAddTraits(.isHeader)
+                            // 日めくりの「いまの日」と読み上げの「次の日」「前の日」（`TripDayFlip`）
+                            .tripDayHeader(id: day.id)
                         LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(day.shots, id: \.id) { shot in
                                 LibraryThumbView(id: shot.id, side: 96)
@@ -305,7 +225,10 @@ struct DeviceTripBookView: View {
                 }
             }
             .padding(.vertical, JPSpace.m)
+            .tripDayFlipCatcher()
         }
+        // 日のページを左右でめくる（札 #714・投稿した一冊と同じ `TripDayFlip`）。id は `ForEach` の日の id
+        .modifier(TripDayFlip(dayIDs: shown.days.map(\.id)))
         .webScreen()
         .navigationTitle(DeviceTrips.title(of: shown, name: shownName))
         .navigationBarTitleDisplayMode(.inline)

@@ -7,15 +7,9 @@ import SwiftUI
 /// 土台（`JPSpace`・`JPRadius`・`JPStroke`・`JPTypeScale`）を使い、ここには**旅の画面にしか無い寸法**だけを置く。
 enum TripStyle {
 
-    // MARK: 旅の一覧（板 Trips）
+    // MARK: 旅の一覧（札 #714 で本棚に。寸法は `TripBookshelf`）
 
-    /// いちばん新しい一冊の大きな表紙の札の高さ（板 190）
-    static let coverCardHeight: CGFloat = 190
-    /// 残りの一冊の行の高さ（板 72）
-    static let rowMinHeight: CGFloat = 72
-    /// 行の写真（板 72×56・角 10 は `JPRadius.s`）
-    static let rowThumb = CGSize(width: 72, height: 56)
-    /// 表紙の札の下の暗さ（板: 黒 72% → 65% の所で 0）
+    /// 本の表紙の下の暗さ（板: 黒 72% → 65% の所で 0・`BookCoverFace`）
     static let coverCardShade = 0.72
 
     // MARK: 旅の一冊（板 TripBook）
@@ -71,12 +65,6 @@ enum TripStyle {
     /// 一冊の写真が**どれも撮影日を持たない**（投稿した日でまとめた旅）。板の「投稿日でまとめています」の札
     nonisolated static func groupedByUploadDate(_ photos: [Photo]) -> Bool {
         !photos.isEmpty && photos.allSatisfy { ($0.date ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-
-    /// 一覧の行・表紙の札の下の1行（「2026.09.12 — 09.14　3日間　24枚」）。
-    /// 題が期間のとき（撮影地の無い旅・`TripBook.titleIsPeriod`）は期間を重ねず「3日間　24枚」
-    nonisolated static func tripLine(_ trip: TripBook.Trip) -> String {
-        "\(coverDateLine(trip))\u{2002}\(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
     }
 
     /// 旅の一冊の表紙の題の下の1行（「2026.09.12 — 09.14　3日間」）。題が期間なら「3日間」だけ

@@ -252,10 +252,14 @@ final class TrunkWiringTests: XCTestCase {
     /// マイページの入口は口が読めたときだけ出す配線
     func testMyPageEntryIsGated() throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        XCTAssertTrue(page.contains("if trunkAvailability.isAvailable {"), "口が無いのに入口を出している")
-        let gated = try XCTUnwrap(page.range(of: "if trunkAvailability.isAvailable {"))
+        // 荷札の列（札 #714）: トランクの札は `TripTool.shown` が口の有無で出し分ける
+        XCTAssertTrue(page.contains("ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable)) { tool in"),
+                      "口が無いのに入口を出している")
+        let gated = try XCTUnwrap(page.range(of: "case .trunk:"))
         XCTAssertTrue(String(page[gated.upperBound...].prefix(600)).contains("MyPageTrunkRow(ownerName:"),
                       "口が無いのに入口を出している")
+        XCTAssertFalse(TripTool.shown(trunkAvailable: false).contains(.trunk), "口が無いのに入口を出している")
+        XCTAssertTrue(TripTool.shown(trunkAvailable: true).contains(.trunk))
         XCTAssertTrue(page.contains("await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)"))
         XCTAssertTrue(page.contains("service: environment.trunk, force: true)"), "前面に戻ったときに確かめ直していない")
         let edit = try source("Features/Profile/EditPhotoView.swift")
