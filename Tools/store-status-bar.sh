@@ -34,19 +34,24 @@ for devices in json.load(sys.stdin).get("devices", {}).values():
         if not d.get("isAvailable"):
             continue
         clone = d.get("name", "").startswith("Clone ") and d.get("name", "").endswith(" of " + name)
-        if d.get("name") == name or (which == "booted" and clone and d.get("state") == "Booted"):
+        # 2026-11-23（Mac run 1742）: 同じ名前の端末が別の iOS の版にもあり、止まっている方まで --check が見て
+        # 「Shutdown」で赤になった（撮った絵は 9:41 だった）。起動している端末だけを見るときは、名前が同じでも Booted だけ
+        if which == "booted":
+            if (d.get("name") == name or clone) and d.get("state") == "Booted":
+                print(d["udid"])
+        elif d.get("name") == name:
             print(d["udid"])
 ' "$name" "$which"
 }
 
 override() {
-    # 電波は満タン・運用者の名前は出さない（`''`）。位置の矢印は状態のバーの上書きでは消せない（アプリが位置を使わないこと・
+    # 電波は満タン、運用者の名前は出さない（`''`）。電池は満タンで、充電中の稲妻を出さない（`discharging`。run 1742 の絵で緑の稲妻が出た・2026-11-23）。位置の矢印は状態のバーの上書きでは消せない（アプリが位置を使わないこと・
     # 見本の表示では `CurrentLocation` が端末の位置を読まない）
     xcrun simctl status_bar "$1" override \
         --time "9:41" \
         --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --operatorName '' \
-        --batteryState charged --batteryLevel 100
+        --batteryState discharging --batteryLevel 100
 }
 
 # かかっているか（`status_bar list` に 9:41 が出る）

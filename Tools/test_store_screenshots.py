@@ -228,6 +228,25 @@ class StatusBarTest(unittest.TestCase):
         self.assertEqual(run.returncode, 1, "外れているのに緑")
         self.assertIn("9:41 でない", run.stdout)
 
+    def test_check_ignores_a_shut_down_device_with_the_same_name(self):
+        # 2026-11-23（Mac run 1742）: 別の iOS の版に同じ名前の止まった端末があり、--check がそれを見て赤になった
+        devices = json.loads(self.env["FAKE_DEVICES"])
+        devices["devices"]["com.apple.CoreSimulator.SimRuntime.iOS-26-0"] = [
+            {"name": "iPhone Test", "udid": "UDID-OLD", "isAvailable": True, "state": "Shutdown"}]
+        self.env["FAKE_DEVICES"] = json.dumps(devices)
+        self.assertEqual(self.run_bar().returncode, 0)
+        run = self.run_bar("--check")
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertNotIn("UDID-OLD", run.stdout)
+
+    def test_battery_is_full_without_the_charging_bolt(self):
+        # 2026-11-23（Mac run 1742）: charged では緑の稲妻が出た。App Store の絵は満タンで稲妻なし
+        self.assertEqual(self.run_bar().returncode, 0)
+        with open(self.bar + ".calls") as f:
+            call = f.read()
+        self.assertIn("--batteryState discharging", call)
+        self.assertNotIn("charged", call)
+
     def test_keep_reapplies_while_the_tests_run(self):
         import threading
         sleeper = self.subprocess.Popen(["sleep", "5"])
