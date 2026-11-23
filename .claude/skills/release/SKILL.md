@@ -6,12 +6,13 @@ description: main を TestFlight に出す。「出して」「TestFlight」「�
 # TestFlight に出す
 
 CLAUDE.md の「リリースのたびに版を上げる」を守る。版（MARKETING_VERSION）は
-ワークフローが自動で +1 し、`testflight/<版>` のタグを付ける。
+ワークフローが一番下を自動で +1 し、`testflight/<版>` のタグを付ける。ビルド番号はいつも (1)。
+直しは1件ずつ出さず、そろってから出す（一番下の数字を無駄に進めない）。
 
 ## 手順
 
 1. 出すものが main に入っていて、それぞれ Mac で緑（`/mac-check`）か確かめる。
-   - 出す前に、`Sources/JourneyPhoto/Resources/WhatsNew.json` に今回の版（直近の `testflight/*` の最後の数字 +1）の項目を足したか確かめる（利用者に見える変更が無い版は足さない。`WhatsNew.pending` は見た版より新しい版を全部出すので、足し忘れた分は次の版にまとめて足せる）。
+   - 出す前に、`Sources/JourneyPhoto/Resources/WhatsNew.json` に今回の版（project.yml の版の X.Y で、直近の `testflight/X.Y.*` の最後の数字 +1。その X.Y の印がまだ無ければ project.yml の版そのもの。例: 1.2.0 に上げた直後は 1.2.0、1.1.119 の +1 ではない）の項目を足したか確かめる（利用者に見える変更が無い版は足さない。`WhatsNew.pending` は見た版より新しい版を全部出すので、足し忘れた分は次の版にまとめて足せる）。
 2. 流す:
    ```bash
    gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
@@ -35,4 +36,4 @@ CLAUDE.md の「リリースのたびに版を上げる」を守る。版（MARK
 ## やらないこと
 
 - 手元から Archive しない（版のタグが付かない）。どうしても手元から出すときは `bash Tools/bump-build.sh <版>` で上げ、出した版を owner に伝える。
-- 真ん中・先頭の数字（1.1.0 など）は自動で上げない。owner が決める。
+- 真ん中の数字は自動で上げない。**App Store に出したら、次の作業から人が上げる**（1.2.x を審査に出した → `bash Tools/bump-build.sh 1.3.0` をコミットしてから流す。2026-11-23 owner）。先頭の数字は owner が決める。

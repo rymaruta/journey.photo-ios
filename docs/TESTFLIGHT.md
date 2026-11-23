@@ -85,8 +85,10 @@ open JourneyPhoto.xcodeproj
 > Apple の決まりは「版とビルド番号の組み合わせが重ならない」こと（iOS は新しい版で前より小さい番号を使ってよい。Mac は版をまたいでも上がり続ける必要がある）。出典: [Setting the next build number for Xcode Cloud builds](https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds)（2026-10-18 確認）。
 > 表に出るバージョン（`MARKETING_VERSION`）は、**GitHub Actions で上げるときは
 > 毎回自動で最後の数字が1つ上がる**（0.2.0 → 0.2.1 …・`Tools/next-marketing-version.sh`。
-> 出した版は `testflight/<版>` のタグで覚える）。大きく変わる版で真ん中の数字を
-> 上げたいときは `bash Tools/bump-build.sh 0.3.0` でコミットしてから流す。
+> 出した版は `testflight/<版>` のタグで覚える）。ビルド番号は版ごとに 1 からなので、いつも (1)。
+> **真ん中の数字は App Store に出すたびに人が上げる**（2026-11-23 owner）: 1.2.x を審査に出したら
+> `bash Tools/bump-build.sh 1.3.0` でコミットしてから流す（次の TestFlight が 1.3.0、その次が 1.3.1）。
+> 1.1 のまま上げてこなかったので 1.1.119 まで来た。直しは1件ずつ出さず、そろえて出す。
 > Xcode から手で上げるときは、この自動は働かないので自分で上げる。
 
 ### コマンドで上げる（2回目以降はこちらが楽）

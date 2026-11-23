@@ -38,6 +38,8 @@ python3 Tools/check-api-parity.py "${PHOTO_GALLERY:-../photo-gallery}"
 echo
 echo "== 設定ファイル =="
 python3 Tools/check-config.py
+# 表に出る版の決め方（App Store ごとに真ん中を上げる・2026-11-23 owner）
+python3 Tools/test_version_rule.py
 
 echo
 echo "== ビルドとテスト（模型に向けて・Swift があるときだけ） =="
