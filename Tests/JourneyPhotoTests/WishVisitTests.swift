@@ -83,6 +83,14 @@ final class WishVisitTests: XCTestCase {
                                                    ownerId: "a", known: [], memory: memory, fetch: fetch)
         XCTAssertNil(none)
         XCTAssertEqual(calls.n, 0, "言い替えが起こりえないのに索引を読んだ")
+        // 起こりえない回は索引の判断にも入らずすぐ返す（`mayApply` の早道）
+        XCTAssertFalse(PostedPlaceNotice.mayApply(wishKeys: [], spot: nil, postedToSpot: 0))
+        XCTAssertTrue(PostedPlaceNotice.mayApply(wishKeys: ["SPOT-hogonin"], spot: nil, postedToSpot: 0))
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let center = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Storage/PostUploadCenter.swift"),
+                                encoding: .utf8)
+        XCTAssertTrue(center.contains("guard mayApply(wishKeys: wishKeys, spot: spot, postedToSpot: postedToSpot) else { return nil }"),
+                      "言い替えが起こりえない回の早道が無い")
         // 撮影地の鍵だけ: 索引は読まない
         let located = await PostedPlaceNotice.resolve(posted: [try photo("q", location: "白川郷")],
                                                       wishKeys: [LocationSlug.make("白川郷")], spot: nil, postedToSpot: 0,
