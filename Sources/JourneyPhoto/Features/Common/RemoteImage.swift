@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// 写真を出す。読み込み中と失敗をはっきり分ける。
 ///
@@ -53,26 +56,16 @@ struct RemoteImage: View {
     var body: some View {
         ZStack {
             WebTheme.surface
-            // App Store の見本（`StoreDemo`・札 #604）の間は、見本の置き場でない画像を読まない（URL の無い写真と同じ姿）
-            if let url = StoreDemo.allowsImage(url) ? url : nil {
+            // App Store の見本（`StoreDemo`・札 #604）の見本の画像は、通信せずに同梱の写真から描く
+            // （`AsyncImage` は見本の答え手を通らない・`StoreDemo.localImageData` の注記・Mac run 1736）
+            if let local = StoreDemoImages.image(for: url) {
+                loaded(Image(uiImage: local))
+            // 見本の間は、見本の置き場でない画像を読まない（URL の無い写真と同じ姿）
+            } else if let url = StoreDemo.allowsImage(url) ? url : nil {
                 AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.15))) { phase in
                     switch phase {
                     case .success(let image):
-                        // **寄せるのは写真だけ。** `ZStack` ごと寄せると、
-                        // 読み込み中の輪と失敗の記号まで隅に寄って、
-                        // 44〜56pt の枠では切れて見えなくなる
-                        image.resizable().aspectRatio(contentMode: contentMode)
-                            .background {
-                                if let onLayout {
-                                    GeometryReader { g in
-                                        Color.clear
-                                            .onAppear { onLayout(g.size) }
-                                            .onChange(of: g.size) { _, size in onLayout(size) }
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-                            .onAppear { onSettled?(true) }
+                        loaded(image)
                     case .failure:
                         failure(RemoteImageRetry.step(automaticDone: automaticRetries, manualDone: manualRetries,
                                               allowsManualRetry: allowsManualRetry))
@@ -98,6 +91,23 @@ struct RemoteImage: View {
             automaticRetries = 0
             manualRetries = 0
         }
+    }
+
+    /// 読めた絵を敷く。**寄せるのは写真だけ。** `ZStack` ごと寄せると、
+    /// 読み込み中の輪と失敗の記号まで隅に寄って、44〜56pt の枠では切れて見えなくなる
+    private func loaded(_ image: Image) -> some View {
+        image.resizable().aspectRatio(contentMode: contentMode)
+            .background {
+                if let onLayout {
+                    GeometryReader { g in
+                        Color.clear
+                            .onAppear { onLayout(g.size) }
+                            .onChange(of: g.size) { _, size in onLayout(size) }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+            .onAppear { onSettled?(true) }
     }
 
     /// 読めなかったときの段。**一度だけ自動で読み直し、それでも駄目なら押して読み直せる**
@@ -195,4 +205,22 @@ enum RemoteImageRetry {
 
     /// 1枚の写真を読みに行く回数の上限（最初の1回＋自動＋押した分）
     static var maxLoads: Int { 1 + automaticLimit + manualLimit }
+}
+
+/// App Store の見本（`StoreDemo`・札 #604）の見本の画像を、展開した形で控える（`RemoteImage` が body のたびに展開しない）。
+/// 見本でなければいつも nil（何も控えない）
+enum StoreDemoImages {
+    // 見本の写真は 16 枚だけなので、全部を持っても小さい（見本でなければ空のまま）
+    nonisolated(unsafe) private static var cache: [URL: UIImage] = [:]
+    private static let lock = NSLock()
+
+    static func image(for url: URL?) -> UIImage? {
+        guard let url, StoreDemo.isOn else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = cache[url] { return hit }
+        guard let data = StoreDemo.localImageData(for: url), let image = UIImage(data: data) else { return nil }
+        cache[url] = image
+        return image
+    }
 }

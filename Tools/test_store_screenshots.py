@@ -58,6 +58,39 @@ class StoreScreenshotsTests(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(out, "review-Pro の案内.png")))
             self.assertFalse(os.path.exists(os.path.join(out, "medium-1206x2622", "review-Pro の案内.png")))
 
+    def test_font_has_every_drawn_character(self):
+        """眉ラベル・見出しの字を、字体が全部持っている（持たない字は豆腐の四角になる・run 1736）。
+        持たない字の形（私用領域の U+E000 の形）と同じ形になる字が無いことを見る"""
+        from PIL import ImageFont
+        font = ImageFont.truetype(store.MINCHO, 46)
+
+        def shape(ch):
+            mask = font.getmask(ch)
+            return (mask.size, bytes(mask))
+
+        missing = shape("\ue000")
+        for _, _, eyebrow, heading in store.SLIDES:
+            for ch in eyebrow + heading.replace("\n", ""):
+                self.assertNotEqual(shape(ch), missing, f"字体が持たない字: {ch!r}（{eyebrow}）")
+
+    def test_eyebrow_draws_no_spacer_characters(self):
+        """眉ラベルは字を1つずつ描き、間に文字を挟まない（描いた字はラベルの字だけ）"""
+        drawn = []
+
+        class Recorder:
+            def text(self, xy, ch, **_):
+                drawn.append(ch)
+
+        from PIL import ImageFont
+        font = ImageFont.truetype(store.MINCHO, 46)
+        store.draw_spaced(Recorder(), 660, 200, "観光スポット", font, store.BRASS, 10)
+        self.assertEqual(drawn, list("観光スポット"))
+        # 字の間に文字を挟んで描く形（前の薄い空白の join）に戻していない
+        source = open(os.path.join(ROOT, "Tools/store-screenshots.py"), encoding="utf-8").read()
+        self.assertNotIn(".join(eyebrow)", source)
+        self.assertNotIn("\u2009", source)
+        self.assertIn("draw_spaced(draw, cw / 2, px(200), eyebrow", source)
+
     def test_store_tests_use_demo(self):
         # いまの UI テストは、どれも見本の表示で撮る
         self.assertEqual(store.check_demo(), [])

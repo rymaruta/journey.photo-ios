@@ -281,6 +281,41 @@ final class StoreDemoTests: XCTestCase {
         XCTAssertTrue(face.contains(".opacity(StoreDemo.showsCredits ? 1 : 0)"), "ホームの上の札が見本の間に出典を隠さない")
     }
 
+    /// 大きい絵の道（`RemoteImage`＝`AsyncImage`。写真の詳細・観光スポットの頁の上の絵・DM の写真）は、見本の答え手を通らない。
+    /// 見本の画像は通信せずに同梱の写真から描く（Mac run 1736 で読み込み中のままだった）。見本でない・見本の置き場でない URL は描かない
+    func testLargeImagePathDrawsDemoPhotosWithoutNetwork() throws {
+        let saved = StoreDemo.loadAsset
+        defer { StoreDemo.loadAsset = saved }
+        var asked: [String] = []
+        StoreDemo.loadAsset = { asked.append($0); return Data([0xFF, 0xD8, 0xFF]) }
+        let demoURL = URL(string: StoreDemo.photoURL("tunnel"))!
+        XCTAssertNil(StoreDemo.localImageData(for: demoURL), "見本でないのに同梱の写真に替える")
+        withDemo(true) {
+            XCTAssertNotNil(StoreDemo.localImageData(for: demoURL), "見本の画像を同梱の写真から出さない")
+            XCTAssertNil(StoreDemo.localImageData(for: URL(string: "https://journey-photo.com/photos/a.jpg")))
+            XCTAssertNil(StoreDemo.localImageData(for: URL(string: StoreDemo.photoURL("iphone"))), "見本の一覧に無い写真を出す")
+        }
+        XCTAssertEqual(asked, ["tunnel"])
+        let remote = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Common/RemoteImage.swift"),
+                                encoding: .utf8)
+        let local = try XCTUnwrap(remote.range(of: "if let local = StoreDemoImages.image(for: url)"), "RemoteImage が見本の画像を同梱から描かない")
+        let async = try XCTUnwrap(remote.range(of: "AsyncImage(url: url"))
+        XCTAssertLessThan(local.lowerBound, async.lowerBound, "見本の画像を AsyncImage より先に引いていない")
+    }
+
+    /// 見本の曲の名前は場所を言わない（どの写真に付いても食い違わない）
+    func testDemoSongTitleNamesNoPlace() {
+        XCTAssertNil(StoreDemo.songTitle)
+        XCTAssertEqual(PreviewStorySample.song.title, "夜明けの港で聴くバラード")
+        withDemo(true) {
+            let title = StoreDemo.songTitle ?? ""
+            XCTAssertFalse(title.isEmpty)
+            for word in ["港", "海", "山", "京都", "富士", "森"] { XCTAssertFalse(title.contains(word), title) }
+            XCTAssertEqual(PreviewStorySample.song.title, title)
+            XCTAssertEqual(PreviewBackend.previewStorySong(demo: true)["title"] as? String, title)
+        }
+    }
+
     // MARK: - 見本の会話・旅行プラン・作者
 
     /// 作例の作者は `photo-sources.json` の本当の作者（旅のオフラインの頁などに字が出ても正しい名前）

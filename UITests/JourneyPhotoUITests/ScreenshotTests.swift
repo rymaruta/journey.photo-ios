@@ -12837,6 +12837,17 @@ final class ScreenshotTests: JPUITestCase {
         return app
     }
 
+    /// **画面の絵が出るまで待つ**（読み込み中の輪が画面から消えるまで・2026-11-23 Mac run 1736）。run 1736 は写真の詳細・
+    /// 観光スポットの頁の上の絵・DM の写真が読み込み中の輪のまま撮れていた。出なければ落とす（ストアに読み込み中の絵を出さない）
+    @discardableResult
+    private func waitForImages(_ app: XCUIApplication, _ step: String, timeout: TimeInterval = 20) -> Bool {
+        let none = NSPredicate(format: "count == 0")
+        let done = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: none, object: app.activityIndicators)],
+                                  timeout: timeout) == .completed
+        if !done { unreached(app, "\(step)の絵が読み込み中のまま（読み込み中の輪 \(app.activityIndicators.count) 個）") }
+        return done
+    }
+
     /// 1 ホーム（みんなの写真の1本の並び）と 7 写真の詳細（1枚目）
     func testStoreDemoHomeAndDetail() {
         let app = launchStoreDemo()
@@ -12846,7 +12857,8 @@ final class ScreenshotTests: JPUITestCase {
         let firstPhoto = app.buttons["feed.photo"].firstMatch
         guard firstPhoto.waitForExistence(timeout: 20) else { return unreached(app, "ホームの写真", probes: ["feed.photo"]) }
         // 写真が読み込まれるのを待つ（見本の画像は端末の中から来るが、縮めて展開するのに少しかかる）
-        Thread.sleep(forTimeInterval: 4)
+        guard waitForImages(app, "ホーム") else { return }
+        Thread.sleep(forTimeInterval: 1)
         shoot(app, "10-ホーム")
         var pushes = 0
         while !firstPhoto.isHittable, pushes < 8 {
@@ -12860,7 +12872,8 @@ final class ScreenshotTests: JPUITestCase {
         guard app.buttons["photo.like"].firstMatch.waitForExistence(timeout: 15) else {
             return unreached(app, "写真の詳細", probes: ["photo.like"])
         }
-        Thread.sleep(forTimeInterval: 4)
+        guard waitForImages(app, "写真の詳細") else { return }
+        Thread.sleep(forTimeInterval: 1)
         shoot(app, "20-写真の詳細")
     }
 
@@ -12884,7 +12897,8 @@ final class ScreenshotTests: JPUITestCase {
         row.tap()
         let named = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "伏見稲荷大社")).firstMatch
         guard named.waitForExistence(timeout: 15) else { return unreached(app, "観光スポットの頁") }
-        Thread.sleep(forTimeInterval: 4)
+        guard waitForImages(app, "観光スポットの頁") else { return }
+        Thread.sleep(forTimeInterval: 1)
         shoot(app, "70-ストア・撮影スポット（伏見稲荷大社）")
         // 作例の出典の行は見本の間は出さない（`CreditLinksMenu`・どれもクレジット不要の写真）
         let credit = app.descendants(matching: .any)["spot.official.photoCredit"].firstMatch
@@ -12947,7 +12961,8 @@ final class ScreenshotTests: JPUITestCase {
             return unreached(app, "受信箱", probes: ["dm.inbox"])
         }
         guard openThread(app, named: "夕焼けの人") else { return unreached(app, "見本の会話") }
-        Thread.sleep(forTimeInterval: 2)
+        guard waitForImages(app, "メッセージの会話") else { return }
+        Thread.sleep(forTimeInterval: 1)
         shoot(app, "86m4-メッセージ（会話）")
     }
 

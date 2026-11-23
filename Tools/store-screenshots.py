@@ -131,6 +131,21 @@ def rounded(image, radius):
     return out
 
 
+# 眉ラベルの字と字の間（大きい枠での px）。**字の間に文字を挟まず、描く位置で空ける**（2026-11-23・run 1736）。
+# 前は薄い空白（U+2009）を挟んでいて、見出しの字体（Shippori Mincho B1）がその字を持たず、全部の絵で字の間に
+# 豆腐の四角が出ていた
+EYEBROW_GAP = 10
+
+
+def draw_spaced(draw, center_x, center_y, text, font, fill, gap):
+    """字を1つずつ、間を `gap` 空けて中央そろえで描く（間に文字を挟まない）"""
+    widths = [font.getlength(ch) for ch in text]
+    x = center_x - (sum(widths) + gap * max(0, len(text) - 1)) / 2
+    for ch, width in zip(text, widths):
+        draw.text((x, center_y), ch, font=font, fill=fill, anchor="lm")
+        x += width + gap
+
+
 def compose(shot_path, eyebrow, heading, size=(W, H)):
     """1枚を作る。寸法は `size`。並べ方は大きい枠（1320 幅）の値を幅の比で縮める（2026-11-23・中型の枠）"""
     cw, ch = size
@@ -145,8 +160,7 @@ def compose(shot_path, eyebrow, heading, size=(W, H)):
     heading_font = ImageFont.truetype(MINCHO, px(96))
 
     # 眉ラベル（真鍮・字間を少し空ける）
-    spaced = " ".join(eyebrow)
-    draw.text((cw / 2, px(200)), spaced, font=eyebrow_font, fill=BRASS, anchor="mm")
+    draw_spaced(draw, cw / 2, px(200), eyebrow, eyebrow_font, BRASS, px(EYEBROW_GAP))
     # 見出し（白・明朝・中央そろえ）
     draw.multiline_text((cw / 2, px(300)), heading, font=heading_font, fill=WHITE,
                         anchor="ma", align="center", spacing=px(28))

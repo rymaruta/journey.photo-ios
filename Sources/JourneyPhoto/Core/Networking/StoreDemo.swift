@@ -50,6 +50,29 @@ enum StoreDemo {
     /// 見本の間は、見本の置き場・端末の中のファイル・data: だけ。ほかの URL（本番の写真・Commons・曲のジャケット）は読まない
     static func allowsImage(_ url: URL?) -> Bool { allowsImage(url, demo: isOn) }
 
+    /// 見本の置き場の画像の中身（同梱の写真）。見本でない・見本の置き場でない・見本の一覧に無い名前は nil。
+    /// `RemoteImage`（中身は `AsyncImage`）が使う（2026-11-23・Mac run 1736）: `AsyncImage` は `URLProtocol.registerClass` の
+    /// 答え手を通らず、見本の URL（`.invalid`）を外へ読みに行って失敗し、写真の詳細・観光スポットの頁の上の絵・DM の写真が
+    /// 読み込み中のままだった。見本の画像は通信せずにここから描く（見張りは変えない・外へは出さない）
+    static func localImageData(for url: URL?) -> Data? {
+        #if DEBUG
+        guard isOn, let url, let asset = asset(in: url) else { return nil }
+        return loadAsset(asset)
+        #else
+        return nil
+        #endif
+    }
+
+    /// 見本の曲の名前（ストーリーの曲の札・見る画面の名前の下の行）。**場所を言わない名前**（どの写真に付いても食い違わない・
+    /// Mac run 1736 で「夜明けの港で…」が森の線路の写真に付いていた）。見本でなければ nil（今までの曲名）
+    static var songTitle: String? {
+        #if DEBUG
+        return isOn ? "ゆっくり遠回りして帰ろう（Long Version）" : nil
+        #else
+        return nil
+        #endif
+    }
+
     /// 写真の出典の行（CC の表示）を見せるか。見本の間は見せない（`CreditLinksMenu`・ホームの上の札 `TopCardFace` がこれを見る）。
     /// 見本の写真はどれもクレジット不要（CC0）で、ストアの絵に CC の表示を写さない。見本でなければいつも見せる
     static var showsCredits: Bool { showsCredits(demo: isOn) }
@@ -183,6 +206,14 @@ enum StoreDemo {
     ]
 
     static func photoId(_ asset: String) -> String { "store-demo-\(asset)" }
+
+    /// 見本の画像の URL（`photoURL`）から写真の名前を引く。見本の置き場でない・見本の一覧に無い名前は nil
+    static func asset(in url: URL) -> String? {
+        let path = url.path.split(separator: "/").map(String.init)
+        guard url.host == host, path.count == 2, path[0] == "photo" else { return nil }
+        let name = path[1].hasSuffix(".jpg") ? String(path[1].dropLast(4)) : path[1]
+        return assets.contains(name) ? name : nil
+    }
 
     /// 公開の一覧の行（`photos.json`・`GET /feed` の `items` と同じ形）
     static func feed(now: Date = Date()) -> [[String: Any]] {
@@ -371,9 +402,7 @@ enum StoreDemo {
         let path = url.path.split(separator: "/").map(String.init)
         guard let urlHost = url.host else { return refuse(url) }
         if urlHost == host {
-            guard method == "GET", path.count == 2, path[0] == "photo" else { return notFound }
-            let asset = path[1].hasSuffix(".jpg") ? String(path[1].dropLast(4)) : path[1]
-            guard assets.contains(asset), let data = loadAsset(asset), !data.isEmpty else { return notFound }
+            guard method == "GET", let asset = asset(in: url), let data = loadAsset(asset), !data.isEmpty else { return notFound }
             return PreviewBackend.Reply(status: 200, body: data, contentType: "image/jpeg")
         }
         if urlHost == PreviewBackend.host { return nil }
