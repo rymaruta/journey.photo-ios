@@ -307,22 +307,17 @@ struct TripDayFlipPanHost: UIViewRepresentable {
             return isNavigationPop(otherGestureRecognizer)
         }
 
-        /// 積む画面の「戻る」の払い（端からの払いと、iOS 26 の画面のどこからでもの払い）。
-        /// どちらも積む画面（`UINavigationController`）の view に付いている
+        /// 一冊を閉じる払い。積む画面の「戻る」（端からの払いと、iOS 26 の画面のどこからでもの払い）に加えて、
+        /// **本を開く拡大の移り変わり（`TripBookOpening`・`navigationTransition(.zoom)`）の閉じる払い**も含める。
+        ///
+        /// 2026-11-23 判断（1.2.0 の統合・Mac run 1765 の `testCapturesTripBookOpened`「左へ払っても1日目の見出しが出ない」）:
+        /// 前は積む画面（`UINavigationController`）の view に付いた払いだけを待たせていた。一冊は棚から拡大で開くので、
+        /// 拡大の閉じる払いは一冊の頁の外側の view（拡大の入れ物・積んだ画面の view）に付き、こちらを待たずに指を取りうる。
+        /// **縦の送りの外側（祖先）の view に付いた払いは、どれもこちらが「始めない」と決まってから動かす**。
+        /// こちらが始めるのは横に払い、その向きにめくる日があるときだけなので、下へ引いて閉じる・端から戻る指はそのまま届く
         private func isNavigationPop(_ other: UIGestureRecognizer) -> Bool {
-            guard other is UIPanGestureRecognizer, let navigationView = navigationController?.view else { return false }
-            return other.view === navigationView
-        }
-
-        private var navigationController: UINavigationController? {
-            var responder: UIResponder? = host
-            while let current = responder {
-                if let controller = current as? UIViewController, let navigation = controller.navigationController {
-                    return navigation
-                }
-                responder = current.next
-            }
-            return nil
+            guard other is UIPanGestureRecognizer, let host, let view = other.view, view !== host else { return false }
+            return host.isDescendant(of: view)
         }
     }
 }

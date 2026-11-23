@@ -154,6 +154,16 @@ enum TrunkHome {
     static var spinTitle: String { L("回して見る", "Turn it") }
     static var spinLabel: String { L("トランクを回して見る", "Pick up and turn your trunk") }
 
+    /// 「回して見る」の見た目の高さ（丸い面）と、当たりを上下へ広げる余白（片側）。
+    ///
+    /// 2026-11-23 判断（1.2.0 の統合・Mac run 1765 の `testCapturesTrunkHomeStates`）: 前は 32 ＋ 6 × 2 で当たりがちょうど 44 だった。
+    /// トランクの絵の右下に重ねて置くので位置が端数になり、画面の上で測ると 43.99999999999994 と 44 を割った。
+    /// **当たりは 44 ちょうどにせず、端数で割れない分（片側 1）を足して 46 にする**。見た目の面は 32 のまま
+    static let spinChipFace: Double = 32
+    static let spinChipTapInset: Double = 7
+    /// 当たりの高さ（面の高さ ＋ 上下の余白）
+    static var spinChipTapHeight: Double { spinChipFace + spinChipTapInset * 2 }
+
     /// 初めて開いたときだけ揺らして光らせた印（**端末に1回だけ**・人ごとではない。退会で消す物を増やさない）
     static let introKey = "trunk.homeIntroShown"
 

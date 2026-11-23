@@ -322,6 +322,12 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertTrue(flip.contains("UIPanGestureRecognizer"))
         XCTAssertTrue(flip.contains("otherGestureRecognizer === host?.panGestureRecognizer"), "縦の送りが先に動く")
         XCTAssertTrue(flip.contains("return isNavigationPop(otherGestureRecognizer)"), "「戻る」の払いが先に動く")
+        // 本を開く拡大（`navigationTransition(.zoom)`）の閉じる払いも待たせる: 積む画面の view だけでなく、縦の送りの祖先の view に
+        // 付いた払いはどれも（Mac run 1765 の `testCapturesTripBookOpened`「左へ払っても日がめくれない」）
+        let pop = try XCTUnwrap(flip.range(of: "private func isNavigationPop(_ other: UIGestureRecognizer) -> Bool {"))
+        let popBody = String(flip[pop.upperBound...].prefix(300))
+        XCTAssertTrue(popBody.contains("host.isDescendant(of: view)"), "拡大の閉じる払いが日めくりより先に指を取る")
+        XCTAssertFalse(popBody.contains("navigationController?.view"), "積む画面の view の払いしか待たせていない")
         XCTAssertTrue(flip.contains("guard !reduceMotion else {"), "動きを減らす設定でも動かしている")
         // 読み上げの「次の日」「前の日」は見出し（読み上げで止まる要素）に付ける
         let header = try XCTUnwrap(flip.range(of: "private struct TripDayHeader: ViewModifier {"))
@@ -409,6 +415,24 @@ final class TripBookshelfTests: XCTestCase {
         }
         XCTAssertTrue(strip.contains("MyPageTrunkRow(ownerName: model.profile?.name)"))
         XCTAssertFalse(strip.contains("JPRowLabel"), "縦の行が残っている")
+    }
+
+    /// 🔴 大きな字（アクセシビリティの大きさ）では荷札を折り返して、全部を画面の中に並べる（Mac run 1765 の
+    /// `testCapturesTrunkLargeText`: 横に送る列では「旅のトランク」が画面の右の外に出て押せなかった）。ふつうの大きさは横に送る列のまま
+    func testToolStripWrapsAtAccessibilitySizes() throws {
+        XCTAssertTrue(TripTool.wrapsTags(isAccessibilitySize: true), "大きな字で荷札が横に送る列のまま（入口が画面の外に出る）")
+        XCTAssertFalse(TripTool.wrapsTags(isAccessibilitySize: false), "ふつうの字で折り返している")
+        let page = try source("Features/Profile/MyPageView.swift")
+        let card = try XCTUnwrap(page.range(of: "private var tripToolsCard: some View {"))
+        let tags = try XCTUnwrap(page.range(of: "private var tripToolTags: some View {"))
+        let body = String(page[card.upperBound..<tags.lowerBound])
+        let wrap = try XCTUnwrap(body.range(of: "if TripTool.wrapsTags(isAccessibilitySize: typeSize.isAccessibilitySize) {"))
+        let flow = try XCTUnwrap(body.range(of: "FlowLayout(spacing: TripToolTag.spacing"))
+        let scroll = try XCTUnwrap(body.range(of: "ScrollView(.horizontal, showsIndicators: false)"))
+        XCTAssertTrue(wrap.lowerBound < flow.lowerBound && flow.lowerBound < scroll.lowerBound, "大きな字の枝が折り返しになっていない")
+        // 荷札は1か所で書き、両方の並びで同じものを使う
+        XCTAssertEqual(body.components(separatedBy: "tripToolTags").count - 1, 2, "荷札の並びを両方の枝で使っていない")
+        XCTAssertTrue(page.contains("@Environment(\\.dynamicTypeSize) private var typeSize"))
     }
 
     /// タブは4つのまま（2026-11-23 owner「一旦3つのタブにするのは却下」）

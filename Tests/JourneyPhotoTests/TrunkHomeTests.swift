@@ -218,6 +218,18 @@ final class TrunkHomeTests: XCTestCase {
         XCTAssertFalse(TrunkHome.introKey.contains("userId"), "人ごとの印にしない（端末に1回）")
     }
 
+    // MARK: 「回して見る」の当たり
+
+    /// 当たりが 44 ちょうどだと、置く位置の端数で 43.99999999999994 と測られて 44 を割った（Mac run 1765）。
+    /// 端数で割れないよう 44 より 1 以上大きくし、画面はこの値で組む
+    func testSpinChipTapHeightClearsMinimumWithMargin() throws {
+        XCTAssertGreaterThanOrEqual(TrunkHome.spinChipTapHeight, 44 + 1, "「回して見る」の当たりが 44 ちょうど（端数で 44 を割る）")
+        XCTAssertEqual(TrunkHome.spinChipFace, 32, "見た目の面は 32 のまま")
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains(".padding(.vertical, CGFloat(TrunkHome.spinChipTapInset))"), "「回して見る」の当たりを決まりの値で広げていない")
+        XCTAssertTrue(main.contains("minHeight: CGFloat(TrunkHome.spinChipFace)"), "「回して見る」の面の高さを決まりの値で組んでいない")
+    }
+
     // MARK: 画面の組み（Linux では描けないので書き方で見る）
 
     func testScreenLayout() throws {

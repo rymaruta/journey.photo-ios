@@ -284,7 +284,8 @@ struct TrunkView: View {
         }
     }
 
-    /// 「回して見る」（見た目 32・当たり 44。黒の半透明の丸に白の字。初めて開いたときだけ真鍮の光が3回）
+    /// 「回して見る」（見た目 32・当たり 46。黒の半透明の丸に白の字。初めて開いたときだけ真鍮の光が3回）。
+    /// 当たりは 44 ちょうどにしない（置く位置の端数で 44 を割る・`TrunkHome.spinChipTapInset`）
     private var spinChip: some View {
         Button { showSpin = true } label: {
             HStack(spacing: 5) {
@@ -296,9 +297,9 @@ struct TrunkView: View {
             }
             // 丸いボタンの面（`jpCapsuleFace`）を通す。地はトランクの絵に重なるので黒の半透明
             .jpCapsuleFace(font: JPFont.caption, text: WebTheme.text, fill: WebTheme.card.opacity(0.82), border: WebTheme.line,
-                           fullWidth: false, minHeight: 32, textInset: 11)
+                           fullWidth: false, minHeight: CGFloat(TrunkHome.spinChipFace), textInset: 11)
             .shadow(color: WebTheme.accent.opacity(chipGlow ? 0.55 : 0), radius: chipGlow ? 8 : 0)
-            .padding(.vertical, 6)
+            .padding(.vertical, CGFloat(TrunkHome.spinChipTapInset))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

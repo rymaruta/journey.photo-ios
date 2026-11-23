@@ -318,6 +318,13 @@ enum TripTool: String, CaseIterable, Identifiable {
             }
         }
     }
+
+    /// 荷札を折り返して並べるか（横に送らない）。**アクセシビリティの大きさの字のときだけ**。
+    /// 2026-11-23 判断（Mac run 1765 の `testCapturesTrunkLargeText`）: 大きな字では荷札が伸び、横に送る列では
+    /// 3枚目の「旅のトランク」から先が画面の右の外に出て、送らないと見えず押せなかった。入口を隠さないよう、全部を画面の中に並べる
+    static func wrapsTags(isAccessibilitySize: Bool) -> Bool {
+        isAccessibilitySize
+    }
 }
 
 /// 開いた一冊で、日のページを左右でめくる（札 #714・2026-11-23 owner 決定）。

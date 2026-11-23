@@ -46,6 +46,8 @@ struct MyPageView: View {
     /// 中身の横の量の箱を、縦の送りの外に重ねた札（`pinnedTabRow`）と分け合う（ホームと同じ・#426）
     @State private var tabPager = ProfileTabPagerControl<ProfileTab>()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 文字の大きさの設定（旅の道具の荷札を、アクセシビリティの大きさでは折り返して並べる・`TripTool.wrapsTags`）
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
     /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
@@ -1244,57 +1246,77 @@ struct MyPageView: View {
     /// 2026-10-07 に縦の札の行で置いた入口（共同アルバム・旅行プラン・すれちがい帳・トランク）を、横に送る荷札の列に替えた。
     /// 旅の一冊の下にあると旅が増えるほど道具が下がった（約1.5画面）。**入口は増やさない**（同じ行き先を札にしただけ）。
     /// 並びは決まった順（`TripTool`）で、新しい道具は最後に足す。件数は真鍮の件数バッジ（トランクの貼っていないラベル）
+    @ViewBuilder
     private var tripToolsCard: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: TripToolTag.spacing) {
-                ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable, stampBookReady: true)) { tool in
-                    switch tool {
-                    case .plans:
-                        NavigationLink { TripPlansView() } label: {
-                            TripToolTag(title: tool.title)
-                        }
-                        .buttonStyle(TripToolTagStyle())
-                        .modifier(TripToolTapFeedback())
-                        .accessibilityIdentifier("trips.plans")
-                    case .albums:
-                        NavigationLink { AlbumsView() } label: {
-                            TripToolTag(title: tool.title)
-                        }
-                        .buttonStyle(TripToolTagStyle())
-                        .modifier(TripToolTapFeedback())
-                        .accessibilityIdentifier("trips.albums")
-                    case .trunk:
-                        // 旅のトランク（2026-10-17 owner 承認）。**口が読めたことのある人にだけ出す**（`TrunkAvailability`・`TripTool.shown`）。
-                        // 貼っていないラベルの枚数を件数バッジで出す。数を見張るのはこの札の中だけ
-                        MyPageTrunkRow(ownerName: model.profile?.name)
-                    case .stampBook:
-                        // 旅のスタンプ帳（札 #712）。荷札と最近の3つ・行き先は `StampBookToolTag`（`StampBookEntry` の1つの部品）。本人だけが見る帳面
-                        StampBookToolTag()
-                    case .passBook:
-                        // すれちがい帳（板 PassBook の戻り先がマイページ・2026-10-16）
-                        NavigationLink { PassBookView() } label: {
-                            TripToolTag(title: tool.title)
-                        }
-                        .buttonStyle(TripToolTagStyle())
-                        .modifier(TripToolTapFeedback())
-                        .accessibilityIdentifier("trips.passBook")
-                    }
+        if TripTool.wrapsTags(isAccessibilitySize: typeSize.isAccessibilitySize) {
+            // 2026-11-23 判断（1.2.0 の統合・Mac run 1765 の `testCapturesTrunkLargeText`）: 大きな字では荷札が伸び、
+            // 横に送る列では「旅のトランク」から先が画面の右の外に出て、送らないと見えず押せなかった（入口が隠れる）。
+            // アクセシビリティの大きさでは**折り返して、全部の荷札を画面の中に並べる**（横に送らない・右の端を溶かさない）
+            FlowLayout(spacing: TripToolTag.spacing, lineSpacing: TripToolTag.spacing) {
+                tripToolTags
+            }
+            .padding(.horizontal, ProfileV2.gutter)
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L("旅の道具", "Travel tools"))
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: TripToolTag.spacing) {
+                    tripToolTags
+                }
+                .padding(.leading, ProfileV2.gutter)
+                .padding(.trailing, TripToolTag.edgeFade)
+                .padding(.vertical, 2)
+            }
+            // 右の端は 18pt だけ黒へ溶かす（横に送れると分かる）。最後まで送ると札は溶けた所より左に来る
+            .mask {
+                HStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [Color.black, Color.black.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: TripToolTag.edgeFade)
                 }
             }
-            .padding(.leading, ProfileV2.gutter)
-            .padding(.trailing, TripToolTag.edgeFade)
-            .padding(.vertical, 2)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L("旅の道具", "Travel tools"))
         }
-        // 右の端は 18pt だけ黒へ溶かす（横に送れると分かる）。最後まで送ると札は溶けた所より左に来る
-        .mask {
-            HStack(spacing: 0) {
-                Color.black
-                LinearGradient(colors: [Color.black, Color.black.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: TripToolTag.edgeFade)
+    }
+
+    /// 荷札の並び（決まった順・`TripTool`）。横に送る列と、大きな字の折り返しで同じものを使う
+    @ViewBuilder
+    private var tripToolTags: some View {
+        ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable, stampBookReady: true)) { tool in
+            switch tool {
+            case .plans:
+                NavigationLink { TripPlansView() } label: {
+                    TripToolTag(title: tool.title)
+                }
+                .buttonStyle(TripToolTagStyle())
+                .modifier(TripToolTapFeedback())
+                .accessibilityIdentifier("trips.plans")
+            case .albums:
+                NavigationLink { AlbumsView() } label: {
+                    TripToolTag(title: tool.title)
+                }
+                .buttonStyle(TripToolTagStyle())
+                .modifier(TripToolTapFeedback())
+                .accessibilityIdentifier("trips.albums")
+            case .trunk:
+                // 旅のトランク（2026-10-17 owner 承認）。**口が読めたことのある人にだけ出す**（`TrunkAvailability`・`TripTool.shown`）。
+                // 貼っていないラベルの枚数を件数バッジで出す。数を見張るのはこの札の中だけ
+                MyPageTrunkRow(ownerName: model.profile?.name)
+            case .stampBook:
+                // 旅のスタンプ帳（札 #712）。荷札と最近の3つ・行き先は `StampBookToolTag`（`StampBookEntry` の1つの部品）。本人だけが見る帳面
+                StampBookToolTag()
+            case .passBook:
+                // すれちがい帳（板 PassBook の戻り先がマイページ・2026-10-16）
+                NavigationLink { PassBookView() } label: {
+                    TripToolTag(title: tool.title)
+                }
+                .buttonStyle(TripToolTagStyle())
+                .modifier(TripToolTapFeedback())
+                .accessibilityIdentifier("trips.passBook")
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(L("旅の道具", "Travel tools"))
     }
 
     /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
