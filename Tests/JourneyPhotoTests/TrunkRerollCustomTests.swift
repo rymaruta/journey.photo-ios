@@ -162,9 +162,14 @@ final class TrunkRerollCustomTests: XCTestCase {
     func testProgress() {
         XCTAssertEqual(TrunkCustomProgress(posts: 1, tickets: 0, every: 3).postsLeft, 2)
         XCTAssertEqual(TrunkCustomProgress(posts: 0, tickets: 0, every: 2).postsLeft, 2)
-        XCTAssertTrue(TrunkCustomProgress(posts: 0, tickets: 1, every: 3).justEarned)
-        XCTAssertFalse(TrunkCustomProgress(posts: 1, tickets: 1, every: 3).justEarned)
-        XCTAssertFalse(TrunkCustomProgress(posts: 0, tickets: 0, every: 3).justEarned)
+        XCTAssertTrue(TrunkCustomProgress(posts: 0, tickets: 1, every: 3).canMake)
+        // 使わずに次を投稿した（進み 1・回数 1）: 回数があるので作れる（確かめ役の指摘・前は「あと2回の投稿」と出た）
+        let kept = TrunkCustomProgress(posts: 1, tickets: 1, every: 3)
+        XCTAssertTrue(kept.canMake)
+        XCTAssertEqual(TrunkText.customProgressAccessibility(kept), TrunkText.customReady(tickets: 1))
+        XCTAssertFalse(TrunkCustomProgress(posts: 0, tickets: 0, every: 3).canMake)
+        XCTAssertEqual(TrunkText.customProgressAccessibility(TrunkCustomProgress(posts: 1, tickets: 0, every: 3)),
+                       L("好きなデザインで作れるまで、あと 2 回の投稿", "2 more posts until you can make your own design"))
         XCTAssertEqual(TrunkText.customPostsLeft(2), L("あと 2 回の投稿", "2 more posts"))
         XCTAssertEqual(TrunkText.customProgressTitle, L("好きなデザインで作れるまで", "Until you can make your own design"))
     }
@@ -230,6 +235,92 @@ final class TrunkRerollCustomTests: XCTestCase {
         XCTAssertEqual(model.state?.custom?.tickets, 0)
     }
 
+    /// 作り直しが届かなかった（503）あと、もう一度押すと**同じ n** を送る（サーバーは二度数えない）
+    @MainActor
+    func testRerollRetrySendsSameCount() async throws {
+        let model = TrunkViewModel(preview: nil)
+        model.bind(trunkService())
+        let rolled = label("a", seed: 777, extra: #","rr":1,"cs":[42,777]"#)
+        ScriptedProtocol.script = [
+            .init(match: "/reroll", status: 503, body: #"{"error":"x"}"#, once: true),
+            .init(match: "/reroll", status: 200, body: #"{"pocket":[\#(rolled)],"stuck":[],"custom":{"n":1,"t":0,"every":3}}"#),
+            .init(match: "/user/trunk", status: 200, body: #"{"pocket":[\#(label("a"))],"stuck":[],"custom":{"n":1,"t":0,"every":3}}"#),
+        ]
+        await model.load(offline: false)
+        let first = await model.reroll("a")
+        XCTAssertFalse(first)
+        XCTAssertFalse(model.lastWriteRefused, "届かなかったのを断りと数えた（「回数は減っていません」が出ない）")
+        XCTAssertEqual(model.state?.pocket.first?.seed, 42, "届かなかったのに図柄が替わった")
+        let second = await model.reroll("a")
+        XCTAssertTrue(second)
+        let bodies = try ScriptedProtocol.calls.filter { $0.path.hasSuffix("/reroll") }.map {
+            try XCTUnwrap($0.body.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })["n"] as? Int
+        }
+        XCTAssertEqual(bodies, [1, 1], "送り直しで回数を進めた")
+    }
+
+    /// 断られた（回数が合わない）ら、サーバーの今を読み直す。一言は残す
+    @MainActor
+    func testRerollRefusalReloads() async {
+        let model = TrunkViewModel(preview: nil)
+        model.bind(trunkService())
+        let fresh = label("a", seed: 9, extra: #","rr":2,"cs":[42,8,9]"#)
+        ScriptedProtocol.script = [
+            .init(match: "/reroll", status: 409, body: #"{"error":"x","code":"rerollOrder"}"#),
+            .init(match: "/user/trunk", status: 200, body: #"{"pocket":[\#(label("a"))],"stuck":[],"custom":{"n":1,"t":0,"every":3}}"#, once: true),
+            .init(match: "/user/trunk", status: 200,
+                  body: #"{"pocket":[\#(fresh)],"stuck":[],"custom":{"n":1,"t":0,"every":3}}"#),
+        ]
+        await model.load(offline: false)
+        let ok = await model.reroll("a")
+        XCTAssertFalse(ok)
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.method == "GET" }.count, 2, "断られたのに読み直していない")
+        XCTAssertEqual(model.state?.pocket.first?.rerolls, 2)
+        XCTAssertEqual(model.actionError, TrunkText.refusal(code: "rerollOrder", fallback: ""))
+    }
+
+    /// 候補を押して届かなかった: 図柄は替えず、一言（`actionError`）を出す
+    @MainActor
+    func testChooseFailureKeepsDesignAndSays() async {
+        let model = TrunkViewModel(preview: nil)
+        model.bind(trunkService())
+        let rolled = label("a", seed: 8, extra: #","rr":1,"cs":[42,8]"#)
+        ScriptedProtocol.script = [
+            .init(match: "/choose", status: 503, body: #"{"error":"x"}"#),
+            .init(match: "/user/trunk", status: 200,
+                  body: #"{"pocket":[\#(rolled)],"stuck":[],"custom":{"n":1,"t":0,"every":3}}"#),
+        ]
+        await model.load(offline: false)
+        let ok = await model.choose("a", seed: 42)
+        XCTAssertFalse(ok)
+        XCTAssertEqual(model.state?.pocket.first?.seed, 8, "届かなかったのに図柄を替えた")
+        XCTAssertNotNil(model.actionError, "届かなかったことを言っていない")
+    }
+
+    /// 何枚も届いたとき: 好きなデザインで1枚貼ったら次の1枚へ。最後なら閉じる
+    func testArrivalCursorMovesToNext() {
+        XCTAssertEqual(TrunkArrivalCursor.next(after: 0, count: 3), 1)
+        XCTAssertEqual(TrunkArrivalCursor.next(after: 1, count: 3), 2)
+        XCTAssertNil(TrunkArrivalCursor.next(after: 2, count: 3))
+        XCTAssertNil(TrunkArrivalCursor.next(after: 0, count: 1))
+        // 2枚目から先も、手持ちで作り直せる（届いた画面と同じ段）
+        let s = state(pocket: [plain("a"), plain("b")])
+        XCTAssertEqual(TrunkText.redoStep(s, label: s.pocket[1]), .ready(left: 3))
+    }
+
+    /// 読み上げは番号でなく名前（「形：切符」）。並びの全部に名前がある
+    func testOptionNamesAreSpoken() {
+        XCTAssertEqual(TrunkText.customOptionAccessibility(tab: TrunkText.customShapeTab, name: TrunkText.shapeName(.ticket)),
+                       L("形：切符", "Shape: Ticket"))
+        XCTAssertEqual(TrunkText.artName(.maple), L("もみじ", "Maple leaf"))
+        for art in TrunkLabelDesign.customArts { XCTAssertNotEqual(TrunkText.artName(art), art.rawValue, "\(art) に名前が無い") }
+        let palettes = (0..<TrunkLabelDesign.customPalettes.count).map(TrunkText.paletteName)
+        XCTAssertEqual(Set(palettes).count, TrunkLabelDesign.customPalettes.count, "色の名前が重なる")
+        XCTAssertEqual(Set(TrunkLabelDesign.customShapes.map(TrunkText.shapeName)).count, 10)
+        XCTAssertEqual(TrunkText.candidatesHint(rerolls: 0), L("作り直すと、ここに候補が並びます", "Redo and your options line up here"))
+        XCTAssertEqual(TrunkText.candidatesHint(rerolls: 2), L("押すと、前の図柄に戻せます", "Tap one to go back to an earlier design"))
+    }
+
     // MARK: 画面の言葉
 
     func testRefusalsSayWhatHappened() {
@@ -293,6 +384,8 @@ final class TrunkRerollCustomTests: XCTestCase {
                      TrunkText.redoOffline, TrunkText.redoFailed, TrunkText.redoAccessibility(left: 1),
                      TrunkText.candidateCaption(0), TrunkText.candidateCaption(3), TrunkText.candidateAccessibility(1),
                      TrunkText.candidateEmptyAccessibility(2), TrunkText.customProgressTitle, TrunkText.customPostsLeft(2),
+                     TrunkText.candidatesHint(rerolls: 0), TrunkText.candidatesHint(rerolls: 1),
+                     TrunkText.customOptionAccessibility(tab: "形", name: "切符"),
                      TrunkText.customReady(tickets: 1), TrunkText.customReady(tickets: 3), TrunkText.customTitle,
                      TrunkText.customThanks, TrunkText.customKeepTitle, TrunkText.customLaterNote, TrunkText.customFixedNote,
                      TrunkText.customFoilNote, TrunkText.customDoneTitle(sticks: true), TrunkText.customDoneTitle(sticks: false),

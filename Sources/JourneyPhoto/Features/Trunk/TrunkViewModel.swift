@@ -240,8 +240,19 @@ final class TrunkViewModel: ObservableObject {
         guard let current = state, current.supportsLabelReroll || preview != nil,
               let label = current.pocket.first(where: { $0.id == id }), label.custom == nil, label.rerollsLeft > 0 else { return false }
         let n = label.rerolls + 1
-        return await write({ TrunkLocal.reroll($0, id: id, seed: TrunkSample.rerollSeed(label, n: n)) },
-                           { try await $0.reroll(id, n: n) })
+        var refusedCode: String?
+        let done = await write({ TrunkLocal.reroll($0, id: id, seed: TrunkSample.rerollSeed(label, n: n)) },
+                               { try await $0.reroll(id, n: n) },
+                               refusal: { refusedCode = $0.code; return nil })
+        // 回数が合わない・使い切った（ほかの端末で作り直した・前の応答が届かなかった）と断られたら、サーバーの今を読み直す
+        // （2026-11-23 確かめ役の指摘）。届かなかっただけなら読み直さず、同じ `n` を送り直せる（サーバーは二度数えない）。
+        // 応答が届かないまま閉じたときは、サーバーで1回数えて種も替わっている——次に読んだときにその状態を映すだけ
+        if !done, let code = refusedCode, ["rerollOrder", "noRerollsLeft", "custom", "notFound"].contains(code) {
+            let message = actionError
+            await load(offline: false)
+            actionError = message
+        }
+        return done
     }
 
     /// 候補から選ぶ（押したらその場でサーバーへ・#706）。今の図柄と同じなら送らない

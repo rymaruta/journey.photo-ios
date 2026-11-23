@@ -139,7 +139,7 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – 電波なしで使える旅：地図、作例、光の時刻を端末に
 – Pro マークと Pro 限定の章
 – 特別な乗車券：真鍮、漆、革などの券面
-– 旅のトランクをもっと：特別なトランク6型、ラベルの図柄の作り直し月3回、手持ち150枚（無料は30枚）
+– 旅のトランクをもっと：特別なトランク6型、好きなデザインを2投稿ごとに、手持ち150枚（無料は30枚）
 – 月額500円、年額5,000円。無料の試用はありません
 – お支払いは購入の確定時に Apple ID に請求されます。期間が終わる24時間前までに解約しない限り、自動で更新されます。解約と管理は App Store のアカウント設定から行えます。ファミリー共有には対応していません
 – 作例を重ねて撮るカメラは、Pro でなくても使えます
@@ -215,7 +215,7 @@ JOURNEY PHOTO PRO (OPTIONAL, AUTO-RENEWABLE SUBSCRIPTION)
 - Offline trips
 - A Pro mark and Pro-only chapters
 - Special Pass ticket designs
-- More from your Travel trunk: 6 special trunks, 3 label redesigns a month, room for 150 labels (30 for free)
+- More from your Travel trunk: 6 special trunks, your own label design every 2 posts, room for 150 labels (30 for free)
 - 500 yen per month or 5,000 yen per year. No free trial. Payment is charged to your Apple ID at confirmation of purchase and renews automatically unless canceled at least 24 hours before the end of the period. Manage or cancel in your App Store account settings. Family Sharing is not supported
 - The composition-overlay camera is free for everyone
 Terms of Use: https://journey-photo.com/terms

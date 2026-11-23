@@ -40,6 +40,10 @@ struct LabelArrivedView: View {
     @State private var redoFailed = false
     /// 作り直しを頼んでいる最中（次の枠に回る印を出す）
     @State private var rolling = false
+    /// いま見ている1枚の番号（何枚も届いたとき、好きなデザインで1枚貼ったら次の1枚へ進む・#706）
+    @State private var current = 0
+    /// 好きなデザインで作って貼った分（閉じたあとの知らせと「取り消す」に入れる）
+    @State private var customStuck: [String] = []
     /// 祝いの動きの進み（写真 → ラベル → 一文）。動きを減らす設定では `shown` が最初から全部を出す
     @State private var step: ArrivalSequence.Step = .start
     /// ラベルが貼りついた瞬間に軽い触覚を 1 回鳴らすための数
@@ -53,9 +57,12 @@ struct LabelArrivedView: View {
     @EnvironmentObject private var connectivity: Connectivity
 
     /// 届いた枚数（何枚もなら「まとめて貼る」）
-    private var count: Int { batch.arrivals.count }
+    private var count: Int { remaining.count }
 
-    private var arrival: TrunkArrivals.Arrival { batch.first }
+    /// まだ貼っていない届いた分（いま見ている1枚から後ろ）
+    private var remaining: [TrunkArrivals.Arrival] { Array(batch.arrivals.dropFirst(min(current, batch.arrivals.count - 1))) }
+
+    private var arrival: TrunkArrivals.Arrival { remaining.first ?? batch.first }
     /// 届いた1枚。作り直し・候補を選ぶ・好きなデザインは手持ちの状態（サーバーの応答）にそのまま映る
     private var label: TrunkLabel {
         model.state?.pocket.first { $0.id == arrival.label.id }
@@ -63,13 +70,11 @@ struct LabelArrivedView: View {
             ?? arrival.label
     }
 
-    /// 作り直しの段（1枚だけ届いたとき・何枚もなら、いちばん上の1枚）
-    private var redoStep: TrunkText.RedoStep { TrunkText.redoStep(model.state, label: label) }
-
     /// この投稿で好きなデザインで作れるようになった（主ボタンが替わる）
     private var customOffer: Bool {
         guard let progress = model.state?.custom, model.state?.supportsLabelReroll == true else { return false }
-        return progress.justEarned && label.custom == nil && model.state?.pocket.contains(where: { $0.id == label.id }) == true
+        // 使える回数があれば出す（使わずに次を投稿して進みが 1 以上になっても・確かめ役の指摘 2026-11-23）
+        return progress.canMake && label.custom == nil && model.state?.pocket.contains(where: { $0.id == label.id }) == true
     }
 
     /// 写真があるときだけ、写真の札を出す
@@ -96,7 +101,10 @@ struct LabelArrivedView: View {
                     VStack(spacing: 0) {
                         heading
                         stage
-                        candidatesRow
+                        TrunkCandidatesRow(model: model, label: label, rolling: rolling, idPrefix: "trunk.arrived")
+                            .padding(.horizontal, 20)
+                            .padding(.top, 4)
+                            .padding(.bottom, 8)
                         factLine
                         chips
                         progress
@@ -120,10 +128,7 @@ struct LabelArrivedView: View {
             // 作ったらそのまま貼る（届いた画面も閉じる）。貼れなかったら届いた画面に戻る（手持ちに入っている）
             TrunkCustomView(model: model, labelId: arrival.label.id, sticks: true) { stuck in
                 guard stuck else { return }
-                TrunkArrivals.shared.noteStuckFromArrival(count: 1, left: 0) { [model, id = arrival.label.id] in
-                    await model.unstickAll([id]) == 1
-                }
-                dismiss()
+                finishCustom(arrival.label.id)
             }
         }
         // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（貼れなかったときの知らせ。`NameSideBadgeView` と同じ）
@@ -171,7 +176,7 @@ struct LabelArrivedView: View {
                     .scaleEffect(shown(.photo) ? 1 : 0.96)
             }
             // 何枚も届いたら、残りのラベルを後ろに重ねて見せる（2 枚まで・2026-11-12 判断・案の「3 枚届きました」）
-            ForEach(Array(batch.arrivals.dropFirst().prefix(2).enumerated()), id: \.offset) { i, other in
+            ForEach(Array(remaining.dropFirst().prefix(2).enumerated()), id: \.offset) { i, other in
                 TrunkLabelThumb(label: other.label, maxWidth: 200, maxHeight: 136, rot: i == 0 ? 8 : -12)
                     .offset(x: (photoURL == nil ? 0 : 38) + (i == 0 ? 56 : -56), y: (photoURL == nil ? -14 : 30))
                     .opacity(shown(.label) ? 0.9 : 0)
@@ -188,85 +193,6 @@ struct LabelArrivedView: View {
         .padding(.top, 16)
     }
 
-    // MARK: 作り直しの候補（#706）
-
-    /// 候補の列（最初の1枚と、作り直した1回目〜3回目の4つの枠）。作り直していなければ出さない
-    /// （何もしない人の画面は今までと同じ）。空いた枠は「あと何回作れるか」を形で見せる
-    @ViewBuilder
-    private var candidatesRow: some View {
-        if redoStep != .hidden, label.rerolls > 0 || rolling {
-            let choices = label.choices
-            HStack(spacing: 10) {
-                ForEach(0...TrunkLabel.rerollMax, id: \.self) { index in
-                    if index < choices.count {
-                        candidate(choices[index], index: index)
-                    } else {
-                        emptySlot(index, spinning: rolling && index == choices.count)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 4)
-            .padding(.bottom, 18)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L("図柄の候補", "Design options"))
-        }
-    }
-
-    private func candidate(_ seed: Int, index: Int) -> some View {
-        let on = seed == label.seed
-        return Button {
-            Task { await model.choose(label.id, seed: seed) }
-        } label: {
-            TrunkLabelThumb(label: label.withSeed(seed), maxWidth: 58, maxHeight: 44, rot: 0)
-                .frame(width: 72, height: 60)
-                .trunkCard(radius: 10)
-                .overlay {
-                    if on { RoundedRectangle(cornerRadius: 10).strokeBorder(WebTheme.accent, lineWidth: 2) }
-                }
-                .overlay(alignment: .bottom) {
-                    Text(TrunkText.candidateCaption(index))
-                        .font(JPFont.caption.weight(on ? .semibold : .regular))
-                        .foregroundStyle(on ? WebTheme.accent : TrunkStyle.faint)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .offset(y: 18)
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .disabled(model.busy)
-        .accessibilityLabel(TrunkText.candidateAccessibility(index))
-        .accessibilityAddTraits(on ? .isSelected : [])
-        .accessibilityIdentifier("trunk.arrived.candidate")
-    }
-
-    private func emptySlot(_ index: Int, spinning: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 10)
-            .strokeBorder(WebTheme.hairline, lineWidth: 1)
-            .frame(width: 72, height: 60)
-            .overlay {
-                if spinning {
-                    ProgressView().tint(WebTheme.accent)
-                } else {
-                    Text("\(index)")
-                        .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
-                        .foregroundStyle(TrunkStyle.faint)
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(TrunkText.candidateEmptyAccessibility(index))
-    }
-
-    /// 作り直す（何回目かを添えてサーバーへ）。届かなければボタンを「もう一度作り直す」にする
-    private func redo() async {
-        rolling = true
-        redoFailed = false
-        let done = await model.reroll(label.id)
-        rolling = false
-        redoFailed = !done
-    }
-
     // MARK: 好きなデザインで作るまでの進み（#706）
 
     /// 2行（「好きなデザインで作れるまで」／点と「あと N 回の投稿」）。作れる回数を持ちきっているか、この投稿で
@@ -274,7 +200,7 @@ struct LabelArrivedView: View {
     @ViewBuilder
     private var progress: some View {
         if let p = model.state?.custom {
-            let ready = p.justEarned || p.tickets >= TrunkCustomProgress.ticketsMax
+            let ready = p.canMake
             VStack(spacing: 4) {
                 if !ready {
                     Text(TrunkText.customProgressTitle)
@@ -454,14 +380,8 @@ struct LabelArrivedView: View {
                     .foregroundStyle(WebTheme.danger)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("trunk.arrived.offline")
-            } else if redoFailed, !model.lastWriteRefused {
-                // 作り直しが届かなかった（断りではない）: 同じ回を送り直すので、回数は減らない
-                Text(TrunkText.redoFailed)
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.danger)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("trunk.arrived.redoFailed")
-            } else if let error = model.actionError {
+            } else if let error = model.actionError, !(redoFailed && !model.lastWriteRefused) {
+                // 作り直しが届かなかったときの一言は作り直すボタンの上（`TrunkRedoButton`）
                 Text(error)
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.danger)
@@ -470,7 +390,8 @@ struct LabelArrivedView: View {
             if customOffer {
                 customActions
             } else {
-                redoButton
+                TrunkRedoButton(model: model, label: label, offline: connectivity.isOffline, rolling: $rolling,
+                                failed: $redoFailed, idPrefix: "trunk.arrived")
                 Button { Task { await stickAll() } } label: {
                     // 写真のある画面の主ボタンは白（板 05・2026-11-12 判断）
                     TrunkButtonFace(title: TrunkArrivalCopy.stickTitle(count: count), kind: .mainOnPhoto)
@@ -509,46 +430,6 @@ struct LabelArrivedView: View {
         .padding(.bottom, 28)
     }
 
-    /// 作り直すボタン（真鍮の線・44・#706）。使い切った・圏外は一言に替える。サーバーが対応していなければ出さない
-    @ViewBuilder
-    private var redoButton: some View {
-        switch redoStep {
-        case .hidden:
-            EmptyView()
-        case .usedUp:
-            Text(TrunkText.redoUsedUp)
-                .font(JPFont.footnote)
-                .foregroundStyle(TrunkStyle.faint)
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("trunk.arrived.redoUsedUp")
-        case .ready(let left):
-            if connectivity.isOffline {
-                Text(TrunkText.redoOffline)
-                    .font(JPFont.footnote)
-                    .foregroundStyle(TrunkStyle.faint)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("trunk.arrived.redoOffline")
-            }
-            Button { Task { await redo() } } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "dice")
-                        .font(.callout)
-                        .accessibilityHidden(true)
-                    Text(TrunkText.redoTitle(left: left, again: redoFailed))
-                }
-                .jpCapsuleFace(font: .subheadline.weight(.semibold), text: WebTheme.accent, fill: Color.clear,
-                               border: WebTheme.accent.opacity(0.55), fullWidth: true,
-                               minHeight: Double(JPHeight.secondaryButton), textInset: nil)
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(model.busy || rolling || connectivity.isOffline)
-            .opacity(connectivity.isOffline ? 0.4 : 1)
-            .accessibilityLabel(TrunkText.redoAccessibility(left: left))
-            .accessibilityIdentifier("trunk.arrived.reroll")
-        }
-    }
-
     /// 作れるようになった投稿の主ボタンと副（「好きなデザインで作る」「このまま貼る」・#706）
     @ViewBuilder
     private var customActions: some View {
@@ -575,19 +456,44 @@ struct LabelArrivedView: View {
     /// まだ読めていなければ読んでから貼る（`stickEnsuringLoaded`）。電波が無くて貼れなければ手持ちにあると言う
     private func stickAll() async {
         offlineFailed = false
-        let ids = batch.arrivals.map(\.label.id)
+        let ids = remaining.map(\.label.id)
         guard await model.stickEnsuringLoaded(ids[0], offline: connectivity.isOffline) else {
             offlineFailed = connectivity.isOffline || model.phase == .offline
             return
         }
         let rest = await model.stickAll(Array(ids.dropFirst()))
-        let stuck = [ids[0]] + rest
+        let stuck = customStuck + [ids[0]] + rest
         // 知らせは閉じ切ってから全体で1つだけ（ここで出すと、閉じる間に届いた画面と全体で2つ見える）
         // 途中で貼れなかった分は手持ちに残る（閉じたあとの知らせで枚数を言う）。取り消しは戻せたかを返す
-        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: ids.count - stuck.count) { [model] in
+        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: ids.count + customStuck.count - stuck.count) { [model] in
             await model.unstickAll(stuck) == stuck.count
         }
         dismiss()
+    }
+
+    /// 好きなデザインで1枚作って貼った（#706）。**残りがあれば閉じずに次の1枚へ**（2枚目から先も作り直し・好きなデザインを
+    /// 使えるように・確かめ役の指摘 2026-11-23）。最後の1枚なら閉じて、貼った全部を知らせる
+    private func finishCustom(_ id: String) {
+        customStuck.append(id)
+        let next = TrunkArrivalCursor.next(after: current, count: batch.arrivals.count)
+        guard let next else {
+            let stuck = customStuck
+            TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: 0) { [model] in
+                await model.unstickAll(stuck) == stuck.count
+            }
+            dismiss()
+            return
+        }
+        current = next
+        redoFailed = false
+        rolling = false
+    }
+}
+
+/// 届いた画面の「いま見ている1枚」の進め方（何枚も届いたとき・#706）。次の番号、最後なら nil
+enum TrunkArrivalCursor {
+    static func next(after current: Int, count: Int) -> Int? {
+        current + 1 < count ? current + 1 : nil
     }
 }
 

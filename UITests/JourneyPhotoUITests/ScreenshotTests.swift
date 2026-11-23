@@ -6439,7 +6439,16 @@ final class ScreenshotTests: JPUITestCase {
             XCTAssertTrue(button.exists, "\(id) が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
         }
-        XCTAssertFalse(app.buttons["trunk.pocket.reroll"].firstMatch.exists, "手持ちに Pro の作り直しが残っている")
+        // 回数が残っているラベルは手持ちからも作り直せる（届いた画面と同じ部品・確かめ役の指摘 2026-11-23）
+        let pocketReroll = app.buttons["trunk.pocket.reroll"].firstMatch
+        XCTAssertTrue(pocketReroll.exists, "手持ちで作り直せない")
+        XCTAssertGreaterThanOrEqual(pocketReroll.frame.height, 44, "手持ちの「作り直す」が 44pt 未満")
+        if pocketReroll.isHittable {
+            pocketReroll.tap()
+            Thread.sleep(forTimeInterval: 1)
+            XCTAssertEqual(app.buttons.matching(identifier: "trunk.pocket.candidate").count, 2, "手持ちで作り直して候補が増えない")
+            shoot(app, "92d-手持ちのラベル（作り直した）")
+        }
         XCTAssertFalse(app.buttons["trunk.pocket.custom"].firstMatch.exists, "作れる回数が無いのに「好きなデザインで作る」が出ている")
         goBack(app)
         Thread.sleep(forTimeInterval: 1)
@@ -6552,8 +6561,9 @@ final class ScreenshotTests: JPUITestCase {
         }
         // 進み具合の2行（#706）
         XCTAssertTrue(app.descendants(matching: .any)["trunk.arrived.progress"].firstMatch.exists, "進み具合が出ていない")
-        // 何もしなければ候補の列は出さない（今までと同じ画面）
-        XCTAssertFalse(app.buttons["trunk.arrived.candidate"].firstMatch.exists, "作り直す前から候補の列が出ている")
+        // 作り直す前は「最初」の1枚と空いた枠3つ、下に「作り直すと、ここに候補が並びます」
+        XCTAssertEqual(app.buttons.matching(identifier: "trunk.arrived.candidate").count, 1, "作り直す前の候補が「最初」の1枚でない")
+        XCTAssertTrue(app.staticTexts["trunk.arrived.candidatesHint"].firstMatch.exists, "候補の列の下の一行が無い")
         guard keep.isHittable else { return XCTFail("「あとで貼る（手持ちへ）」を押せない") }
         keep.tap()
         let gone = NSPredicate(format: "exists == false")

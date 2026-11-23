@@ -15,6 +15,10 @@ struct TrunkPocketView: View {
     @State private var confirmDelete = false
     /// 好きなデザインで作るラベル（#706）
     @State private var customTarget: TrunkLabel?
+    /// 作り直しの最中・届かなかった（届いた画面と同じ部品 `TrunkRedoButton`・#706）
+    @State private var rolling = false
+    @State private var redoFailed = false
+    @EnvironmentObject private var connectivity: Connectivity
     @State private var showPaywall = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
@@ -28,6 +32,8 @@ struct TrunkPocketView: View {
             }
         }
         .webScreen()
+        // 選ぶラベルが替わったら、前のラベルの「届かなかった」を持ち越さない
+        .onChange(of: selectedId) { _, _ in redoFailed = false }
         .navigationTitle(L("手持ちのラベル", "Label pocket"))
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(L("このラベルを削除しますか？", "Delete this label?"), isPresented: $confirmDelete,
@@ -73,8 +79,8 @@ struct TrunkPocketView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            // 下の帯の高さぶん空ける
-            .padding(.bottom, state.pocket.isEmpty ? 24 : 150)
+            // 下の帯の高さぶん空ける（作り直しの列が出ている間は、その高さも）
+            .padding(.bottom, state.pocket.isEmpty ? 24 : (redoShown(state) ? 330 : 150))
         }
         .overlay(alignment: .bottom) {
             if !state.pocket.isEmpty { actionBar(state) }
@@ -222,10 +228,22 @@ struct TrunkPocketView: View {
         .accessibilityIdentifier("trunk.pocket.delete")
     }
 
-    /// 下の帯（選んでいるラベル・貼る・好きなデザインで作る・削除）
+    /// 選んでいるラベルを作り直せるか（2026-11-23 確かめ役の指摘: 何枚も一緒に届いた2枚目から先も、手持ちから作り直せるように）
+    private func redoShown(_ state: TrunkState) -> Bool {
+        guard let selected = state.pocket.first(where: { $0.id == selectedId }) else { return false }
+        return TrunkText.redoStep(state, label: selected) != .hidden
+    }
+
+    /// 下の帯（選んでいるラベル・作り直しの列・貼る・好きなデザインで作る・削除）
     private func actionBar(_ state: TrunkState) -> some View {
         let selected = state.pocket.first { $0.id == selectedId }
         return VStack(spacing: 10) {
+            // 作り直し（#706）: 届いた画面と同じ候補の列とボタン。回数が残っているラベルだけ
+            if let selected, redoShown(state) {
+                TrunkCandidatesRow(model: model, label: selected, rolling: rolling, idPrefix: "trunk.pocket")
+                TrunkRedoButton(model: model, label: selected, offline: connectivity.isOffline, rolling: $rolling,
+                                failed: $redoFailed, idPrefix: "trunk.pocket")
+            }
             Text(selected.map { L("\(TrunkLabelDesign.caption($0)) を選んでいます", "\(TrunkLabelDesign.caption($0)) selected") }
                  ?? L("ラベルを選んでください", "Choose a label"))
                 .font(JPFont.footnote)

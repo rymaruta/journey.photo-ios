@@ -135,6 +135,15 @@ struct TrunkCustomView: View {
         }
     }
 
+    /// 札の名前（読み上げ・番号ではなく名前で言う）
+    private func name(_ index: Int) -> String {
+        switch tab {
+        case .shape: return TrunkText.shapeName(TrunkLabelDesign.customShapes[index])
+        case .palette: return TrunkText.paletteName(index)
+        case .art: return TrunkText.artName(TrunkLabelDesign.customArts[index])
+        }
+    }
+
     /// 選んだ形・色・絵を当てた組
     private func applying(_ index: Int, to c: TrunkLabelCustom) -> TrunkLabelCustom {
         switch tab {
@@ -188,7 +197,7 @@ struct TrunkCustomView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(TrunkText.customOptionAccessibility(tab: title(tab), index: index))
+        .accessibilityLabel(TrunkText.customOptionAccessibility(tab: title(tab), name: name(index)))
         .accessibilityAddTraits(on ? .isSelected : [])
         .accessibilityIdentifier("trunk.custom.option")
     }

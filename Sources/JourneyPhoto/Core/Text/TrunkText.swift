@@ -97,6 +97,12 @@ enum TrunkText {
         index == 0 ? L("最初の図柄", "First design") : L("\(index)回目の図柄", "Redo \(index) design")
     }
 
+    /// 候補の列の下の一行（作る前: 何が起きるか。作ったあと: 押すと戻せること）
+    static func candidatesHint(rerolls: Int) -> String {
+        rerolls > 0 ? L("押すと、前の図柄に戻せます", "Tap one to go back to an earlier design")
+                    : L("作り直すと、ここに候補が並びます", "Redo and your options line up here")
+    }
+
     /// 空いている枠の読み上げ（まだ作っていない回）
     static func candidateEmptyAccessibility(_ index: Int) -> String {
         L("\(index)回目はまだ作っていません", "Redo \(index) not made yet")
@@ -120,7 +126,7 @@ enum TrunkText {
 
     /// 進み具合の読み上げ
     static func customProgressAccessibility(_ p: TrunkCustomProgress) -> String {
-        p.tickets >= TrunkCustomProgress.ticketsMax || p.justEarned
+        p.canMake
             ? customReady(tickets: p.tickets)
             : L("好きなデザインで作れるまで、あと \(p.postsLeft) 回の投稿", "\(p.postsLeft) more posts until you can make your own design")
     }
@@ -159,8 +165,54 @@ enum TrunkText {
     /// 手持ちの帯のボタン
     static var customPocketTitle: String { L("好きなデザインで作る", "Make your design") }
 
-    /// 形・色・絵の札の読み上げ（「形 3」）
-    static func customOptionAccessibility(tab: String, index: Int) -> String { L("\(tab) \(index + 1)", "\(tab) \(index + 1)") }
+    /// 形・色・絵の札の読み上げ（「形：切符」「絵：もみじ」）。番号では言わない（2026-11-23 確かめ役の指摘）
+    static func customOptionAccessibility(tab: String, name: String) -> String { L("\(tab)：\(name)", "\(tab): \(name)") }
+
+    /// 形の名前（`TrunkLabelDesign.customShapes` の並び）
+    static func shapeName(_ shape: TrunkLabelShape) -> String {
+        switch shape {
+        case .oval: return L("楕円", "Oval")
+        case .circle: return L("円", "Circle")
+        case .rect: return L("四角", "Rectangle")
+        case .ticket: return L("切符", "Ticket")
+        case .shield: return L("盾", "Shield")
+        case .diamond: return L("ひし形", "Diamond")
+        case .hexagon: return L("六角形", "Hexagon")
+        case .octagon: return L("八角形", "Octagon")
+        case .banner: return L("旗", "Banner")
+        case .burst: return L("星形", "Starburst")
+        }
+    }
+
+    /// 色の組の名前（`TrunkLabelDesign.customPalettes` の並び・地の色で言う）
+    static func paletteName(_ index: Int) -> String {
+        let names: [(String, String)] = [
+            ("生成り", "Cream"), ("赤茶", "Rust"), ("藤色", "Wisteria"), ("若葉", "Leaf green"), ("水色", "Pale blue"),
+            ("橙", "Orange"), ("紺", "Navy"), ("夜空", "Night sky"), ("深緑", "Deep green"), ("えんじ", "Crimson"),
+            ("金茶", "Golden brown"), ("薄藍", "Pale indigo"),
+        ]
+        guard names.indices.contains(index) else { return L("色 \(index + 1)", "Color \(index + 1)") }
+        return L(names[index].0, names[index].1)
+    }
+
+    /// 絵の名前（`TrunkLabelDesign.customArts` に入る絵）
+    static func artName(_ art: TrunkLabelArt) -> String {
+        switch art {
+        case .fuji: return L("富士山", "Mt. Fuji")
+        case .pagoda: return L("塔", "Pagoda")
+        case .torii: return L("鳥居", "Torii gate")
+        case .sakura: return L("桜", "Cherry blossom")
+        case .maple: return L("もみじ", "Maple leaf")
+        case .wave: return L("波", "Wave")
+        case .sun: return L("太陽", "Sun")
+        case .moon: return L("月", "Moon")
+        case .ship: return L("船", "Ship")
+        case .train: return L("汽車", "Train")
+        case .lighthouse: return L("灯台", "Lighthouse")
+        case .cloud: return L("雲", "Cloud")
+        default: return art.rawValue
+        }
+    }
 
     /// 作り直しの断り（サーバーの `code`）を画面の言葉に
     static func refusal(code: String?, fallback: String) -> String {
