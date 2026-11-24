@@ -29,7 +29,7 @@ enum TripBookshelf {
         /// 年と月（撮った土地の暦）
         let year: Int
         let month: Int
-        /// 背の地の色（写真の代表色を暗くしたもの・`clothColor`）
+        /// 背の地の色（撮った月の伝統色・`clothColor`）
         let cloth: UInt32
         /// 端末の旅の地名（開いた一冊に渡す・`DeviceTripBookView`）。投稿した旅は nil
         var name: String? = nil
@@ -274,7 +274,7 @@ enum TripBookshelf {
         return Book(source: .posted(trip), title: TripBook.title(of: trip), start: trip.start,
                     photoCount: trip.photos.count, days: trip.days, isPrivate: trip.isPrivate,
                     year: parts.year ?? 0, month: parts.month ?? 1,
-                    cloth: clothColor(hex: trip.cover?.dominantColor, seed: trip.id),
+                    cloth: clothColor(month: parts.month ?? 1),
                     prefecture: spinePrefecture(of: trip, resolver: resolver),
                     country: spineCountry(trip.photos.map(\.location) + [trip.place]))
     }
@@ -288,7 +288,7 @@ enum TripBookshelf {
         return Book(source: .device(trip), title: DeviceTrips.title(of: trip, name: name), start: trip.start,
                     photoCount: trip.shots.count, days: LibraryTrips.calendarDays(trip), isPrivate: false,
                     year: parts.year ?? 0, month: parts.month ?? 1,
-                    cloth: clothColor(hex: nil, seed: trip.id), name: name,
+                    cloth: clothColor(month: parts.month ?? 1), name: name,
                     prefecture: spinePrefecture(of: trip, name: name, resolver: resolver),
                     country: spineCountry([name]))
     }
@@ -386,32 +386,30 @@ enum TripBookshelf {
 
     // MARK: - 背の地の色
 
-    /// 写真の色が無いときの布の色（案の頁の見本の8色。どれも黒地の上で白い字が読める暗さ）
-    static let cloths: [UInt32] = [0x26301F, 0x3F2620, 0x333C42, 0x20243A, 0x2C3A23, 0x4A3D2A, 0x3E242B, 0x1B3444]
-    /// 写真の色を暗くするときの、いちばん明るい色の明るさ（白い字との差を保つ）
-    static let clothBrightness = 0.30
+    /// 背の布の色。撮った月（撮った土地の暦）の日本の伝統色を1か月に1色（1月が先頭）。
+    ///
+    /// 2026-11-24 owner「Bにして」（案の頁「旅の本棚の色」の案B）。前の決め方（写真の代表色を暗くする）では、
+    /// 灰の写真が多いと棚が灰とオリーブばかりになった（TestFlight 1.2.1 の実機「色寂しい」）。
+    /// 投稿した旅も端末の中だけの旅も、同じ表から引く。
+    ///
+    /// 色の名と値（名は NIPPON COLORS の伝統色。白い県名が読めない明るい色は、色みを保って暗くした後の値）:
+    /// 1月 鉄紺 #261E47、2月 葡萄 #6D2E5B、3月 蘇芳 #8E354A、4月 桜鼠 #71605E（元 #B19693 を暗く）、
+    /// 5月 常磐 #187438（元 #1B813E）、6月 青碧 #20706E（元 #268785）、7月 藍 #0D5661、8月 瑠璃 #005CAF、
+    /// 9月 菜種油 #736327（元 #A28C37）、10月 柿 #9C4F31（元 #ED784A）、11月 韓紅 #D0104C、12月 江戸紫 #77428D。
+    ///
+    /// 2026-11-24 判断（9〜11月の選び直し）: 案Bのままだと 9月 弁柄・10月 柿・11月 栗梅が、暗くすると
+    /// ほぼ同じ赤茶になる（OKLab の差 0.005〜0.039。10月 柿 #9C4F31 と 9月 弁柄 #9A5034 はほぼ同じ色）。
+    /// 9月を実りの黄みの菜種油、11月を紅葉の赤の韓紅に替え、10月の柿（橙の茶）を間に置いた。
+    /// これで隣り合う月どうしと 9〜11月のどの組も OKLab の差が 0.08 以上になる（いちばん近いのは 2月と3月の 0.081）。
+    /// 白い県名とのコントラストは、布のいちばん明るい所（`BookCloth` の白 7% が重なる所）で 5.0:1 以上
+    /// （決まりの 4.5:1 を超える）。`TripBookshelfTests.testClothIsTheMonthTraditionalColor` ほか
+    static let cloths: [UInt32] = [0x261E47, 0x6D2E5B, 0x8E354A, 0x71605E, 0x187438, 0x20706E,
+                                   0x0D5661, 0x005CAF, 0x736327, 0x9C4F31, 0xD0104C, 0x77428D]
 
-    /// 背の地の色。写真の代表色（`#rrggbb`）の色みを残して暗くする。無ければ id で決まる布の色
-    static func clothColor(hex: String?, seed: String) -> UInt32 {
-        if let rgb = parseHex(hex) {
-            let r = Double((rgb >> 16) & 0xFF), g = Double((rgb >> 8) & 0xFF), b = Double(rgb & 0xFF)
-            let top = max(r, g, b)
-            if top > 0 {
-                let k = clothBrightness * 255 / top
-                func c(_ v: Double) -> UInt32 { UInt32(min(255, max(0, (v * k).rounded()))) }
-                return (c(r) << 16) | (c(g) << 8) | c(b)
-            }
-        }
-        // 文字の和で選ぶ（`hashValue` は起動ごとに変わる）
-        let sum = seed.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
-        return cloths[sum % cloths.count]
-    }
-
-    private static func parseHex(_ hex: String?) -> UInt32? {
-        guard var text = hex?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
-        if text.hasPrefix("#") { text.removeFirst() }
-        guard text.count == 6 else { return nil }
-        return UInt32(text, radix: 16)
+    /// 背の地の色。撮った月（1〜12）の伝統色。範囲の外の月は 12 で回す
+    static func clothColor(month: Int) -> UInt32 {
+        let index = ((month - 1) % cloths.count + cloths.count) % cloths.count
+        return cloths[index]
     }
 }
 
