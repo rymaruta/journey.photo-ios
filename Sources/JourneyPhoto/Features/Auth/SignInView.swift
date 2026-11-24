@@ -223,9 +223,7 @@ struct SignInView: View {
             }
             .clipped()
             .overlay {
-                LinearGradient(stops: [.init(color: Color.black.opacity(0.2), location: 0),
-                                       .init(color: Color.black.opacity(0.4), location: 0.4),
-                                       .init(color: Color.black, location: 0.92)],
+                LinearGradient(stops: SignInLayout.fadeStops.map { .init(color: Color.black.opacity($0.opacity), location: $0.location) },
                                startPoint: .top, endPoint: .bottom)
             }
             .accessibilityHidden(true)
@@ -258,16 +256,20 @@ struct SignInView: View {
     @ViewBuilder
     private var brand: some View {
         if metrics.tagline {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: SignInLayout.brandGap) {
                 AppLogo(size: .hero)
                     .accessibilityAddTraits(.isHeader)
                 Text(Labels.Brand.tagline)
                     .font(JPFont.rowTitle)
-                    .foregroundStyle(WebTheme.muted2)
+                    // 写真が下まで見えるようにしたので、一文は写真の上＝白（灰は写真の上で読めない）
+                    .foregroundStyle(WebTheme.foreground.opacity(0.9))
             }
+            // 写真の上でも読めるよう、字の周りだけ薄く沈める
+            .shadow(color: Color.black.opacity(SignInLayout.brandShadowOpacity), radius: 6, y: 1)
         } else {
             AppLogo(size: .header)
                 .accessibilityAddTraits(.isHeader)
+                .shadow(color: Color.black.opacity(SignInLayout.brandShadowOpacity), radius: 6, y: 1)
         }
     }
 
@@ -456,6 +458,9 @@ struct SignInView: View {
                 // 送信中は押させない（あとから返った答えで画面が引き戻される）
                 .disabled(auth.isWorking)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                // 当たりは 44pt のまま、見た目の間だけ詰める（板: 欄の下に margin-top -6）。
+                // 詰めないと欄と主ボタンの間が 29pt ずつ空き、ほかの間（9〜17pt）の倍近くになって主ボタンが離れて見えた（2026-11-24 実測）
+                .padding(.vertical, -SignInLayout.forgotPull)
             }
 
             // 主ボタン（カプセル・墨の字）。**2026-10-14 判断: 白**——CLAUDE.md の owner の好み
@@ -1400,6 +1405,16 @@ enum SignInLayout {
     /// 写真の帯の高さ（板 v2: 380）と、本文がそこへ食い込む量（ワードマークは上から 250）
     static let headerHeight: CGFloat = 380
     static let contentOverlap: CGFloat = 130
+    /// 写真の溶け（2026-11-24 owner「写真の下の方がフェードアウトしていて少し悲しい」）。
+    /// 板 v2 は 上 20% → 40% で 40% → 92% で黒 だが、ロゴの下で写真がほぼ消えていた。
+    /// 写真が下まで見えるよう、暗さを浅くし、黒になるのは帯の下端だけにする（ロゴは影で読ませる）
+    static let fadeStops: [(opacity: Double, location: CGFloat)] = [(0.10, 0), (0.22, 0.5), (0.62, 0.82), (1.0, 1.0)]
+    /// ロゴと一文の下に敷く影の濃さ
+    static let brandShadowOpacity: Double = 0.55
+    /// ロゴと一文の間（行の高さが乗るので、前の 10 は見た目で約 26pt 空いていた）
+    static let brandGap: CGFloat = 4
+    /// 「パスワードを忘れた」の上下を詰める量（当たりの 44pt は残す）
+    static let forgotPull: CGFloat = 8
     /// 下の段の下に残す余白（1画面の下端にかからない）
     static let bottomMargin: CGFloat = JPSpace.xs
     /// ロゴの下の余白（上の段の中）、上の余白
