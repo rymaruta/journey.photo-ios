@@ -6330,9 +6330,10 @@ final class ScreenshotTests: JPUITestCase {
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "102i2-サインインの方法（確かめ）")
             confirm.tap()
-            let gone = NSPredicate(format: "exists == false")
-            expectation(for: gone, evaluatedWith: app.buttons["signinMethods.remove.apple"].firstMatch)
-            waitForExpectations(timeout: 10)
+            // `waitForExpectations` は、起動の道具が `waitGone` で待ち終えた見張り（legal.agree）も
+            // もう一度待とうとして落ちる（run 1772・API violation）。待つのはこの1つだけにする
+            XCTAssertTrue(waitGone(app.buttons["signinMethods.remove.apple"].firstMatch, timeout: 10),
+                          "解除したのに Apple の「解除」が残っている")
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "102i3-サインインの方法（解除した後）")
             app.terminate()
