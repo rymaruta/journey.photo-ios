@@ -447,16 +447,21 @@ struct GalleryView: View {
     /// UI テストのときだけ、1本の並びの数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）。
     /// 読んだページの数・上の段の数・並びの数・続きの目印があるか・新着の最初の札が上から何枚目か（無ければ -1）・
     /// 新着でいちばん新しい「自分以外の人」の写真の札が上から何枚目か（`newestOther`・無ければ -1）・中身の上端（`top`）
-    private func feedProbeText(_ rows: HomeFeedPageMemo.Rows, latest: [Photo]) -> String {
+    private func feedProbeText(_ rows: HomeFeedPageMemo.Rows, latest: [Photo], top: CGFloat) -> String {
         "pages=\(model.loadedPageCount) following=\(rows.following.count) main=\(rows.lead.count + rows.rest.count)"
             + " more=\(rows.truncated || model.hasMorePages) firstLatest=\(rows.firstLatestTile ?? -1)"
             + " newestOther=\(HomeFeedPageMemo.newestOtherTile(rows, latest: latest, viewerId: auth.userId) ?? -1)"
-            + " top=\(String(format: "%.2f", Double(feedProbeTop))) topCardsAway=\(topCardsAway)"
+            + " top=\(String(format: "%.2f", Double(top))) topCardsAway=\(topCardsAway)"
             + " " + HomeFeedPageMemo.freshProbe(rows, now: model.freshClock)
     }
 
-    /// UI テストのときだけ: 中身の上端（`FeedTopProbe`）
-    @State private var feedProbeTop: CGFloat = 0
+    /// UI テストのときだけ: 中身の上端（`FeedTopProbe`）。
+    ///
+    /// 2026-11-24 判断（札 #594）: **ホームの `@State` に持たない。** 送るたびに書くので、Mac run 1779 の「ホームを速く送る」の段で
+    /// ホームの body が 275 回（`chg.GalleryView.__feedProbeTop` 270 回）・マスが 5,521 回評価し直され、利用者の端末では起きない重さを
+    /// 測っていた。入れ物は見張らない `@State`（`ObservableObject` でも `@StateObject` にしない＝ホームは描き直さない）に置き、
+    /// 見えない要素（`FeedProbeLabel`）だけがそれを見張る
+    @State private var feedProbeTop = FeedTopValue()
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
     /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
@@ -536,18 +541,14 @@ struct GalleryView: View {
             .padding(.bottom, 24)
             }
             // UI テストのときだけ: 中身の上端（送りの枠での位置）を数に出す（開いたときと「ホーム」を押した後を比べる）
-            .modifier(FeedTopProbe { top in if top != feedProbeTop { feedProbeTop = top } })
+            .modifier(FeedTopProbe { [feedProbeTop] top in if top != feedProbeTop.top { feedProbeTop.top = top } })
         }
         // 写真を手に取っている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
         .modifier(PhotoLiftScrollLock(center: PhotoLiftCenter.shared))
         // UI テストのときだけ: 1本の並びの数を見えない要素に出す（`PreviewSession.feedProbe`）
         .overlay(alignment: .bottomTrailing) {
             if PreviewSession.feedProbe {
-                Text(".")
-                    .font(.caption2)
-                    .foregroundStyle(Color.clear)
-                    .accessibilityIdentifier("home.feed.probe")
-                    .accessibilityValue(feedProbeText(rows, latest: photos))
+                FeedProbeLabel(value: feedProbeTop) { top in feedProbeText(rows, latest: photos, top: top) }
             }
         }
         // **ホームを開いたまま「ホーム」をもう一度押したら一番上へ**
@@ -899,6 +900,25 @@ struct FollowingBaseline: Equatable {
 }
 
 /// UI テストのときだけ（`PreviewSession.feedProbe`）、中身の上端を送りの枠（`.scrollView`）で測って渡す。ふだんは何も足さない
+/// UI テストのときだけ: 中身の上端の入れ物（2026-11-24・札 #594）。ホームは見張らず、`FeedProbeLabel` だけが見張る
+final class FeedTopValue: ObservableObject {
+    @Published var top: CGFloat = 0
+}
+
+/// UI テストのときだけ: 1本の並びの数を出す見えない要素（`home.feed.probe`）。上端が動いたときはここだけ描き直す
+private struct FeedProbeLabel: View {
+    @ObservedObject var value: FeedTopValue
+    let text: (CGFloat) -> String
+
+    var body: some View {
+        Text(".")
+            .font(.caption2)
+            .foregroundStyle(Color.clear)
+            .accessibilityIdentifier("home.feed.probe")
+            .accessibilityValue(text(value.top))
+    }
+}
+
 private struct FeedTopProbe: ViewModifier {
     let record: (CGFloat) -> Void
 
