@@ -189,4 +189,15 @@ final class SigninMethodsTests: XCTestCase {
             XCTAssertTrue(line.contains("\"-JPPreviewLocalBackend\", \"YES\""), "見本の通信を渡さずに見本の答えを頼んでいる: \(line)")
         }
     }
+
+    /// 行の名前は行を入れ物の要素にしてから付ける（並びに直に付けると「解除」のボタンの名前が上書きされる・Mac run 1771）
+    func testRowIdentifierDoesNotOverrideRemoveButton() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Settings/SigninMethodsView.swift"), encoding: .utf8)
+        let row = try XCTUnwrap(view.range(of: ".accessibilityIdentifier(\"signinMethods.row."))
+        let before = view[view.index(row.lowerBound, offsetBy: -400)..<row.lowerBound]
+        XCTAssertTrue(before.hasSuffix(".accessibilityElement(children: .contain)\n        "),
+                      "行の名前が中の「解除」のボタンの名前を上書きする")
+        XCTAssertTrue(view.contains(".accessibilityIdentifier(\"signinMethods.remove.\\(provider.rawValue)\")"))
+    }
 }

@@ -97,6 +97,9 @@ struct SigninMethodsView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
         .frame(minHeight: 54)
+        // **行を入れ物の要素にしてから名前を付ける。** 並び（HStack）に直に付けると、中の要素すべてにこの名前が付き、
+        // 「解除」のボタンの `signinMethods.remove.<id>` が上書きされて見つからなかった（Mac run 1771・2026-11-23）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("signinMethods.row.\(method.id)")
     }
 

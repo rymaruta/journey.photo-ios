@@ -466,6 +466,19 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertEqual(PreviewTripShelf.many(photos: []), [])
     }
 
+    /// 見本の日の置き直しは、欄の多い写真（寸法・いいね・タグ・題・公開）でも作り直せる（元のまま残さない）。id は変えない
+    func testPreviewSampleRedatesFullPhotos() throws {
+        let json = ##"{"id":"full","src":"https://x/full.jpg","thumbSrc":"https://x/t.webp","userId":"owner","date":"2019-01-01","##
+            + ##""createdAt":"2019-01-01T00:00:00.000Z","location":"金沢","width":4032,"height":3024,"likes":12,"published":true,"##
+            + ##""tags":["秋"],"title":"兼六園","dominantColor":"#334455","displayName":"見本"}"##
+        let full = try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+        for trip in PreviewTripShelf.many(photos: [full]) {
+            XCTAssertEqual(trip.photos.map(\.id), ["full"])
+            XCTAssertNil(trip.photos.first?.date, "\(trip.id) の写真が置き直されていない（元の撮影日のまま）")
+            XCTAssertEqual(TripBook.days(of: trip).map(\.number), [1])
+        }
+    }
+
     /// 見本の一冊の日の段は 1日目から旅の日数まで（写真の撮影日が旅の外でも、旅の日に置き直す）。
     /// 2026-11-23・Mac run 1765 と 1769: 見本の写真の撮影日のままで「-23日目」「5日目」になり、1日目が無く日めくりの試験が落ちた
     func testPreviewSampleDaysStartAtOne() throws {

@@ -207,6 +207,14 @@ final class SignInLayoutTests: XCTestCase {
                       "UI テストが欄のまとまりの上端までを測っていない")
     }
 
+    /// 主ボタンで送ったらキーボードを下ろす（右下のキーで送るときと同じ）。Mac run 1771: 違うパスワードの知らせのあと、
+    /// 残ったキーボードの下に主ボタンが隠れた
+    func testSubmitButtonDismissesKeyboard() throws {
+        let view = try source("Features/Auth/SignInView.swift")
+        let button = try slice(view, from: "focusedField = nil\n                Task { await submitCredentials() }", to: ".accessibilityIdentifier(\"signin.submit\")")
+        XCTAssertFalse(button.isEmpty, "主ボタンで送るときにキーボードを下ろしていない")
+    }
+
     /// 模型 NL2x の寸法
     func testMetricsMatchMock() {
         XCTAssertEqual(SignInLayout.metrics(.regular),

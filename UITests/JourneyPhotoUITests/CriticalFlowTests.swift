@@ -941,7 +941,9 @@ final class CriticalFlowTests: JPUITestCase {
             if app.keyboards.firstMatch.exists { app.descendants(matching: .any)["signin.form"].firstMatch.swipeDown(velocity: .slow) }
             Thread.sleep(forTimeInterval: 1)
             let window = app.windows.firstMatch.frame
-            print("[signin-error]\(tag) window=\(window) error=\(error.frame) email=\(email.frame) submit=\(submit.frame) password=\(password.frame)")
+            let keyboard = app.keyboards.firstMatch
+            print("[signin-error]\(tag) window=\(window) error=\(error.frame) email=\(email.frame) submit=\(submit.frame) "
+                  + "keyboard=\(keyboard.exists ? "\(keyboard.frame)" : "無し")")
             XCTAssertTrue(error.isHittable, "失敗の文が画面の外にある\(tag)（\(error.frame)）")
             XCTAssertLessThanOrEqual(error.frame.maxY, window.maxY, "失敗の文が下端より下\(tag)")
             // 測るのは欄のまとまり（欄の名前の行＋箱・`signin.email.field`）の上端。箱の内側の打つ所（`signin.email`）を測ると、

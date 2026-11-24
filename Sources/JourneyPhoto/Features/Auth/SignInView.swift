@@ -465,6 +465,10 @@ struct SignInView: View {
             // 同じ画面の続き（登録の完了・コードを送る・パスワードを変える）も揃える。
             // 高さは模型 NL2x の案（2026-11-23）: 小さい画面 48、ほか 52
             Button {
+                // **押したらキーボードを下ろす**（右下のキーで送るとき `advance` と同じ）。2026-11-23 判断（Mac run 1771
+                // `testSignInFailureIsVisibleAboveFields`「主ボタンが画面の外へ押し出された」）: ボタンで送るとキーボードが残り、
+                // 違うパスワードの知らせのあと、主ボタン（y 767〜819）がキーボード（上端 約 652）の下に隠れうる
+                focusedField = nil
                 Task { await submitCredentials() }
             } label: {
                 Text(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account"))
