@@ -301,7 +301,8 @@ enum DownsampledImageSize {
 /// URLCacheは完了済み応答のキャッシュであり、通信中の同時要求を統合する保証はない。
 /// 完了後は必ず破棄し、永続的な画像データキャッシュを増やさない。
 /// セル単位のキャンセルで他セルの通信を止めない（結果の反映は各セル側でキャンセル判定）。
-private actor GridImageInFlight {
+/// 試験から見本の見張り（`StoreDemo.allowsImage`）を確かめられるように internal（2026-11-23・札 #604）
+actor GridImageInFlight {
     static let shared = GridImageInFlight()
 
     private struct Entry {
@@ -311,6 +312,8 @@ private actor GridImageInFlight {
     private var requests: [URL: Entry] = [:]
 
     func data(for url: URL) async throws -> Data {
+        // App Store の見本（`StoreDemo`・札 #604）の間は、見本の置き場でない画像を読まない（本番の他人の写真を1枚も出さない）
+        guard StoreDemo.allowsImage(url) else { throw URLError(.badURL) }
         if let running = requests[url] {
             return try await running.task.value
         }

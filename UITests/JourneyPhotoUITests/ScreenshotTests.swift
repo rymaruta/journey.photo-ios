@@ -12060,4 +12060,190 @@ final class ScreenshotTests: JPUITestCase {
         }
         XCTAssertGreaterThanOrEqual(index, 1, "雑誌の見本が出ない")
     }
+
+    // MARK: - App Store の絵（見本の表示・2026-11-23 札 #604）
+
+    /// App Store の絵を撮るときの「この人」（`StoreDemo.userId` と同じ・公開の利用者ではない見本の自分）
+    private static let storeDemoUserId = "5d0e5d0e-0000-4000-8000-000000000001"
+
+    /// **App Store の絵は見本の表示（`-JPStoreDemo YES`）だけで撮る**（CLAUDE.md「他人の写真は、その人のもの」・絶対）。
+    /// 画像はアプリに入っている構図の作例写真（CC0）、文は作った見本。見本の間はネットワークから何も読まない
+    /// （`StoreDemo`・`PreviewBackend.handles`）。本番の向き先（`-JPSiteBaseURL` など）と実在の利用者（`previewUserId`）は渡さない。
+    /// `Tools/store-screenshots.py --check-demo` が、`STORE_TESTS` の試験がこれで起動していることを見る
+    private func launchStoreDemo(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication.jp()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPStoreDemo", "YES"]
+        app.launchArguments += ["-JPPreviewStories", "YES", "-JPPreviewDM", "YES"]
+        app.launchArguments += ["-JPPreviewDisplayName", "わたしの旅"]
+        app.launchArguments += ["-foundingGift.done.\(Self.storeDemoUserId)", "YES"]
+        app.launchArguments += ["-story.captionHintShown", "YES"]
+        app.launchArguments += extra
+        let launched = Date()
+        app.launch()
+        agreeToTerms(app, since: launched)
+        return app
+    }
+
+    /// **画面の絵が出るまで待つ**（読み込み中の輪が画面から消えるまで・2026-11-23 Mac run 1736）。run 1736 は写真の詳細・
+    /// 観光スポットの頁の上の絵・DM の写真が読み込み中の輪のまま撮れていた。出なければ落とす（ストアに読み込み中の絵を出さない）
+    @discardableResult
+    private func waitForImages(_ app: XCUIApplication, _ step: String, timeout: TimeInterval = 20) -> Bool {
+        let none = NSPredicate(format: "count == 0")
+        let done = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: none, object: app.activityIndicators)],
+                                  timeout: timeout) == .completed
+        if !done { unreached(app, "\(step)の絵が読み込み中のまま（読み込み中の輪 \(app.activityIndicators.count) 個）") }
+        return done
+    }
+
+    /// 1 ホーム（みんなの写真の1本の並び）と 7 写真の詳細（1枚目）
+    func testStoreDemoHomeAndDetail() {
+        let app = launchStoreDemo()
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20) else { return unreached(app, "タブ") }
+        tabBar.buttons.element(boundBy: 0).tap()
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        guard firstPhoto.waitForExistence(timeout: 20) else { return unreached(app, "ホームの写真", probes: ["feed.photo"]) }
+        // 写真が読み込まれるのを待つ（見本の画像は端末の中から来るが、縮めて展開するのに少しかかる）
+        guard waitForImages(app, "ホーム") else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "10-ホーム")
+        var pushes = 0
+        while !firstPhoto.isHittable, pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard firstPhoto.isHittable else { return unreached(app, "ホームの1枚目が押せない") }
+        firstPhoto.tap()
+        guard app.buttons["photo.like"].firstMatch.waitForExistence(timeout: 15) else {
+            return unreached(app, "写真の詳細", probes: ["photo.like"])
+        }
+        guard waitForImages(app, "写真の詳細") else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "20-写真の詳細")
+    }
+
+    /// 2 AI に頼む（問いと答え・2026-11-23 owner「AIに頼むって文字ないような」）。見本の AI（`-JPAskFixture`・端末の中で答える・
+    /// サーバーへは送らない・同意済み扱い）が、見本の観光スポット（京都の3か所・同梱の写真）から選ぶ。画面は実機と同じ（回数の1行も出る）
+    func testStoreDemoAsk() {
+        let app = launchStoreDemo(["-JPAskFixture", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20) else { return unreached(app, "タブ") }
+        tabBar.buttons.element(boundBy: 0).tap()
+        // 頼む言葉は `StoreDemo.askQuestion` と同じ（単体テストが同じ言葉で答えを確かめる）
+        guard openAskScreen(app), askViaSendButton(app, "京都で写真がきれいに撮れる所を教えて") else { return }
+        let card = app.descendants(matching: .any)["search.ask.card"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { return unreached(app, "AI の答えの札", probes: ["search.ask.card"]) }
+        if app.keyboards.count > 0 {
+            app.typeText("\n")
+            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: app.keyboards)],
+                               timeout: 5)
+        }
+        guard waitForImages(app, "AI に頼むの答え") else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90-ストア・AI に頼む（答え）")
+    }
+
+    /// 2 観光スポットの頁（作例と光の時刻）。地図の「スポット」の一覧から、見本の伏見稲荷大社を開く
+    func testStoreDemoSpot() {
+        let app = launchStoreDemo()
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 3 else { return unreached(app, "タブ") }
+        // 現在地は京都（見本の観光スポットが近くに並ぶ）
+        if #available(iOS 16.4, *) {
+            XCUIDevice.shared.location = XCUILocation(location: CLLocation(latitude: 34.9858, longitude: 135.7588))
+        }
+        tabBar.buttons.element(boundBy: 3).tap()
+        answerLocationPrompt()
+        let spots = app.buttons["map.mode.spots"].firstMatch
+        guard spots.waitForExistence(timeout: 15) else { return unreached(app, "地図のスポットの切り替え", probes: ["map.mode.spots"]) }
+        spots.tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier == 'map.spotRow' AND label CONTAINS %@", "伏見稲荷大社")).firstMatch
+        guard row.waitForExistence(timeout: 15) else { return unreached(app, "見本の観光スポットの行", probes: ["map.spotRow"]) }
+        if !row.isHittable { app.swipeUp() }
+        row.tap()
+        let named = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "伏見稲荷大社")).firstMatch
+        guard named.waitForExistence(timeout: 15) else { return unreached(app, "観光スポットの頁") }
+        guard waitForImages(app, "観光スポットの頁") else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "70-ストア・撮影スポット（伏見稲荷大社）")
+    }
+
+    /// 3 旅行プラン（仲間と共有・日程）。見本のプラン（`-JPTripPlanFixture`・`-JPTripShareFixture`）。見本の表示では
+    /// 見本の観光スポット4か所で組んだ「京都と富士山の旅」（`StoreDemo.tripPlan`）
+    func testStoreDemoTripPlan() {
+        let app = launchStoreDemo(["-JPTripPlanFixture", "YES", "-JPTripShareFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return unreached(app, "旅行プランの一覧") }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "京都と富士山")).firstMatch
+        guard plan.waitForExistence(timeout: 10) else { return unreached(app, "見本の京都と富士山のプラン") }
+        plan.tap()
+        guard app.descendants(matching: .any)["tripShare.strip"].firstMatch.waitForExistence(timeout: 15) else {
+            return unreached(app, "旅行プランの頁", probes: ["tripShare.strip"])
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "66c-旅行プラン（仲間と共有・日程）")
+    }
+
+    /// 4 投稿（写真の編集の入口）。見本の1枚（同梱の構図の作例写真・`-JPPreviewUploadSample`）を選んだ状態。
+    /// 撮影地の候補（最近使った撮影地）は入れない（写真と合わない場所の名前を並べない）
+    func testStoreDemoUpload() {
+        let app = launchStoreDemo(["-JPPreviewUploadSample", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return unreached(app, "タブ") }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        guard thumb.waitForExistence(timeout: 20) else { return unreached(app, "投稿の写真", probes: ["upload.thumb.0"]) }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "42-投稿（写真の編集の入口）")
+    }
+
+    /// 5 ストーリー（曲の札）。見本の写真と見本の曲（同梱の画像・通信しない・`-JPPreviewStorySong`）
+    func testStoreDemoStorySong() {
+        let app = launchStoreDemo(["-JPPreviewStorySong", "YES", "-story.songSticker.style", "glass"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return unreached(app, "タブ") }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toStory = app.buttons["post.choice.story"].firstMatch
+        guard toStory.waitForExistence(timeout: 10), toStory.isHittable else { return unreached(app, "ストーリーの入口", probes: ["post.choice.story"]) }
+        toStory.tap()
+        guard app.descendants(matching: .any)["story.songSticker"].firstMatch.waitForExistence(timeout: 20) else {
+            return unreached(app, "曲の札", probes: ["story.songSticker"])
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "62a-ストーリーの曲の札（A ガラスの札）")
+    }
+
+    /// 6 メッセージ（会話）。見本の会話（`-JPPreviewDM`）の1人目（見本の表示では「京めぐり」）。写真の通は見本の写真、スポットの札は見本の観光スポット
+    func testStoreDemoMessages() {
+        let app = launchStoreDemo()
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return unreached(app, "タブ") }
+        let bubble = app.buttons["header.messages"].firstMatch
+        guard bubble.waitForExistence(timeout: 20) else { return unreached(app, "メッセージの入口", probes: ["header.messages"]) }
+        bubble.tap()
+        guard app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15) else {
+            return unreached(app, "受信箱", probes: ["dm.inbox"])
+        }
+        // 見本の表示では1人目は「京めぐり」（`StoreDemo.dmPeer`）
+        guard openThread(app, named: "京めぐり") else { return unreached(app, "見本の会話") }
+        guard waitForImages(app, "メッセージの会話") else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "86m4-メッセージ（会話）")
+    }
+
+    /// 審査用: Pro の案内（`-JPPreviewPaywall`）。上の写真は見本の一覧から選ばれる
+    func testStoreDemoProPaywall() {
+        let app = launchStoreDemo(["-JPPreviewPaywall", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "タブ") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 20) else {
+            return unreached(app, "Pro の案内", probes: ["paywall.purchase"])
+        }
+        Thread.sleep(forTimeInterval: 10)
+        shoot(app, "81-Pro の案内")
+    }
 }

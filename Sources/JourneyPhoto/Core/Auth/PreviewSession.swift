@@ -63,6 +63,8 @@ enum PreviewSession {
         let raw = UserDefaults.standard.string(forKey: defaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let raw, !raw.isEmpty { return raw }
+        // App Store の見本（`StoreDemo`・札 #604）は、公開の利用者ではない見本の自分で入る
+        if StoreDemo.isOn { return StoreDemo.userId }
         return nil
         #else
         return nil
@@ -764,6 +766,8 @@ enum PreviewSession {
     static var localBackend: Bool {
         #if DEBUG
         guard userId != nil else { return false }
+        // App Store の見本（`StoreDemo`）は必ず端末の中で答える（アプリの URLSession の要求は外へ出さない。出るものは `StoreDemo` の注記）
+        if StoreDemo.isOn { return true }
         return UserDefaults.standard.bool(forKey: localBackendKey)
         #else
         return false

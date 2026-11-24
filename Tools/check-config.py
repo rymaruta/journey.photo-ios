@@ -743,19 +743,31 @@ if testflight_yml.exists() and pr_yml.exists():
         if test not in ui_tests or pick_mod.only_when_named(test):
             fail(f"store-screenshots.py の STORE_TESTS の {test} が UI テストに無いか、名指しの回だけのテストです")
     store_text = "\n".join(ui_tests.get(t, "") for t in store_mod.STORE_TESTS)
-    # 「10-ホーム」（タブを回す輪の `"1\(index)-\(name)"`）と「62a-…」（`"62\(["a", …][i])-…"`）は組み立てた名前なので、
-    # 字のままでは現れない。組み立てに使う側の字（タブの名前の一覧・札の名前の後ろ）で見る
-    built = {"10-ホーム": "\nホーム\n", "62a-ストーリーの曲の札": "-ストーリーの曲の札（\\(name)）"}
-    for prefix in [p for _, p, _, _ in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
-        if built.get(prefix, prefix) not in store_text:
+    for prefix in [p for _, p in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
+        if prefix not in store_text:
             fail(f"App Store 用の絵の材料「{prefix}」を、STORE_TESTS のどのテストも撮っていません（store-screenshots.py）")
-    # 見本で描けるまで storeShots の回は build の job の最初の段で止める（2026-11-22・札 #604）。外すのは見本の仕組みと一緒に
-    stop = step_block(flow, "App Store 用の絵は見本で描けるまで止める") or ""
+    # 2026-11-23（札 #604）: 絵を撮る試験は見本の表示（`-JPStoreDemo YES`）だけで撮る。本番の向き先・実在の利用者で描く道を残さない
+    for line in store_mod.check_demo():
+        fail(f"App Store 用の絵の試験が見本の表示で撮っていません: {line}")
+    # storeShots の回は build の job の最初の段で、試験が見本の表示で撮るかを確かめる（外すと本番の写真で撮る道が開く）
+    stop = step_block(flow, "App Store 用の絵は見本の表示で撮る") or ""
     build_steps = re.findall(r"^      - name: (.+)$", flow.split("\n  build:\n", 1)[-1], re.M)
-    if ("if: ${{ inputs.storeShots }}" not in stop or "exit 1" not in stop or "札 #604" not in stop
-            or "見本で描けるようになるまで使えません" not in stop
-            or not build_steps or build_steps[0] != "App Store 用の絵は見本で描けるまで止める"):
-        fail("ios-testflight.yml の build の最初の段で storeShots の回を止めていません（本番の他の利用者の写真で描くため・札 #604）")
+    if ("if: ${{ inputs.storeShots }}" not in stop or "store-screenshots.py --check-demo" not in stop
+            or not build_steps or build_steps[0] != "App Store 用の絵は見本の表示で撮る"):
+        fail("ios-testflight.yml の build の最初の段で、storeShots の試験が見本の表示で撮るかを確かめていません（札 #604）")
+    # 出す絵は 6.9インチと中型（Dynamic Island 搭載 iPhone（中型ディスプレイ））の2組（2026-11-23）
+    if [f[1] for f in store_mod.FRAMES] != [[(1320, 2868), (1290, 2796), (1260, 2736)], [(1206, 2622), (1179, 2556)]]:
+        fail("store-screenshots.py の FRAMES が Apple の受け付ける寸法（大型 1320×2868 ほか、中型 1206×2622 ほか）ではありません")
+    # 2026-11-23 owner「イメージで作るのはダメ」: 合成せず、2つの機種で撮った画面をそのまま出す。中型の機種でも撮り、
+    # どちらも状態のバーを決まった形にしてから撮る
+    medium = step_block(flow, "App Store 用の中型の画面を撮る") or ""
+    if ("store-screenshots.py --device medium" not in medium or "STORE_STATUS_BAR=1" not in medium
+            or "StoreMedium.xcresult" not in medium):
+        fail("ios-testflight.yml が App Store 用の中型の画面を撮っていません（store-screenshots.py --device medium）")
+    if "store-screenshots.py --device large" not in (step_block(flow, "組む（本物の SwiftUI で型検査される最初の機会）") or ""):
+        fail("ios-testflight.yml の storeShots の回が、大型の枠の機種で組んでいません（--device large）")
+    if "STORE_STATUS_BAR" not in (step_block(flow, "UI テスト（画面の絵）") or ""):
+        fail("ios-testflight.yml の storeShots の回が、状態のバーを決まった形にしていません（STORE_STATUS_BAR）")
     if "Tools/upload-store-shots.sh" not in flow:
         fail("ios-testflight.yml が storeShots の絵を非公開の S3 に置いていません（Tools/upload-store-shots.sh）")
     if re.search(r"store-screenshots\s*$", exporter, re.M) or "upload-artifact" in (ROOT / "Tools/upload-store-shots.sh").read_text(encoding="utf-8"):
@@ -882,6 +894,36 @@ if crash_yml:
         fail("testflight-crashes.yml の頭の permissions に id-token があります")
     if "bash Tools/testflight-crashes.sh" not in crash_yml:
         fail("testflight-crashes.yml が Tools/testflight-crashes.sh を通していません（ログに要点だけを出す道）")
+# App Store の画面写真を入れ替える段（札 #604・2026-11-23）: storeShots の回の中で、作った絵をその場から上げる。
+# 既定は下見・提出の準備中の版だけ・絵を成果物に出さない・S3 から取り直さない（CI の役割は置くことしかできない）
+asc_py = _read("Tools/asc-screenshots.py")
+asc_tf = testflight_yml.read_text(encoding="utf-8") if testflight_yml.exists() else ""
+if (ROOT / ".github/workflows/appstore-screenshots.yml").exists():
+    fail("appstore-screenshots.yml は置かない（S3 から読む権限が無い。storeShots の回の ascVersion で上げる・札 #604）")
+if "ascVersion" in asc_tf:
+    if re.search(r"^      ascApply:\n(?:        .*\n)*?        type: boolean\n(?:        .*\n)*?        default: false$",
+                 asc_tf, re.M) is None:
+        fail("ios-testflight.yml の ascApply の既定が false（下見）ではありません")
+    if re.search(r"^      - name: App Store Connect に画面写真を入れ替える\n"
+                 r"        if: \$\{\{ success\(\) && inputs\.storeShots && inputs\.ascVersion != '' && github\.event_name != 'pull_request' \}\}",
+                 asc_tf, re.M) is None:
+        fail("ios-testflight.yml の App Store Connect に上げる段が、storeShots・ascVersion・PR でない回に絞られていません")
+    if 'bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP"' not in asc_tf:
+        fail("ios-testflight.yml が作った絵（STORE_SHOTS_KEEP）を Tools/asc-screenshots.sh --local に渡していません")
+    if re.search(r'^      ascLocales:\n(?:        .*\n)*?        default: "ja"$', asc_tf, re.M) is None:
+        fail("ios-testflight.yml の ascLocales の既定が ja ではありません（渡した言語だけを入れ替える）")
+    if "group: asc-${{ inputs.ascVersion != '' && inputs.ascVersion || github.run_id }}" not in asc_tf:
+        fail("ios-testflight.yml の build に、同じ版を同時に触らない concurrency（asc-<版>）がありません")
+    if "      - name: App Store Connect に上げるのは storeShots の回だけ\n" not in asc_tf:
+        fail("ios-testflight.yml に、storeShots でない回で ascVersion を止める段がありません")
+    # 版の状態の止め: PREPARE_FOR_SUBMISSION 以外は止める・下見の前と変える直前の2回読む
+    run_body = asc_py.split("\ndef run(", 1)[-1].split("\ndef ", 1)[0] if "\ndef run(" in asc_py else ""
+    if 'EDITABLE = "PREPARE_FOR_SUBMISSION"' not in asc_py or "if any(s != EDITABLE for s in states):" not in asc_py:
+        fail("Tools/asc-screenshots.py に PREPARE_FOR_SUBMISSION 以外の版で止める段がありません")
+    elif run_body.count("check_editable(") < 2 or run_body.find("check_editable(") > run_body.find("apply_plan("):
+        fail("Tools/asc-screenshots.py の run が、変える前に版の状態を2回（下見の前と変える直前）確かめていません")
+    if '"--apply", action="store_true"' not in asc_py:
+        fail("Tools/asc-screenshots.py の既定が下見ではありません（--apply のときだけ変える）")
 if testflight_yml.exists():
     tf = testflight_yml.read_text(encoding="utf-8")
     # 書き込みの印は job ごとに渡す。ワークフローの頭（全 job）には渡さない

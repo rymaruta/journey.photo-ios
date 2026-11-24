@@ -94,12 +94,20 @@ jobs:
         run: python3 Tools/test_perf_collect.py
       - name: TestFlight の落ちた記録の取り方の回帰テスト
         run: python3 Tools/test_testflight_crashes.py
+      - name: App Store の画面写真の入れ替え方の回帰テスト
+        run: python3 Tools/test_asc_screenshots.py
       - name: Web 版との突き合わせがサーバーの口を読む形の回帰テスト
         run: python3 Tools/test_api_parity.py
       - name: ビルドだけの回のエラーの拾い方の回帰テスト
         run: python3 Tools/test_compile_errors.py
       - name: 表に出る版の決め方の回帰テスト
         run: python3 Tools/test_version_rule.py
+      # 2026-11-23（札 #604）: App Store の絵を 6.9インチと中型（1206×2622）の2組で作る。Pillow はこの回だけの venv に入れる
+      - name: App Store の絵の作り方の回帰テスト
+        run: |
+          python3 -m venv /tmp/store-venv
+          /tmp/store-venv/bin/pip install --quiet --disable-pip-version-check pillow
+          /tmp/store-venv/bin/python Tools/test_store_screenshots.py
 
   # ワークフローだけの変更ではアプリのソース・テストが変わらない。
   # GitHub Actions の設定を検査する静的チェックだけで済ませ、Mac を起動しない。

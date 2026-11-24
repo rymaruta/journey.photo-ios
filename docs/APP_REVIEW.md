@@ -10,13 +10,13 @@ App Store Connect の「App Review に関する情報」に入れる文と、そ
 
 ## Notes に貼る文面
 
-審査官は英語を読むので、**貼るのは英語**（約3,980字。2026-11-23 に AI の行を同意の画面（1.1.119）に合わせた。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+審査官は英語を読むので、**貼るのは英語**（約3,986字。2026-11-23 に AI の行を同意の画面（1.1.119）に合わせ、2026-11-24 にログインの行を Apple と Google のある 1.2.x に合わせた。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
 ID とパスワードはここに書かず、「サインイン情報」の欄に入れる（下の「審査用アカウント」）。Notes に書き足すものは無い。
 
 ### 英語（貼る）
 
 ```
-Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an email sign-up. The demo account is in the sign-in fields. It already has one public photo and follows, and is followed by, an account run by our team. That account sent it a message and is a member of its trip plan, which has one chat message, so you can test Messages and trip plan chat. That account is ours: feel free to report or block it.
+Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an account (email, Sign in with Apple or Google). The demo account is in the sign-in fields. It already has one public photo and follows, and is followed by, an account run by our team. That account sent it a message and is a member of its trip plan, which has one chat message, so you can test Messages and trip plan chat. That account is ours: feel free to report or block it.
 
 USER-GENERATED CONTENT (1.2)
 - Terms prohibiting objectionable content must be accepted on first launch.
@@ -30,7 +30,7 @@ USER-GENERATED CONTENT (1.2)
 
 ACCOUNT
 - Delete account in-app: My Page > Settings > Delete account. You may delete the demo account.
-- No third-party or social login. Sign-in is our own Amazon Cognito with email and password only, so Sign in with Apple (4.8) does not apply.
+- Sign-in: email and password, Sign in with Apple, or Google. Sign in with Apple is offered next to Google (4.8).
 
 PERMISSIONS (asked in context, with purpose strings)
 - Camera: posting, story capture, composition overlay, scanning profile QR codes.
@@ -56,7 +56,7 @@ IN-APP PURCHASE (3.1.2)
 ### 日本語（確かめる用）
 
 ```
-Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはメールアドレスでの登録が必要です。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに運営のアカウントが仲間として入り、会話に1通あるので、メッセージと旅行プランの会話を試せます。相手役のアカウントは運営のものなので、通報やブロックを試してかまいません。
+Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはアカウントが必要です（メールアドレス、Apple でサインイン、Google のどれかで登録）。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに運営のアカウントが仲間として入り、会話に1通あるので、メッセージと旅行プランの会話を試せます。相手役のアカウントは運営のものなので、通報やブロックを試してかまいません。
 
 ユーザー生成コンテンツ（1.2）
 - 初回起動で、不適切な内容を認めない旨を含む規約への同意を求めます。
@@ -70,7 +70,7 @@ Journey Photo は、約4,600か所の観光スポットの案内がついた、�
 
 アカウント
 - 削除：マイページ → 設定 → アカウントの削除（アプリ内）。審査用アカウントは消してかまいません。
-- 他社のログインやソーシャルログインは無く、自前の Amazon Cognito のメールとパスワードだけなので、Sign in with Apple（4.8）は当たりません。
+- ログイン：メールアドレスとパスワード、Apple でサインイン、Google。Google と並べて Apple でサインインを出しているので、4.8 を満たします。
 
 権限（使う場面で尋ね、利用目的の文を付けています）
 - カメラ：投稿、ストーリーの撮影、作例を重ねた撮影、プロフィールの QR の読み取り。
@@ -132,7 +132,7 @@ App 内課金（3.1.2）
 
 | 条項 | 要求 | このアプリでの答え | 合否 | 根拠（a65201d） |
 |---|---|---|---|---|
-| 4.8 Sign in with Apple | 他社のログインを使うなら、同じ水準のログインも出す | **当たらない。** ログインは自前の Cognito のメールとパスワードだけ。Amplify で呼ぶのは `signIn`、`signUp`、`confirmSignUp`、`resetPassword` など。`signInWithWebUI`（Hosted UI）も Google、Facebook、LINE の SDK も無い | 合っている | `Core/Auth/AuthGateway.swift`、`project.yml`（依存は Amplify と AWSCognitoAuthPlugin だけ） |
+| 4.8 Sign in with Apple | 他社のログインを使うなら、同じ水準のログインも出す | **満たす。** 1.2.x から Google のログインがあり、同じ画面に Apple でサインインを並べている。Apple は名前とメール（非公開の中継のアドレスでもよい）だけを頼み、広告のために集めない。本番の `/auth/apple/status` と `/auth/google/status` はどちらも `available: true`（2026-11-24 に curl で確かめた） | 合っている | `Features/Auth/SignInView.swift`、`Services/AppleSignInService.swift`、`Services/GoogleSignInService.swift`、`Services/FederatedSignIn.swift` |
 | 1.2 UGC | 規約への同意 | 初回起動時の同意画面 | 合っている | `Features/Legal/LegalGateView.swift`、`App/RootView.swift` |
 | 1.2 UGC | 通報 | 写真、コメント、ストーリー、ストーリーへの返信、プロフィール、メッセージ、**旅行プランの会話（1.1.90 で足した、#597）**、すれちがいのカード。理由は8種 | 合っている | `ReportSheet` を使う画面（Gallery、PhotoDetail、StoryViewer、DMConversation、DMRequests、TripShareViews、PassBook、PassViewer）、`ModerationService.ReportReason`。本番の `POST /trip-share/{id}/report` は未ログインで 401（口がある）を 2026-11-15 に確かめた |
 | 1.2 UGC | ブロック | 通報と同じ所とプロフィールから。解除は設定 | 合っている | `ModerationService.swift`、`BlockedUsersView.swift` |
@@ -213,7 +213,7 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 
 - [ ] ビルドは、出すときの最新の TestFlight の版（2026-11-23 時点は `testflight/1.1.119`、df0eea4）。App Store Connect の「バージョン」をその版にし、同じ版のビルドを選ぶ
 - [ ] TestFlight の実機で一巡（AI で旅行プラン、AI に頼む、投稿、ストーリーの動画、メッセージ、旅行プランの会話の通報、通報、ブロック、退会、機内モード）
-- [ ] 画面写真 6.9インチ（1320×2868）を3枚以上。Mac の CI の `storeShots` で作り、非公開の S3 から取り出す（`docs/APP_STORE_METADATA.md` の「作り方」）。本番の他の利用者の写真を1枚も入れない（見本のデータか運営が権利を持つ写真だけで描いた絵だけ）。人の顔、他社のロゴも入れない
+- [ ] 画面写真を2組（大型ディスプレイ＝6.9インチ 1320×2868 と、中型ディスプレイ 1206×2622。中型は最低1枚が必須）。Mac の CI の `storeShots` で、見本の表示（`-JPStoreDemo`）だけで撮り、非公開の S3 から取り出す（`docs/APP_STORE_METADATA.md` の「作り方」）。本番の他の利用者の写真と他の作者の作例を1枚も入れない（画像は同梱の CC0 の作例写真だけ）。人の顔、他社のロゴも入れない
 - [ ] 審査用アカウント A（owner の本番のテスト用アカウント）で写真を1枚投稿、owner のアカウントと互いにフォロー、owner から A にメッセージ1通、A の旅行プランに owner を仲間に入れて会話に1通（上の手順）
 - [ ] App のプライバシーの回答が `PrivacyInfo.xcprivacy` と一致（上の表）
 - [ ] 年齢制限の質問票（上の表）

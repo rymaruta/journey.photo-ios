@@ -126,6 +126,7 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Features/Drafts/PreviewDraftsSample.swift": "Debug の見本",
         "Features/Stories/PreviewStorySample.swift": "Debug の見本",
         "Features/Upload/PreviewUploadSample.swift": "Debug の見本",
+        "Core/Networking/StoreDemo.swift": "Debug の App Store の見本。同梱の作例写真（CC0・`photo-sources.json`）を JPEG にして返すだけ（利用者の写真は読まない・札 #604）",
     ]
 
     func testImageMakingOnlyInRegisteredFiles() throws {
@@ -187,6 +188,7 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Core/Auth/PreviewSession.swift": "Debug の見本",
         "Core/Networking/PreviewBackend.swift": "Debug の見本",
         "Core/Text/PreviewSNSLoopSample.swift": "Debug の見本",
+        "Core/Networking/StoreDemo.swift": "Debug の App Store の見本の答え（送る本文ではない。写真は同梱の作例だけ・札 #604）",
     ]
 
     func testPhotoKeysInRequestBodiesAreRegistered() throws {

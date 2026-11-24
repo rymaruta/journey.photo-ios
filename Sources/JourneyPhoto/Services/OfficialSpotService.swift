@@ -89,7 +89,7 @@ actor OfficialSpotService {
             // 自分で持つ（`snapshot` と版の印）ので、URLSession には溜めさせない
             // （要求の側でも付けている——`ConditionalGet.plainRequest`）
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
-            self.session = URLSession(configuration: config)
+            self.session = URLSession(configuration: StoreDemo.guarded(config))
         }
     }
 

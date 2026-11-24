@@ -71,6 +71,7 @@ enum PreviewBackend {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = APIClient.requestTimeout
         config.protocolClasses = [PreviewBackendProtocol.self] + (config.protocolClasses ?? [])
+        // 見本の答え手を先頭に入れ済み。`StoreDemo.guarded` は二重に入れないので通さない（URLSession を作る所の見張りの例外）
         return URLSession(configuration: config)
     }()
 
@@ -115,6 +116,8 @@ enum PreviewBackend {
 
     /// この要求に答えるか（見本の鍵を付けた要求と、見本の置き場）
     static func handles(_ request: URLRequest) -> Bool {
+        // App Store の画面写真の見本（`StoreDemo`・札 #604）の間は、URLSession の**全部の要求**を引き受ける（外へは出さない）
+        if StoreDemo.isOn, let scheme = request.url?.scheme, scheme == "https" || scheme == "http" { return true }
         if request.url?.host == host { return true }
         // プロフィールの QR の合図を人に引く口（`GET /qr/{合図}`・ログイン不要なので鍵が付かない・2026-11-12）。
         // 見本の合図は端末の中にしか無いので、本物の口へは出さずにここで答える
@@ -461,6 +464,32 @@ enum PreviewBackend {
         }
     }
 
+    /// 答え手の1本（`PreviewBackendProtocol.startLoading` が呼ぶ・試験が直に呼ぶ）。
+    /// App Store の見本（`StoreDemo`・札 #604・`demo`）の間は、見本の画像・公開の一覧・索引を `StoreDemo.answer` で答え、
+    /// 知らない置き場は断る（403）。nil の口（鍵の要る口・ストーリー・DM）は `reply` へ回し、公開の新着といいね数も見本から
+    /// （本物を読まない）。`hosts` は見本の間だけ要る（見本でなければ nil）
+    static func respond(to request: URLRequest, body: Data?, demo: Bool, userAPIPath: String,
+                        hosts: StoreDemo.Hosts?) async -> Reply {
+        guard let url = request.url else { return .unsupported }
+        let method = request.httpMethod ?? "GET"
+        if demo, let hosts, let answer = StoreDemo.answer(method: method, url: url, hosts: hosts) { return answer }
+        return await reply(
+            method: method,
+            route: route(url, basePath: userAPIPath),
+            body: body, userId: PreviewSession.userId,
+            stories: PreviewSession.stories,
+            dm: PreviewSession.dm,
+            groups: PreviewSession.groups,
+            signinMethods: PreviewSession.signinMethods,
+            followNone: PreviewSession.followNone,
+            commentNotice: PreviewSession.commentNotice,
+            publicFeed: { demo ? StoreDemo.feed() : await readPublicFeed() },
+            publicLikes: { id in
+                if demo { return StoreDemo.photos.first { StoreDemo.photoId($0.asset) == id }?.likes ?? 0 }
+                return await readPublicLikes(id)
+            })
+    }
+
     /// 「サインインの方法」の見本の答え（サーバーの `signinMethods.ts` と同じ形）。
     /// `linked`: メールで作った人が Apple とつないでいる（Apple は解除できる）。`last`: Apple で作った人（Apple は最後の1つ）。
     /// 解除は覚えない（解除した後の一覧を返すだけ）
@@ -502,7 +531,15 @@ enum PreviewBackend {
     // MARK: - メッセージの見本（2026-11-10 札 #505）
 
     /// 見本の相手（uid は UUID の形・名前は見本の名前）
-    static let dmPeers: [(id: String, name: String, username: String?)] = [
+    /// App Store の見本（`StoreDemo`・札 #604）では、1人目を会話の中身（鳥居、京都）に合う作った名前に替える（`StoreDemo.dmPeer`）
+    static var dmPeers: [(id: String, name: String, username: String?)] {
+        guard StoreDemo.isOn else { return basePeers }
+        var peers = basePeers
+        peers[0] = (peers[0].id, StoreDemo.dmPeer.name, StoreDemo.dmPeer.username)
+        return peers
+    }
+
+    private static let basePeers: [(id: String, name: String, username: String?)] = [
         ("0b6f1c1e-1111-4aaa-8aaa-000000000001", "夕焼けの人", "yuyake"),
         ("0b6f1c1e-1111-4aaa-8aaa-000000000002", "港の写真家", "minato"),
         ("0b6f1c1e-1111-4aaa-8aaa-000000000003", "山の朝", "yamaasa"),
@@ -552,7 +589,9 @@ enum PreviewBackend {
     /// 消した吹き出しを戻していた（記録: run 1430 の `dm.probe` で `unsent=preview-dm-0-2 readded=1 count=10`）。
     /// 外したときは本物と同じく `full: true`（差分ではなく全部・画面は置き換える）を付ける
     static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date,
-                        samplePhoto: [String: Any]? = nil, unsent: Set<String> = []) -> Reply? {
+                        samplePhoto: [String: Any]? = nil, unsent: Set<String> = [], demo: Bool = StoreDemo.isOn) -> Reply? {
+        // App Store の見本（`StoreDemo`・札 #604）: 「夕焼けの人」との会話の文を見本の写真と場所に合わせる（番号は `msg` の番号）
+        func say(_ n: Int, _ text: String) -> String { demo ? (StoreDemo.dmTexts[n] ?? text) : text }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         func ago(_ minutes: Double) -> String { iso.string(from: now.addingTimeInterval(-minutes * 60)) }
@@ -560,8 +599,10 @@ enum PreviewBackend {
         func thread(_ i: Int, _ minutes: Double, _ excerpt: String, unread: Int, state: String,
                     lastMine: Bool = false) -> [String: Any] {
             let p = dmPeers[i]
+            // App Store の見本（`StoreDemo`）では、見本の写真と場所に合わせた抜き書き
+            let shown = demo && i == 0 ? StoreDemo.dmFirstExcerpt : excerpt
             var row: [String: Any] = ["id": conv(i), "peerId": p.id, "name": p.name.isEmpty ? "退会したユーザー" : p.name,
-                                      "t": ago(minutes), "excerpt": excerpt, "unread": unread, "state": state]
+                                      "t": ago(minutes), "excerpt": shown, "unread": unread, "state": state]
             if let u = p.username { row["username"] = u }
             if p.name.isEmpty { row["deleted"] = true }
             row["lastMine"] = lastMine
@@ -622,11 +663,11 @@ enum PreviewBackend {
                                    msg(3, mine: true, "どこですか？", 60 * 50)]
             default:
                 answer["state"] = "inbox"
-                var items = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
-                             msg(2, mine: true, "ありがとうございます。伊豆の海沿いです。", 60 * 25.8),
-                             msg(3, mine: true, "地図はここに載っています journey-photo.com/spots", 60 * 25.75),
-                             msg(4, mine: false, "行ってみたい", 60 * 25.7),
-                             msg(5, mine: false, "日没の30分前に着くのがおすすめです", 60 * 25.6)]
+                var items = [msg(1, mine: false, say(1, "夕焼けの色がすごい。どこですか？"), 60 * 26, story: true),
+                             msg(2, mine: true, say(2, "ありがとうございます。伊豆の海沿いです。"), 60 * 25.8),
+                             msg(3, mine: true, say(3, "地図はここに載っています journey-photo.com/spots"), 60 * 25.75),
+                             msg(4, mine: false, say(4, "行ってみたい"), 60 * 25.7),
+                             msg(5, mine: demo, say(5, "日没の30分前に着くのがおすすめです"), 60 * 25.6)]
                 // 写真の通（2026-11-11 札 #541）: 写真だけの1通（`photoOnly`）と、見られなくなった写真の1通
                 if let samplePhoto, let pid = samplePhoto["id"] as? String {
                     var photo = msg(6, mine: true, "写真を送りました", 30)
@@ -634,6 +675,9 @@ enum PreviewBackend {
                     photo["photoOnly"] = true
                     photo["photo"] = samplePhoto
                     items.append(photo)
+                }
+                // App Store の見本（`StoreDemo`）では「写真を表示できません」の1通を出さない（宣伝の絵に向かない）
+                if !demo, samplePhoto?["id"] is String {
                     var gone = msg(7, mine: false, "この写真もよかった", 20)
                     gone["photoId"] = "preview-gone-photo"
                     gone["photo"] = ["id": "preview-gone-photo", "state": "gone"] as [String: Any]
@@ -641,8 +685,9 @@ enum PreviewBackend {
                 }
                 items.append(msg(8, mine: false, "この曲いいね", 12))
                 // 撮影スポットを送った通（1.1.83・資料「SNS をもっと SNS に」⑤）: 頁のリンクだけの1通 → 札（`DMSpotCard`）
-                items.append(msg(9, mine: false, "https://journey-photo.com/spots/kenrokuen", 11))
-                items.append(msg(10, mine: false, "雪吊り、見に行かない？", 10.5))
+                // App Store の見本（`StoreDemo`）では、同梱の写真と合う見本の観光スポットへ（作例は見本の写真だけ）
+                items.append(msg(9, mine: false, demo ? StoreDemo.dmSpotLink : "https://journey-photo.com/spots/kenrokuen", 11))
+                items.append(msg(10, mine: false, say(10, "雪吊り、見に行かない？"), 10.5))
                 answer["items"] = items
             }
             if let items = answer["items"] as? [[String: Any]] {
@@ -695,7 +740,7 @@ enum PreviewBackend {
                   user != me, seen.insert(user).inserted, seen.count <= 8 else { continue }
             // 人のストーリーには曲と「札を焼き込んだ」印を付ける（名前の下の ♪ の行・長い曲名は流れる・2026-10-28）
             var row = story("preview-story-\(seen.count)", src: src, user: user, name: photo["displayName"])
-            row["song"] = previewStorySong
+            row["song"] = previewStorySong(demo: StoreDemo.isOn)
             row["songOnPhoto"] = true
             out.append(row)
             if seen.count == 1 {
@@ -711,10 +756,13 @@ enum PreviewBackend {
     }
 
     /// 見本のストーリーの曲（長い曲名・見る画面の名前の下の行が横に流れるのを撮る）。試聴は鳴らなくてよい
-    static let previewStorySong: [String: Any] = [
-        "title": "夜明けの港で聴くバラード（Long Version）", "artist": "Journey Photo Band",
-        "previewUrl": "https://audio-ssl.itunes.apple.com/preview.m4a",
-    ]
+    /// App Store の見本（`StoreDemo`）では場所を言わない曲名（`StoreDemo.songTitle`）
+    static func previewStorySong(demo: Bool) -> [String: Any] {
+        [
+            "title": demo ? (StoreDemo.songTitle ?? "") : "夜明けの港で聴くバラード（Long Version）", "artist": "Journey Photo Band",
+            "previewUrl": "https://audio-ssl.itunes.apple.com/preview.m4a",
+        ]
+    }
 
     /// 公開の新着（鍵なしで読む・見本の答え手を通さない）。読めなければ空（ストーリーが並ばないだけ）
     static func readPublicFeed() async -> [[String: Any]] {
@@ -745,7 +793,7 @@ enum PreviewBackend {
         return (try? JSONDecoder().decode(Count.self, from: data))?.likes
     }
 
-    private static let plainSession = URLSession(configuration: .ephemeral)
+    private static let plainSession = URLSession(configuration: StoreDemo.guarded(.ephemeral))
 
     /// 送られた本文（`httpBody`、無ければ流れから読む）
     static func body(of request: URLRequest) -> Data? {
@@ -789,20 +837,12 @@ final class PreviewBackendProtocol: URLProtocol {
         let request = self.request
         let body = PreviewBackend.body(of: request)
         let home = HomeLoop.current()
+        let demo = StoreDemo.isOn
         work = Task { [weak self] in
             guard let url = request.url else { return }
-            let reply = await PreviewBackend.reply(
-                method: request.httpMethod ?? "GET",
-                route: PreviewBackend.route(url, basePath: AppConfig.userAPIBaseURL.path),
-                body: body, userId: PreviewSession.userId,
-                stories: PreviewSession.stories,
-                dm: PreviewSession.dm,
-                groups: PreviewSession.groups,
-                signinMethods: PreviewSession.signinMethods,
-                followNone: PreviewSession.followNone,
-                commentNotice: PreviewSession.commentNotice,
-                publicFeed: { await PreviewBackend.readPublicFeed() },
-                publicLikes: { await PreviewBackend.readPublicLikes($0) })
+            let reply = await PreviewBackend.respond(to: request, body: body, demo: demo,
+                                                     userAPIPath: AppConfig.userAPIBaseURL.path,
+                                                     hosts: demo ? StoreDemo.Hosts.current : nil)
             home.perform { self?.deliver(reply, url: url) }
         }
     }

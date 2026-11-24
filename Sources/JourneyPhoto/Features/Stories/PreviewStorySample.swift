@@ -13,10 +13,13 @@ enum PreviewStorySample {
     /// ジャケットの見分けに使う印（通信はしない・`ProfileSongLine.artworkURL` に通る形だけ）
     static let artworkMarker = "https://preview.journey-photo.invalid/artwork.jpg"
 
-    /// 見本の曲。曲名は長め（札の「…」と見る画面の流れる行を撮る）
-    static let song = Photo.Song(title: "夜明けの港で聴くバラード", artist: "Journey Photo Band",
-                                 artwork: artworkMarker,
-                                 previewUrl: "https://audio-ssl.itunes.apple.com/preview.m4a", trackUrl: nil)
+    /// 見本の曲。曲名は長め（札の「…」と見る画面の流れる行を撮る）。App Store の見本（`StoreDemo`）では、
+    /// 写真（森の中の線路）と食い違わないよう場所を言わない曲名（`StoreDemo.songTitle`）
+    static var song: Photo.Song {
+        Photo.Song(title: StoreDemo.songTitle ?? "夜明けの港で聴くバラード", artist: "Journey Photo Band",
+                   artwork: artworkMarker,
+                   previewUrl: "https://audio-ssl.itunes.apple.com/preview.m4a", trackUrl: nil)
+    }
 
     static func photoData() -> Data? {
         guard PreviewSession.opensStorySongSample else { return nil }

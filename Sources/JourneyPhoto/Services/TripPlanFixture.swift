@@ -69,6 +69,14 @@ enum TripPlanFixture {
     static func initialPlans(today: Date, soon: Bool = TripPlanFixture.soon) -> [TripPlan] {
         let start = TripPlanText.calendar.date(byAdding: .day, value: 30, to: today) ?? today
         let end = TripPlanText.calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        #if DEBUG
+        // App Store の見本（`StoreDemo`・札 #604）: 金沢のプランは本物の台帳のスポットを指していて、見本の索引では名前を引けない。
+        // 見本の観光スポット4か所で組んだプランだけにする
+        if StoreDemo.isOn {
+            return [StoreDemo.tripPlan(start: TripPlanText.ymd(start), end: TripPlanText.ymd(end), shared: shared,
+                                       me: TripShareFixtureStore.me, friend: TripShareFixtureStore.friend)]
+        }
+        #endif
         let kanazawa = TripPlan(
             planId: "fixture-kanazawa", title: "金沢・福井の旅",
             startDate: TripPlanText.ymd(start), endDate: TripPlanText.ymd(end),

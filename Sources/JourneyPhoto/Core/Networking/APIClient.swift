@@ -111,7 +111,7 @@ actor APIClient {
             #if canImport(Darwin)
             config.waitsForConnectivity = false
             #endif
-            self.session = URLSession(configuration: config)
+            self.session = URLSession(configuration: StoreDemo.guarded(config))
         }
     }
 

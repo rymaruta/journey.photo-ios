@@ -302,37 +302,61 @@ A big update since the fall, with many new ways to share travel photos.
 
 ## 画面写真
 
-**今の Apple の決まり（2026-11-15 に developer.apple.com の「Screenshot specifications」で確かめた）:**
-iPhone だけのアプリ（`TARGETED_DEVICE_FAMILY: "1"`）は、**6.9インチ**（iPhone with Dynamic Island の大きい画面）の1組を出せば足りる。
-出さないときだけ 6.5インチが要る。1枚から10枚、PNG か JPEG（透過なし）。
+**今の Apple の決まり（2026-11-23 に札 #604 で確かめ直した）:**
+iPhone だけのアプリ（`TARGETED_DEVICE_FAMILY: "1"`）は、**6.9インチ**（Dynamic Island 搭載 iPhone の大型ディスプレイ）の1組に加えて、
+**「iPhone with Dynamic Island (medium display)」が最低1枚要る**（日本語の App Store Connect では「Dynamic Island 搭載 iPhone（中型ディスプレイ）」）。
+1枚から10枚、PNG か JPEG（透過なし）。
 
-| 枠 | 受け付ける寸法（縦） | 機種 |
+| 枠（App Store Connect の名前） | 受け付ける寸法（縦・先が望ましい） | 置き場 |
 |---|---|---|
-| 6.9インチ | **1320×2868**、1290×2796、1260×2736 | 17 Pro Max、16 Pro Max、Air など |
-| 6.5インチ | 1284×2778、1242×2688 | 6.9 を出せば要らない |
+| Dynamic Island 搭載 iPhone（大型ディスプレイ）＝ 6.9インチ | **1320×2868**、1290×2796、1260×2736 | 直下 |
+| Dynamic Island 搭載 iPhone（中型ディスプレイ） | **1206×2622**、1179×2556 | `medium/` |
 
-出す絵は `Tools/store-screenshots.py` が、撮った画面を黒地に置き、真鍮の眉ラベルと明朝の見出しを足して**必ず 1320×2868** で作る
-（材料の画面の寸法がシミュレータの機種で変わっても、出す絵の寸法は変わらない）。
+**撮る機種は名前で決め打ちしない**（2026-11-23 run 1740: ランナーの Xcode 27.2 に iPhone 17 Pro Max も 16 Pro Max も無く止まった）。
+`store-screenshots.py --device large|medium` が、入っている iPhone の機種（`simctl list devicetypes`）の画面写真の寸法を、
+機種の情報（`profile.plist` の mainScreenWidth・Height・Scale）か、出せなければ1回起動して撮った1枚で測り、
+受け付ける寸法そのものの機種を選ぶ（寸法は表の先のものを先に、同じ寸法なら新しい機種）。その機種のシミュレータが無ければ作る。
+選んだ機種と寸法は job のログと README に出る。どの機種も合わなければ赤（縮めて合わせない）。
 
-### 並び（2026-11-15 に決めた。芯の輪の順。検索結果に出るのは最初の3枚）
+**合成しない。シミュレータの実際の画面をそのまま出す**（2026-11-23 owner「ちゃんと実機通りのスクショかも見ないといけない。イメージで作るのはダメ」）。
+前は黒地に真鍮の小見出しと明朝の見出しを足し、画面を縮めて置いていたが、やめた。`Tools/store-screenshots.py` は、枠の寸法がそのまま出る機種で
+撮った画面を、**同じ8枚を2組**（`FRAMES`）そのまま書き出すだけ。材料の寸法が受け付ける寸法のどれでもなければ、その枚は作らず赤にする
+（縮めて合わせない）。1組の中で寸法がそろっていなくても赤。
+状態のバーは撮る前に Apple の決まった形（9:41、Wi-Fi と電波と電池が満タン・`Tools/store-status-bar.sh`）にする。
 
-| 順 | 画面 | 材料（`ScreenshotTests` の絵の名前） | 上に置く見出し |
+### 並び（2026-11-15 に決めた。芯の輪の順。検索結果に出るのは最初の3枚。2026-11-23 に AI に頼むを2枚目に足して8枚）
+
+| 順 | 出す名前 | 画面 | 材料（`ScreenshotTests` の絵の名前） |
 |---|---|---|---|
-| 1 | ホーム（みんなの写真の1本の並び） | `10-ホーム` | みんなの写真から、次の旅へ |
-| 2 | 観光スポットの頁（作例と光の時刻） | `70-ストア・撮影スポット（鍋ヶ滝）` | 行きたい場所が、きっと見つかる |
-| 3 | 旅行プラン（日程と移動の目安） | `66c-旅行プラン（仲間と共有・日程）` | 仲間と一緒に、旅を組み立てる |
-| 4 | 投稿（写真の編集の入口） | `42-投稿（写真の編集の入口）` | 撮った一枚を、すぐ載せる |
-| 5 | ストーリー（曲の札） | `62a-ストーリーの曲の札` | 24時間のストーリーで、旅の今を |
-| 6 | メッセージ（会話） | `86m4-メッセージ（会話）` | 旅の仲間と、そのまま話せる |
-| 7 | 写真の詳細 | `20-写真の詳細` | 一枚の向こうの場所まで |
-| 審査用 | Pro の案内 | `81-Pro の案内` | （課金の審査に出す。並びには入れない） |
+| 1 | `01-ホーム` | ホーム（みんなの写真の1本の並び） | `10-ホーム` |
+| 2 | `02-AI に頼む` | AI に頼む（問いと答え、観光スポットの札） | `90-ストア・AI に頼む（答え）` |
+| 3 | `03-観光スポット` | 観光スポットの頁（作例と光の時刻） | `70-ストア・撮影スポット（伏見稲荷大社）` |
+| 4 | `04-旅行プラン` | 旅行プラン（日程と移動の目安） | `66c-旅行プラン（仲間と共有・日程）` |
+| 5 | `05-投稿` | 投稿（写真の編集の入口） | `42-投稿（写真の編集の入口）` |
+| 6 | `06-ストーリー` | ストーリー（曲の札） | `62a-ストーリーの曲の札` |
+| 7 | `07-メッセージ` | メッセージ（会話） | `86m4-メッセージ（会話）` |
+| 8 | `08-写真の詳細` | 写真の詳細 | `20-写真の詳細` |
+| 審査用 | `review-Pro の案内` | Pro の案内（課金の審査に出す。並びには入れない） | `81-Pro の案内` |
 
-**写真の権利（CLAUDE.md「他人の写真は、その人のもの」・絶対）。** ストア用の絵には、**本番の他の利用者の写真を1枚も入れない**。
-目で見て選ぶ形にはしない。絵に出してよいのは、アプリ内の見本のデータか、運営が権利を持つ写真だけ。人の顔、他社のロゴも入れない。
+**写真の権利（CLAUDE.md「他人の写真は、その人のもの」・絶対）。** ストア用の絵には、**本番の他の利用者の写真と、他の作者の作例を1枚も入れない**。
+目で見て選ぶ形にはせず、仕組みで守る（2026-11-23・札 #604・owner「写真ないので見本でお願い」）:
 
-> 🔴 **2026-11-22 時点で、いまの `storeShots` の絵はストアに使えない。** 材料を撮る UI テストは、`-JPSiteBaseURL https://journey-photo.com` で
-> 本番の公開写真（ホーム、写真の詳細）、本番の観光スポットの作例（Commons などの他の作者）、実在の利用者（`ScreenshotTests.previewUserId`）の写真で描く。
-> 見本のデータだけで描く仕組み（ストア用の回だけ）はまだ無い。要るものは札 #604 に書いた。できるまで、出た絵はストアに上げない
+- 材料は**見本の表示**（起動の引数 `-JPStoreDemo YES`・Debug のみ・`Sources/JourneyPhoto/Core/Networking/StoreDemo.swift`）で撮る。
+  画面は今のアプリのまま（見本用の別の画面は作らない）で、通信の向こう側だけを端末の中で答える
+- **画像はアプリに入っている構図の作例写真だけ**（`Assets.xcassets` の `composition-ai-*`）。出典と許諾は
+  `Tools/composition-examples/photo-sources.json`（使うものはどれも CC0。クレジット不要・商用可）。人は後ろ姿か小さな人影だけ
+- **見本の間はネットワークから何も読まない。** アプリの全部の URLSession の要求を見本の答え手（`PreviewBackendProtocol`）が引き受け、
+  知らない置き場は断る。画像の入口（`DownsampledRemoteImage`・`RemoteImage`・`AsyncImage(url:)`）も見本の置き場の URL しか読まない。
+  単体テスト `StoreDemoTests` が、URLSession を作る所と `AsyncImage(url:)` の全部が見張りを通ることを見る
+- 文は作った見本。利用者名は実在の人を思わせない作った名前。写真に付ける場所の名前は、その写真の出典に書かれた実際の場所と合うものだけ
+  （例: ブルックリン橋の写真にブルックリン橋）。場所の分からない写真は場所名なしの投稿。観光スポットの頁は、その場所の写真がある
+  4か所（伏見稲荷大社、金閣寺、新倉山浅間公園、八坂の塔）だけ
+- **見た目は実機と同じ。** 見本の表示で変えるのはデータだけで、画面の部品は本物と同じに描く。作例の出典の行も、同梱の写真の本当の
+  作者と許諾（CC0）と Commons の頁で出る。AI に頼むの回数の1行も本物と同じに出る。画面の側で見本の表示を見てよいのは、画像を読む道と
+  見本の曲名だけ（単体テスト `StoreDemoTests.testScreensLookTheSameInDemo` が見張る）
+- 絵を撮る試験は `Tools/store-screenshots.py` の `STORE_TESTS`（`ScreenshotTests/testStoreDemo…` の8本）。どれも `launchStoreDemo` で起動し、
+  本番の向き先（`-JPSiteBaseURL` など）と実在の利用者（`-JPPreviewUserId`）を渡さない。`storeShots` の回は最初の段
+  （「App Store 用の絵は見本の表示で撮る」・`store-screenshots.py --check-demo`）でこれを確かめ、外れていれば赤で止まる
 
 ### 作り方（2026-11-22 から CI で作る。札 #604）
 
@@ -343,17 +367,55 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
   -f ref=main -f 'inputs[submit]=false' -f 'inputs[storeShots]=true' -f 'inputs[screens]=none'
 ```
 
-- 流すのは材料を撮る UI テスト6本と起動の見張りだけ（`Tools/store-screenshots.py` の `STORE_TESTS`）。単体テスト、Archive、署名は流さない。
+- 流すのは材料を撮る UI テスト8本と起動の見張りだけ（`Tools/store-screenshots.py` の `STORE_TESTS`）を、大型の機種と中型の機種で1回ずつ。
+  単体テスト、Archive、署名は流さない。
   `screens` の値は使わない（`none` でよい）。`submit: true` と一緒にすると最初の段で止まる
 - 出来た絵は**非公開の S3** の `<run 番号>/store.tar`（画面写真と同じ置き場、**3日で自動で消える**）。公開の枝、成果物、ログには置かない
-- 取り出し: `bash Tools/fetch-shots.sh <run 番号>` → scratchpad の `shots/<run 番号>/store/` に、上の7枚（`01-ホーム.png` 〜 `07-写真の詳細.png`）、
-  審査用の `review-Pro の案内.png`（原寸）、寸法の控えの `README.md`
-- App Store Connect に上げ終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`（手元と S3 からすぐ消す）
+- 取り出し: `bash Tools/fetch-shots.sh <run 番号>` → scratchpad の `shots/<run 番号>/store/` に
+  - 直下: 大型ディスプレイ（6.9インチ・1320×2868）の8枚（`01-ホーム.png` 〜 `08-写真の詳細.png`）と、審査用の `review-Pro の案内.png`
+  - `medium/`: 中型ディスプレイ（1206×2622 か 1179×2556。選んだ機種の寸法）の同じ8枚
+  - `README.md`: 合成なし（シミュレータの実際の画面）、機種名、iOS の版、枠の名前（App Store Connect の欄の名前）と寸法
+- App Store Connect では、直下の8枚を「Dynamic Island 搭載 iPhone（大型ディスプレイ）」、`medium/` の8枚を
+  「Dynamic Island 搭載 iPhone（中型ディスプレイ）」に上げる。上げ終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`（手元と S3 からすぐ消す）
 - 材料が1枚でも足りないと、その回は赤になる（足りない絵の名前が job のログに出る）
-
-**見本のデータだけで描く仕組みができるまで、`storeShots` の回は最初の段で赤になって止まる**（上の「写真の権利」。`ios-testflight.yml` の「App Store 用の絵は見本で描けるまで止める」）。
 
 ## レビュー用の追記
 
 `docs/APP_REVIEW.md` を見ること。審査メモの文面、審査用アカウントの作り方、ガイドライン別の対応、
 App のプライバシーの答え、年齢区分の答えが書いてある。
+
+## App Store Connect に画面写真を上げる（2026-11-23 から CI で。札 #604）
+
+上の「作り方」の storeShots の回で、作った絵を**その場から** App Store Connect に入れ替える（iPhone の Web では画面写真を足せない・消せない）。
+S3 から取り直さないので、AWS の権限は今のまま（CI の役割は置くことだけ）。S3 には今までどおり置く（絵を見るため）。
+
+- 入れ替えるのは `ascLocales` で渡した言語だけ（既定 `ja`。英語の頁も同じ絵なら `ja,en-US`）。ほかの言語は消さない・作らない。版に無い言語は作らずに止まる
+- 相手にするのは、指定の版で**状態が「提出の準備中」（PREPARE_FOR_SUBMISSION）のものだけ**。配信中・審査中の版なら赤で止まる（変える直前にも読み直す）
+- 渡した言語で、6.9インチ（`APP_IPHONE_67`・1320×2868／1290×2796／1260×2736）に大型の絵、6.3インチ（`APP_IPHONE_61`・Dynamic Island の中型・1206×2622／1179×2556）に中型の絵を 01 から順に入れ、
+  6.5インチ（`APP_IPHONE_65`）以前の古い iPhone の組は、大型と中型がそろって COMPLETE になってから空にする。どの組に入れるかはフォルダの名前でなく PNG の寸法で決める。
+  組ごとに全部 COMPLETE でなければその場で止まり、止まっても最後に今の組の中身を出す。iPad の組・メタデータ・審査への提出には触らない。
+  寸法と組の対応は `Tools/asc-screenshots.py` の頭
+
+1. 先に App Store Connect で出す版（例 1.1.119）を作っておく（「提出の準備中」になる）
+2. **下見**（App Store Connect は何も変えない。消す絵と上げる絵の名前が「App Store Connect に画面写真を入れ替える」の段のログに出る）:
+
+   ```
+   gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+     -f ref=main -f 'inputs[submit]=false' -f 'inputs[storeShots]=true' -f 'inputs[screens]=none' \
+     -f 'inputs[ascVersion]=1.1.119' -f 'inputs[ascLocales]=ja,en-US' -f 'inputs[ascApply]=false'
+   ```
+
+3. 下見のログと S3 の絵（`bash Tools/fetch-shots.sh <run 番号>`）でよければ **入れ替え**（同じ inputs で `ascApply=true`。絵はその回で撮り直す）:
+
+   ```
+   gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+     -f ref=main -f 'inputs[submit]=false' -f 'inputs[storeShots]=true' -f 'inputs[screens]=none' \
+     -f 'inputs[ascVersion]=1.1.119' -f 'inputs[ascLocales]=ja,en-US' -f 'inputs[ascApply]=true'
+   ```
+
+   最後に「入れ替えたあとの組」に各言語・各組の枚数と状態が出る。全部 COMPLETE で 01 からの順でなければ赤
+4. 終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`
+
+- storeShots で上げる回は30分を超えうる（大型と中型の UI テスト＋上げる段）。上げる回だけの例外（CLAUDE.md の「Mac のテストは毎回30分以内」の外）
+- `ascVersion` は `storeShots=true` の回でだけ使える（ほかの回なら最初の段で止まる）。UI テストが落ちて絵がそろわない回は上げない
+- 鍵は TestFlight と同じ `APP_STORE_CONNECT_*`（画面写真を変えるには App Manager 以上の役割の鍵が要る。足りなければ下見の最初の読みで 401/403 になる）
