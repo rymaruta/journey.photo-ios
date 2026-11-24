@@ -37,9 +37,12 @@ struct TripShelfList: View {
                  "Post two photos from the same trip to make a travel book")
     }
 
+    /// 一冊の控え（背の県を旅が変わったときだけ引く・`TripBookshelf.BookMemo`）。
+    /// 本を開く・閉じるたびにマイページが描き直されても、ここでは県を引き直さない（2026-11-24 判断）
+    @State private var memo = TripBookshelf.BookMemo()
+
     private var books: [TripBookshelf.Book] {
-        trips.map(TripBookshelf.book)
-            + deviceBooks.filter(TripBookshelf.showsOnShelf).map { TripBookshelf.book($0, name: deviceNames[$0.id]) }
+        memo.books(posted: trips, device: deviceBooks.filter(TripBookshelf.showsOnShelf), names: deviceNames)
     }
 
     var body: some View {
@@ -179,7 +182,7 @@ struct TripBookshelfView<Opened: View>: View {
         Button {
             openBook(book)
         } label: {
-            BookSpineSlot(book: book, model: stage)
+            BookSpineSlot(book: book, hider: stage.hider)
         }
         .buttonStyle(SpineButtonStyle(reduceMotion: reduceMotion))
         // 本を引き出す元の枠（棚の座標・知らせない）と、表紙を先に読んでおく
@@ -210,14 +213,17 @@ struct TripBookshelfView<Opened: View>: View {
 }
 
 /// 背表紙の枠。**押せる所は背の幅＋間**（間の半分ずつを両側に・隣の背との真ん中で区切る）。
-/// 引き出している一冊の背は隠す（棚に隙間が空く）。見張るのはここだけ（棚ぜんぶを作り直さない）
+/// 引き出している一冊の背は隠す（棚に隙間が空く）。見張るのはここだけ（棚ぜんぶを作り直さない）。
+/// 見張るのは「どの一冊を出しているか」だけ（`BookSpineHider`）。開く・閉じる動きの1段ずつでは作り直さない（2026-11-24 判断）
 struct BookSpineSlot: View {
     let book: TripBookshelf.Book
-    @ObservedObject var model: BookStageModel
+    @ObservedObject var hider: BookSpineHider
 
     var body: some View {
         BookSpine(book: book)
-            .opacity(model.stage?.book.id == book.id ? 0 : 1)
+            // 背の見た目が変わったときだけ描き直す（`TripBookshelf.SpineLook`）
+            .equatable()
+            .opacity(hider.hiddenId == book.id ? 0 : 1)
             .padding(.horizontal, CGFloat(TripBookshelf.spineGap / 2))
             .contentShape(Rectangle())
     }
@@ -278,6 +284,13 @@ struct BookSpine: View {
             .frame(height: 12)
             .padding(.top, 5)
             .accessibilityHidden(true)
+    }
+}
+
+extension BookSpine: Equatable {
+    /// 背の見た目を決める値が同じなら描き直さない（2026-11-24 判断・開く・閉じるたびに棚の背をすべて組み直していた）
+    nonisolated static func == (lhs: BookSpine, rhs: BookSpine) -> Bool {
+        TripBookshelf.SpineLook(lhs.book) == TripBookshelf.SpineLook(rhs.book)
     }
 }
 

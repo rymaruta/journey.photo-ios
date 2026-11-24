@@ -20,10 +20,15 @@ enum BookCoverCache {
     static func image(for book: TripBookshelf.Book) -> UIImage? {
         switch book.source {
         case .posted(let trip):
-            return trip.cover?.gridImageURL.flatMap { DownsampledRemoteImage.cached($0, pixels: pixels) }
+            return image(posted: trip)
         case .device(let trip):
             return trip.cover.flatMap { device[$0.id] }
         }
+    }
+
+    /// 投稿した旅の表紙（一冊の頁が広がっている間に描く・`TripBookCoverPhoto`）
+    static func image(posted trip: TripBook.Trip) -> UIImage? {
+        trip.cover?.gridImageURL.flatMap { DownsampledRemoteImage.cached($0, pixels: pixels) }
     }
 
     /// 表紙を読んでおく（背表紙が画面に出たとき）
@@ -60,6 +65,20 @@ struct BookStageState: Equatable {
     }
 }
 
+/// 引き出している一冊の印（2026-11-24 判断・owner「本を開く・閉じる動きが重い」）。
+///
+/// **背表紙が見張るのはこれだけ。** 前は背表紙の枠がみな `BookStageModel` を見張り、開く（出す・引き出す・めくる）・
+/// 閉じる（めくり戻す・棚へ・消す）のたびに棚のすべての背表紙の `body` を作り直していた（1回の開閉で6〜7回 × 冊数）。
+/// これは一冊を出すときと棚に戻し終えたときの2回だけ変わる
+@MainActor
+final class BookSpineHider: ObservableObject {
+    @Published private(set) var hiddenId: String?
+
+    func hide(_ id: String?) {
+        if hiddenId != id { hiddenId = id }
+    }
+}
+
 /// 本を開く・閉じる段取り（案の頁の「本を開く（実機）」・2026-11-23 owner 決定）。
 ///
 /// **棚は見張らない**（棚の `@State` に置くと、動くたびに棚ぜんぶの `body` を作り直す）。見張るのは本の層（`BookStageLayer`）と
@@ -68,6 +87,8 @@ struct BookStageState: Equatable {
 final class BookStageModel: ObservableObject {
 
     @Published private(set) var stage: BookStageState?
+    /// 背表紙が見張る印（`BookSpineHider`）。`stage` の動きでは背表紙を作り直さない
+    let hider = BookSpineHider()
 
     /// 背表紙の枠（棚の座標）。動くたびに知らせない（測るだけ）
     var spineFrames: [String: CGRect] = [:]
@@ -93,6 +114,7 @@ final class BookStageModel: ObservableObject {
         guard task == nil, stage == nil else { return }
         let from = spineFrames[book.id] ?? CGRect(x: shelfWidth / 2 - 15, y: 0, width: 30, height: 130)
         stage = BookStageState(book: book, image: BookCoverCache.image(for: book), from: from, center: stageCenter())
+        hider.hide(book.id)
         task = Task { [weak self] in
             // 背表紙の位置で1度描いてから動かす
             try? await Task.sleep(nanoseconds: 16_000_000)
@@ -115,7 +137,7 @@ final class BookStageModel: ObservableObject {
     /// 一冊の頁が閉じた（「戻る」・下へ引いた）。表紙を戻し、棚へ帰す。帰り着いたら `arrived`
     func close(arrived: @escaping () -> Void) {
         task?.cancel()
-        guard stage != nil else { task = nil; arrived(); return }
+        guard stage != nil else { task = nil; hider.hide(nil); arrived(); return }
         task = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.ns(TripBookMotion.coverCloseDelay))
             guard let self else { return }
@@ -128,6 +150,7 @@ final class BookStageModel: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: Self.ns(TripBookMotion.shelveDuration))
             self.stage = nil
+            self.hider.hide(nil)
             self.task = nil
             arrived()
         }
@@ -138,6 +161,7 @@ final class BookStageModel: ObservableObject {
         task?.cancel()
         task = nil
         stage = nil
+        hider.hide(nil)
     }
 
     private static func ns(_ seconds: Double) -> UInt64 { UInt64(max(0, seconds) * 1_000_000_000) }
@@ -207,33 +231,47 @@ struct OpeningBook: View {
     }
 }
 
-/// めくれる表紙。90° を越えたら表紙の裏（見返し）を見せる（裏返った写真を見せない）
-struct FlippingCover: View, Animatable {
-    var angle: Double
+/// めくれる表紙。90° を越えたら表紙の裏（見返し）を見せる（裏返った写真を見せない）。
+///
+/// **毎フレーム作り直すのは表と裏の透明度（`CoverSide`）だけ**（2026-11-24 判断・owner「本を開く・閉じる動きが重い」）。
+/// 前はこの部品そのものが角度で動いていて（`Animatable`）、めくる 0.26 秒・戻す 0.20 秒の毎フレームに表紙（明朝の題・
+/// グラデーション・布）を組み直し、`drawingGroup` の1枚の絵を描き直していた。回すのは `rotation3DEffect` に任せる
+/// （描いた絵を回すだけ）。見た目・角度・時間は前と同じ
+struct FlippingCover: View {
+    let angle: Double
     let book: TripBookshelf.Book
     let image: UIImage?
+
+    var body: some View {
+        ZStack {
+            BookCoverFace(book: book, image: image)
+                .drawingGroup()
+                .modifier(CoverSide(angle: angle, isBack: false))
+            // 見返し（布の色の紙）。裏から見るので左右を返す
+            BookCloth(color: book.cloth)
+                .overlay(Color.black.opacity(0.25))
+                .scaleEffect(x: -1, y: 1)
+                .modifier(CoverSide(angle: angle, isBack: true))
+        }
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 2,
+                                          bottomTrailingRadius: 6, topTrailingRadius: 6))
+        .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0),
+                          anchor: .leading, perspective: TripBookMotion.perspective)
+    }
+}
+
+/// めくれている表紙の表と裏の見え方。角度に合わせて動くのはここだけ（中身の絵は作り直さない）
+struct CoverSide: ViewModifier, Animatable {
+    var angle: Double
+    let isBack: Bool
 
     var animatableData: Double {
         get { angle }
         set { angle = newValue }
     }
 
-    var body: some View {
-        let showsBack = TripBookMotion.showsCoverBack(angle: angle)
-        ZStack {
-            BookCoverFace(book: book, image: image)
-                .drawingGroup()
-                .opacity(showsBack ? 0 : 1)
-            // 見返し（布の色の紙）。裏から見るので左右を返す
-            BookCloth(color: book.cloth)
-                .overlay(Color.black.opacity(0.25))
-                .scaleEffect(x: -1, y: 1)
-                .opacity(showsBack ? 1 : 0)
-        }
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 2,
-                                          bottomTrailingRadius: 6, topTrailingRadius: 6))
-        .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0),
-                          anchor: .leading, perspective: TripBookMotion.perspective)
+    func body(content: Content) -> some View {
+        content.opacity(TripBookMotion.showsCoverBack(angle: angle) == isBack ? 1 : 0)
     }
 }
 
@@ -274,6 +312,43 @@ struct BookInnerPage: View {
         }
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 2,
                                           bottomTrailingRadius: 6, topTrailingRadius: 6))
+    }
+}
+
+/// 一冊の頁の表紙の写真（2026-11-24 判断・owner「本を開く・閉じる動きが重い」）。
+///
+/// **頁が広がっている間は、棚で読んでおいた表紙（`BookCoverCache`・512px・展開済み）を描くだけ。** 前は頁が出た瞬間に
+/// 画面いっぱいの大きな写真（`detailImageURL`）を読み始め、広がる 0.23 秒の途中で展開して描いていた。
+/// 大きな写真は開き切ってから読み、出たら上に重ねる（読めなければ控えの表紙のまま）。控えに無ければ今までどおりすぐ読む
+struct TripBookCoverPhoto: View {
+    let cover: Photo
+    let quick: UIImage?
+
+    @State private var loadsDetail = false
+    @State private var detailShown = false
+
+    var body: some View {
+        if let quick {
+            ZStack {
+                Image(uiImage: quick)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: cover.gridAlignment)
+                if loadsDetail {
+                    RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment, onSettled: { ok in
+                        withAnimation(.easeOut(duration: 0.15)) { detailShown = ok }
+                    })
+                    .opacity(detailShown ? 1 : 0)
+                }
+            }
+            .task {
+                guard !loadsDetail else { return }
+                try? await Task.sleep(nanoseconds: UInt64(TripBookMotion.openTotal * 1_000_000_000))
+                loadsDetail = true
+            }
+        } else {
+            RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment)
+        }
     }
 }
 

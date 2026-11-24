@@ -371,6 +371,72 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertEqual(TripBookshelf.rows(widths: widths, available: 95, gap: 0), [[0, 1], [2]])
     }
 
+    // MARK: - 開く・閉じる動きを軽く（2026-11-24 owner「本を開く・閉じる動きが重い」TestFlight 1.2.1）
+
+    /// 🔴 背の県は旅が変わったときだけ引く。同じ旅なら前の一冊を返し、変わった旅だけ作り直し、棚から消えた旅は落とす
+    func testBookMemoResolvesPrefectureOnlyWhenTripChanges() throws {
+        let memo = TripBookshelf.BookMemo()
+        let a = try trip("a", year: 2026, month: 9), b = try trip("b", year: 2025, month: 4, photos: 3)
+        let device = LibraryTrip(id: "d", shots: [], start: Date(), end: Date(), days: [], center: nil, timeZone: .current)
+        let first = memo.books(posted: [a, b], device: [device], names: ["d": "函館"])
+        XCTAssertEqual(first.map(\.id), ["posted-a", "posted-b", "device-d"])
+        XCTAssertEqual(memo.builtCount, 3)
+        // 描き直し（開く・閉じるでマイページが作り直される）: 何も引き直さない
+        let again = memo.books(posted: [a, b], device: [device], names: ["d": "函館"])
+        XCTAssertEqual(memo.builtCount, 3, "同じ旅なのに背の県を引き直した（動きの最中に重い計算が走る）")
+        XCTAssertEqual(again.map(\.spineText), first.map(\.spineText))
+        // 旅が変わった（写真が増えた）・地名が分かった: その一冊だけ作り直す
+        let b2 = try trip("b", year: 2025, month: 4, photos: 4)
+        _ = memo.books(posted: [a, b2], device: [device], names: ["d": "函館市"])
+        XCTAssertEqual(memo.builtCount, 5)
+        // 中身は直に作ったものと同じ
+        let direct = TripBookshelf.book(b2)
+        XCTAssertEqual(memo.books(posted: [b2], device: [], names: [:]).first?.photoCount, direct.photoCount)
+        XCTAssertEqual(memo.builtCount, 5)
+        // 消えた旅は控えから落ちる（戻ってきたら作り直す）
+        _ = memo.books(posted: [a], device: [], names: [:])
+        XCTAssertEqual(memo.builtCount, 6, "棚から消えた旅を控えに持ち続けている")
+    }
+
+    /// 🔴 棚は一冊を `body` で毎回作らない（控えを通す）。背表紙は「どれを出しているか」だけを見張る
+    func testShelfDoesNotRebuildOnEveryMotionStep() throws {
+        let shelf = try source("Features/Trips/TripShelf.swift")
+        let stage = try source("Features/Trips/TripBookStage.swift")
+        XCTAssertTrue(shelf.contains("@State private var memo = TripBookshelf.BookMemo()"))
+        XCTAssertTrue(shelf.contains("memo.books(posted: trips, device: deviceBooks.filter(TripBookshelf.showsOnShelf), names: deviceNames)"))
+        XCTAssertFalse(shelf.contains("trips.map(TripBookshelf.book)"), "棚の body で毎回すべての旅の県を引いている")
+        // 背表紙は段取り（stage）を見張らない
+        let slot = try XCTUnwrap(shelf.range(of: "struct BookSpineSlot: View {"))
+        let slotBody = String(shelf[slot.lowerBound...].prefix(700))
+        XCTAssertTrue(slotBody.contains("@ObservedObject var hider: BookSpineHider"))
+        XCTAssertFalse(slotBody.contains("BookStageModel"), "背表紙が開く・閉じるの1段ずつで作り直される")
+        XCTAssertTrue(slotBody.contains(".equatable()"))
+        // 印が変わるのは出すときと戻し終えたときだけ
+        XCTAssertEqual(stage.components(separatedBy: "hider.hide(book.id)").count - 1, 1)
+        // めくる表紙: 毎フレーム作り直すのは透明度だけ（表紙そのものは角度で動かない）
+        XCTAssertFalse(stage.contains("struct FlippingCover: View, Animatable"), "表紙を毎フレーム組み直している")
+        XCTAssertTrue(stage.contains("struct CoverSide: ViewModifier, Animatable"))
+        // 一冊の頁: 広がる間は控えの表紙、大きな写真とカードは開き切ってから
+        let book = try source("Features/Trips/TripBookView.swift")
+        let cache = "BookCover" + "Cache"
+        XCTAssertTrue(book.contains("TripBookCoverPhoto(cover: cover, quick: \(cache).image(posted: book))"))
+        XCTAssertFalse(book.contains("RemoteImage(url: cover.detailImageURL"), "広がっている間に大きな表紙を読んで展開している")
+        let task = try XCTUnwrap(book.range(of: "cardOwner = auth.userId"))
+        XCTAssertTrue(String(book[task.lowerBound...].prefix(400)).contains("TripBookMotion.openTotal"),
+                      "開く動きの間に共有のカードを作っている")
+    }
+
+    /// 背の見た目の値: 同じ一冊は同じ、背の字・窓の表紙が変われば違う（違えば背を描き直す）
+    func testSpineLookChangesOnlyWithWhatIsDrawn() throws {
+        let a = TripBookshelf.book(try trip("a", year: 2026, month: 9))
+        XCTAssertEqual(TripBookshelf.SpineLook(a), TripBookshelf.SpineLook(TripBookshelf.book(try trip("a", year: 2026, month: 9))))
+        XCTAssertNotEqual(TripBookshelf.SpineLook(a), TripBookshelf.SpineLook(TripBookshelf.book(try trip("a", year: 2026, month: 10))))
+        XCTAssertNotEqual(TripBookshelf.SpineLook(a), TripBookshelf.SpineLook(TripBookshelf.book(try trip("a", year: 2026, month: 9, photos: 40))))
+        var other = a
+        other.prefecture = "富山"
+        XCTAssertNotEqual(TripBookshelf.SpineLook(a), TripBookshelf.SpineLook(other), "背の字が変わったのに描き直さない")
+    }
+
     /// 端末の旅を棚に出す判断は1か所（同じ旅を2冊にしない・枝 post-nudges-710 をまとめるときにここを替える）
     func testDeviceTripShelfGateIsOnePlace() throws {
         let shelf = try source("Features/Trips/TripShelf.swift")

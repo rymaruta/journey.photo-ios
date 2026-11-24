@@ -103,6 +103,9 @@ struct TripBookView: View {
         .task(id: "\(book.id)|\(book.cover?.id ?? "")|\(book.photos.count)|\(auth.userId ?? "")") {
             if cardOwner != auth.userId { cardURL = nil }
             cardOwner = auth.userId
+            // **本を開く動きの間は作らない**（大きな表紙を読んでカードを描くのは、開き切ってから・2026-11-24 判断）
+            try? await Task.sleep(nanoseconds: UInt64(TripBookMotion.openTotal * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             // **作れなかったら前の画像を捨てる**（表紙・枚数が替わったのに前の1枚を配っていた・
             // eaf0c48 のレビュー）。取り消されただけ（すぐ次の作り直しが来る）なら触らない
             let made = await makeCard()
@@ -190,7 +193,8 @@ struct TripBookView: View {
                         // 縮めて読む部品には替えない（2026-10-31 判断・札 #429）。表紙（画面の幅 × 3:4）を覆うには
                         // 元の画像とほぼ同じ画素が要り縮まない。同じ大きさの写真の詳細で替えた回は、メモリが減らず
                         // 閉じた後に増えた（`PhotoDetailView.heroImage` の注記）
-                        RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment)
+                        // 頁が広がっている間は棚で読んでおいた表紙を描き、大きな写真は開き切ってから（2026-11-24・`TripBookCoverPhoto`）
+                        TripBookCoverPhoto(cover: cover, quick: BookCoverCache.image(posted: book))
                     }
                     .clipped()
             }
