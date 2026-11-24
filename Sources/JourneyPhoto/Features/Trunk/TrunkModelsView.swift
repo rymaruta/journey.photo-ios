@@ -13,7 +13,7 @@ struct TrunkModelsView: View {
         ScrollView {
             if let state = model.state {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(L("だれでも使える \(TrunkModel.free.count) 型", "\(TrunkModel.free.count) styles for everyone"))
+                    Text(eyebrow: L("だれでも使える \(TrunkModel.free.count) 型", "\(TrunkModel.free.count) styles for everyone"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     Text(L("押すとすぐ替わります。貼ったラベルと古び方はそのまま引き継がれます。",
@@ -158,7 +158,7 @@ struct TrunkProModelsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(L("SPECIAL TRUNKS\u{2002}Pro に含まれる \(TrunkModel.pro.count) 型",
+                Text(eyebrow: L("SPECIAL TRUNKS\u{2002}Pro に含まれる \(TrunkModel.pro.count) 型",
                        "SPECIAL TRUNKS\u{2002}\(TrunkModel.pro.count) styles with Pro"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)

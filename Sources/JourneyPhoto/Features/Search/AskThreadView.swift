@@ -204,7 +204,7 @@ struct AskThreadView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("search.ask.note")
                 }
-                // 2026-11-22 判断: 答えごとの「どこで答えたか」の1行は出さない（`AskText.serverNotice` を注意書きの所に1か所だけ）
+                // 2026-11-22 判断: 答えごとの「どこで答えたか」の1行は出さない（送ることは送る前の同意の画面で知らせる・2026-11-23）
             }
         }
         .accessibilityElement(children: .contain)
@@ -230,14 +230,15 @@ struct AskThreadView: View {
     private func formView(_ layout: AskAnswerLayout, a: AskAnswer, spots: [OfficialSpot]) -> some View {
         switch layout {
         case .spotCarousel:
-            AskSpotCarousel(spots: spots, reasons: a.reasons ?? [:], showsMap: a.state != .offline,
+            AskSpotCarousel(spots: spots, reasons: a.reasons ?? [:], season: AskLibrary.season(fromChips: a.chips),
+                            showsMap: a.state != .offline,
                             settled: !engine.detailsLoading,
                             officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
                 // 回 1641: 名前だけを付けると中の要素の名前（`search.ask.cardProbe` など）が上書きされた。入れ物として組にする
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("search.ask.spots")
         case .spotStack:
-            AskSpotStack(spots: spots, reasons: a.reasons ?? [:], officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
+            AskSpotStack(spots: spots, reasons: a.reasons ?? [:], season: AskLibrary.season(fromChips: a.chips), officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("search.ask.spots")
         case .spotWide:

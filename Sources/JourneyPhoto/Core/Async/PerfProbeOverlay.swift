@@ -5,7 +5,7 @@ import UIKit
 
 /// `PerfRecorder.summary()` を読み上げの値に出す見えない要素（UI テストのときだけ置く・`-JPPreviewPerfProbe YES`）。
 ///
-/// `CamperRenderProbe` と同じ作り: 0.5 秒ごとに**自分の中だけ**描き直す（親の画面は動かさない）。
+/// 前のとおまわり号の計測（2026-11-23 に消した）と同じ作り: 0.5 秒ごとに**自分の中だけ**描き直す（親の画面は動かさない）。
 /// 見えない 1pt・押せない。識別子は `perf.probe`（UI テストは `PerfProbeSupport` で読む）
 struct PerfProbeOverlay: View {
     static let identifier = "perf.probe"

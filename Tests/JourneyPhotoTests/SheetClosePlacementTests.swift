@@ -130,22 +130,6 @@ final class SheetClosePlacementTests: XCTestCase {
         XCTAssertEqual(bad, [], "見出しの行に字だけの「閉じる」がある。`SheetCloseButton(onContent: true)` を使う")
     }
 
-    /// とおまわり号の図鑑・家具の寄り・接写の一覧（2026-11-13 確かめ役の指摘・#187）: 見出しの行の左端に部品、識別子は残す
-    /// （UI テスト `ScreenshotTests` が押して 44pt を測る）
-    func testCamperRoomSheetsPutCloseFirst() throws {
-        let dex = try source("Features/Camper/Room/CamperRoomDexView.swift")
-        assertInOrder(["private var header: some View", "HStack(alignment: .top) {",
-                       "SheetCloseButton(onContent: true, action: onClose)", ".accessibilityIdentifier(\"camper.room.dex.close\")",
-                       "L(\"家具を集める\"", "Spacer(minLength: 0)"], in: dex, "図鑑")
-        assertInOrder(["struct CamperRoomCloseUpView", "HStack {", "SheetCloseButton(onContent: true, action: onClose)",
-                       ".accessibilityIdentifier(\"camper.room.closeup.close\")", "furniture.category.name",
-                       "Spacer(minLength: 0)"], in: dex, "家具の寄り")
-        let contact = try source("Features/Camper/Room/CamperRoomContactSheet.swift")
-        assertInOrder(["HStack(spacing: 4) {", "SheetCloseButton(onContent: true, action: onClose)",
-                       ".accessibilityIdentifier(\"camper.room.contact.close\")", "Spacer()",
-                       "\"camper.room.contact\""], in: contact, "接写の一覧")
-    }
-
     // MARK: - 洗い出した所が左上の SheetCloseButton になっていること
 
     /// 上のバーに置く所（`cancellationAction` の `SheetCloseButton`）
@@ -196,10 +180,11 @@ final class SheetClosePlacementTests: XCTestCase {
              ["SheetCloseButton(onContent: true)", "\"trunk.arrived.close\"", "Spacer()"]),
             ("Features/Trunk/TrunkGachaView.swift",          // カプセルを開けた
              ["SheetCloseButton(onContent: true)", "\"trunk.gachaOpen.close\"", "Spacer()"]),
-            ("Features/Trunk/TrunkRerollView.swift",         // 図柄を作り直す
-             ["SheetCloseButton(onContent: true)", "\"trunk.reroll.close\"", "Spacer()"]),
-            ("Features/Trunk/TrunkPartsBoxView.swift",       // 部品のシート
-             ["SheetCloseButton(onContent: true)", "\"trunk.partSheet.close\"", "TrunkGachaText.eyebrow(part)", "Spacer()"]),
+            ("Features/Trunk/TrunkCustomView.swift",         // 好きなデザインで作る（#706・作り直しの画面はやめた）
+             ["SheetCloseButton(onContent: true)", "\"trunk.custom.close\"", "Spacer()"]),
+            // 部品を押したシート（trunk.partSheet）は #711 でやめ、部品箱でその場で付ける。眉は和文の字間（Text(eyebrow:)）
+            ("Features/Trunk/TrunkPartsBoxView.swift",       // 持っていない部品のシート（2026-11-23・札 #711）
+             ["SheetCloseButton(onContent: true)", "\"trunk.missingSheet.close\"", "Text(eyebrow: part.kind.tabName)", "Spacer()"]),
             ("Features/Drafts/DraftsView.swift",             // 下書きについて
              ["SheetCloseButton(onContent: true)", "DraftsText.aboutTitle", "Spacer(minLength: 0)"]),
             ("Features/Stories/StoryInsightsView.swift",     // ストーリーの反応（前は見出しの行の右端→見出しの上の別の行）
@@ -272,8 +257,8 @@ final class SheetClosePlacementTests: XCTestCase {
             ("Features/Trunk/TrunkWelcomeView.swift", "\\(copy.id).close"),
             ("Features/Trunk/LabelArrivedView.swift", "trunk.arrived.close"),
             ("Features/Trunk/TrunkGachaView.swift", "trunk.gachaOpen.close"),
-            ("Features/Trunk/TrunkRerollView.swift", "trunk.reroll.close"),
-            ("Features/Trunk/TrunkPartsBoxView.swift", "trunk.partSheet.close"),
+            ("Features/Trunk/TrunkCustomView.swift", "trunk.custom.close"),
+            ("Features/Trunk/TrunkPartsBoxView.swift", "trunk.missingSheet.close"),
         ]
         for (path, id) in kept {
             let text = try source(path)

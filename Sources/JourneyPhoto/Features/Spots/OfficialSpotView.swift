@@ -76,6 +76,8 @@ struct OfficialSpotView: View {
     @State private var pendingCapture: CameraCapture?
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
     @State private var postedHere = false
+    /// 投稿の画面を開いたとき、写真が0枚と読めていたか（札 #710 の案7・投稿のあとの「最初の1枚になりました」）
+    @State private var firstAtOpen = false
     /// 「光の時刻」で見ている日（今日から何日ずらしたか・その土地の暦）
     @State private var lightOffset = 0
     /// 「経路」を探している最中（連打で2つ開かない）・その仕事（頁を離れたら取り消す）
@@ -139,7 +141,9 @@ struct OfficialSpotView: View {
                     draftNotice(notice)
                 }
                 actions
-                journeyCue
+                // 「この観光スポットから、次の一枚へ（見つける → 行く → 撮る → 残す）」の説明の帯は消した
+                // （2026-11-23 判断: CLAUDE.md「見れば分かる・説明文に頼らない」。押せない説明の行で、各段は
+                // この頁の本物の操作——経路・作例を重ねて撮る・投稿する——が担う。板 SpotDetail にも無い）
                 summary
                 // **写真が主役。** 写真がある場所は本文より先に出す
                 if !linked.isEmpty { spotPhotos }
@@ -391,7 +395,7 @@ struct OfficialSpotView: View {
         VStack(alignment: .leading, spacing: 6) {
             // 小見出し（モックの "PHOTO SPOT"）。**下書きなら「下書き・未確認」**
             // 眉ラベルの部品に揃える。真鍮は黒地の上だけ（写真の上は白・下書きの札は色で目立たせない）
-            Text(SpotScreen.eyebrow(review: spot.isDraft))
+            Text(eyebrow: SpotScreen.eyebrow(review: spot.isDraft))
                 .jpEyebrow()
                 .foregroundStyle(onPhoto ? Color.white.opacity(0.88) : (spot.isDraft ? WebTheme.muted : WebTheme.accent))
             Text(spot.name)
@@ -547,28 +551,6 @@ struct OfficialSpotView: View {
             defer { openingDirections = false }
             await SpotDirections.openDirections(name: name, coords: coords, stillWanted: { onScreen })
         }
-    }
-
-    /// 「この場所から、次の一枚へ（見つける → 行く → 撮る → 残す）」の**説明の帯**。
-    ///
-    /// 2026-10-11 判断: 以前は地の札・縁・真鍮の記号・矢印でボタンに見えたのに押せなかった。
-    /// 各段は頁の中に本物の操作がある（行く＝上の「経路」・撮る＝「作例を重ねて撮る」・残す＝
-    /// 「ここで撮った写真を投稿する」）ので、ここは**押せる見た目をやめて1行の説明**にした
-    /// （地・縁・真鍮・矢印の記号なし。真鍮は黒地の上の合図・押せるもの）。板 SpotDetail にこの帯は無い
-    private var journeyCue: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L("この観光スポットから、次の一枚へ", "From this spot to your next photo"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(WebTheme.muted2)
-            // 本文の最小は 12pt（CLAUDE.md）
-            Text(L("見つける → 行く → 撮る → 残す", "Discover → Go → Shoot → Share"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("spot.official.journeyCue")
     }
 
     // MARK: - 概要（書かれたものだけ）
@@ -922,7 +904,7 @@ struct OfficialSpotView: View {
     /// 朝・夕の段: 眉（真鍮）→ 時刻の行 → 台帳の時間帯の文
     private func lightBlock(_ block: SpotLight.Block, guides: [SpotBody.TimeOfDay]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(block.title)
+            Text(eyebrow: block.title)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             ForEach(Array(block.rows.enumerated()), id: \.offset) { _, row in
@@ -1186,15 +1168,16 @@ struct OfficialSpotView: View {
             if showsEmptyPhotosCard {
                 // **空を隠さない。** 紐づいた写真が無いことをそのまま言う。
                 // v2 の板 SpotDetail の「写真0枚」: 破線の札に明朝 18 の見出し・13 の text-2・投稿のボタン
+                // 2026-11-23（札 #710 の案7）: お願いする言い方に。見出し「まだ写真がありません」、本文「あなたの1枚が、
+                // この場所の最初の写真になります」、ボタン「最初の1枚を投稿する」。破線は真鍮（黒地の上の合図）
                 VStack(spacing: JPSpace.xs) {
                     // 0 は数として出さない（2026-10-21・「（0）」と出ていた）。下の文とボタンが最初の1枚へ誘う
-                    Text(L("この観光スポットの写真", "Photos here"))
+                    Text(FirstPhoto.emptyTitle)
                         .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .multilineTextAlignment(.center)
                         .accessibilityAddTraits(.isHeader)
-                    Text(L("まだありません。ここで撮った写真があれば、最初の1枚にしませんか。",
-                           "None yet. If you've shot here, share the first one."))
+                    Text(FirstPhoto.emptyMessage)
                         .font(.footnote)
                         .lineSpacing(4)
                         .foregroundStyle(WebTheme.text2)
@@ -1207,8 +1190,8 @@ struct OfficialSpotView: View {
                 .padding(.vertical, JPSpace.xl)
                 .frame(maxWidth: .infinity)
                 .overlay(RoundedRectangle(cornerRadius: JPRadius.l)
-                    .strokeBorder(Color.white.opacity(Self.emptyDashOpacity),
-                                  style: StrokeStyle(lineWidth: JPStroke.hairline, dash: [4, 4])))
+                    .strokeBorder(WebTheme.accent.opacity(Self.emptyDashOpacity),
+                                  style: StrokeStyle(lineWidth: Self.emptyDashWidth, dash: [4, 4])))
                 .padding(.horizontal, JPSpace.m)
             } else {
                 if !linked.isEmpty {
@@ -1227,7 +1210,8 @@ struct OfficialSpotView: View {
             pendingCapture = nil
             TabRouter.shared.postSheetClosed()
         }) {
-            NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { count in
+            NavigationStack { UploadView(spot: UploadSpotTarget(spot).announcing(firstAtOpen),
+                                         onPosted: { count in
                 // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
                 // 絞った投稿では並ばないので言わない）
                 if count > 0 { postedHere = true }
@@ -1245,17 +1229,20 @@ struct OfficialSpotView: View {
     /// 「投稿」のボタンの字。**0枚のときは「最初の1枚を投稿」**（`SpotScreen.firstPhotoInvite` と同じ向き・2026-10-21）
     nonisolated static func postLabel(hasLinked: Bool) -> String {
         hasLinked ? L("この観光スポットの写真を投稿", "Post a photo of this spot")
-                  : L("最初の1枚を投稿", "Post the first photo")
+                  : FirstPhoto.postLabel
     }
 
-    /// 写真0枚の札の破線の白の濃さ（板 `1px dashed rgba(255,255,255,.2)`）
-    nonisolated static let emptyDashOpacity = 0.2
+    /// 写真0枚の札の破線（札 #710 の案7の模型: 真鍮 60%・1.5）。黒地の上なので真鍮
+    nonisolated static let emptyDashOpacity = 0.6
+    nonisolated static let emptyDashWidth: CGFloat = 1.5
 
     /// 「この撮影スポットの写真を投稿」。
     /// owner「スポットの詳細からこのスポットの写真を上げたい」（2026-09-29）。
     /// 撮影地を入れた投稿画面を開き、保存で `spotId` を付ける
     private var postButton: some View {
         Button {
+            // 「最初の1枚」と言ってよいかは、押した時点で0枚と読めていたかで決める（`FirstPhoto.announces`）
+            firstAtOpen = FirstPhoto.announces(photosKnown: photosKnown, count: linked.count) && !postedHere
             showUpload = true
         } label: {
             Label(Self.postLabel(hasLinked: !linked.isEmpty), systemImage: "camera")

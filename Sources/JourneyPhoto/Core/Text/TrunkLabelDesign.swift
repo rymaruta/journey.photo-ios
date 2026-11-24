@@ -211,6 +211,43 @@ enum TrunkLabelDesign {
     /// 箔押しの色（モック Labels の「箔押し」: 地 #3A2A12・字 #3A2410・差し色 #FFF1C4）
     static let foilPalette = p(0x3A2A12, 0x3A2410, 0xFFF1C4)
 
+    // MARK: 好きなデザインで作る（札 #706・2026-11-23 owner 承認）
+
+    /// 選べる形（サーバーの `CUSTOM_SHAPES` = 10）。**並びの番号をサーバーに送って保存する**——並びを替えると
+    /// 作ったラベルの形が替わるので、足すときは後ろに足す（サーバーの数も合わせる）
+    static let customShapes: [TrunkLabelShape] = [.oval, .circle, .rect, .ticket, .shield, .diamond, .hexagon, .octagon,
+                                                   .banner, .burst]
+
+    /// 選べる色の組（サーバーの `CUSTOM_PALETTES` = 12）。季節・時刻・節目・土地の組から、地の色が重ならない12組を選んだ
+    /// （2026-11-23 判断: 生成り・赤・藤・若葉・水色・橙・紺・夜・深緑・えんじ・金茶・薄藍）。番号で保存するので後ろに足す
+    static let customPalettes: [Palette] = [
+        p(0xF3E6CC, 0x8E2A22, 0xD98A7E), p(0x9C3A1E, 0xF6E2B8, 0xF2B33D), p(0x6F5A8E, 0xF3EAF7, 0xE9C8F2),
+        p(0xE4EDD6, 0x2F5A33, 0x7FB069), p(0xBFD3D6, 0x1C3A44, 0xE07A4A), p(0xE2803C, 0x3A140C, 0xF7D27A),
+        p(0x1B2A44, 0xEFE3C8, 0xE06A4A), p(0x141B30, 0xE7C77A, 0xE7C77A), p(0x2E5D50, 0xF0E6CE, 0xE7C77A),
+        p(0x5A1F2B, 0xF2E6CC, 0xE7B85A), p(0xD29A3C, 0x2B1A0C, 0xB3261E), p(0xE9EEF2, 0x2A3B4E, 0x7FA6C9),
+    ]
+
+    /// 選べる絵（サーバーの `CUSTOM_ARTS` = 12）。番号で保存するので後ろに足す
+    static let customArts: [TrunkLabelArt] = [.fuji, .pagoda, .torii, .sakura, .maple, .wave, .sun, .moon, .ship, .train,
+                                              .lighthouse, .cloud]
+
+    /// 今の図柄にいちばん近い組（好きなデザインの画面を開いたときの「おまかせ」）。並びに無いものは 0 番
+    static func customStart(for label: TrunkLabel) -> TrunkLabelCustom {
+        if let custom = label.custom { return custom }
+        let spec = spec(for: label)
+        let shape = customShapes.firstIndex(of: spec.shape) ?? 0
+        let palette = customPalettes.firstIndex { TrunkRGBA($0.bg) == spec.bg } ?? 0
+        let art = spec.art.flatMap { customArts.firstIndex(of: $0) } ?? 0
+        return TrunkLabelCustom(shape: shape, palette: palette, art: art)
+    }
+
+    /// 「おまかせで組み直す」の1組（`seed` から決まる。押すたびに `seed` を進める）
+    static func customShuffle(seed: Int) -> TrunkLabelCustom {
+        var random = TrunkRandom(seed: seed, salt: "custom")
+        return TrunkLabelCustom(shape: random.int(customShapes.count), palette: random.int(customPalettes.count),
+                                art: random.int(customArts.count))
+    }
+
     // MARK: 絵の組
 
     static let arts: [String: [TrunkLabelArt]] = [
@@ -379,13 +416,19 @@ enum TrunkLabelDesign {
 
     // MARK: 図柄を決める
 
-    /// **同じラベル（同じ種）なら必ず同じ図柄。** 作り直しは種だけが替わる
+    /// **同じラベル（同じ種）なら必ず同じ図柄。** 作り直しは種だけが替わる。
+    /// 好きなデザイン（`label.custom`・#706）があれば、形・色・絵だけをそれに替える（字・傾き・刷りのずれ・箔は種と中身のまま）
     static func spec(for label: TrunkLabel) -> TrunkLabelSpec {
         var random = TrunkRandom(seed: label.seed, salt: "\(label.kind.rawValue)|\(label.place.name)")
         let theme = theme(label)
-        let shape = random.pick(TrunkLabelShape.allCases)
-        let palette = random.pick(palettes[theme.palette] ?? palettes["home"]!)
-        let art = random.pick(arts[theme.art] ?? arts["home"]!)
+        // 乱数は好きなデザインでも同じ順に引く（傾きと刷りのずれを、作る前と同じにする）
+        let pickedShape = random.pick(TrunkLabelShape.allCases)
+        let pickedPalette = random.pick(palettes[theme.palette] ?? palettes["home"]!)
+        let pickedArt = random.pick(arts[theme.art] ?? arts["home"]!)
+        let custom = label.custom.flatMap { $0.isValid ? $0 : nil }
+        let shape = custom.map { customShapes[$0.shape] } ?? pickedShape
+        let palette = custom.map { customPalettes[$0.palette] } ?? pickedPalette
+        let art = custom.map { customArts[$0.art] } ?? pickedArt
         // 傾きは -7〜7 度・刷りのずれは 0.2〜1
         let rot = Double(random.int(15) - 7)
         let misreg = 0.2 + (random.unit() * 0.8 * 100).rounded() / 100

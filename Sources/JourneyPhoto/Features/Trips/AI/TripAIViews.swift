@@ -11,8 +11,6 @@ struct TripAIEntrySection: View {
     let start: (TripAIAsk) -> Void
     let ask: () -> Void
     let pickYourself: () -> Void
-    /// 札の下に、日程をサーバーへ送ることの知らせを出すか（`AskServerNotice.shows`・2026-11-22 判断）
-    var serverNotice: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
@@ -32,8 +30,6 @@ struct TripAIEntrySection: View {
                     .accessibilityLabel(L("\(s.title)、\(s.subtitle)。AI で作る", "\(s.title), \(s.subtitle). Make with AI"))
                     .accessibilityIdentifier("tripAI.suggestion")
             }
-            // 札を押すとすぐ組み始める（確かめを挟まない）ので、送る前に見える札の下に1回だけ出す
-            if serverNotice, !suggestions.isEmpty { AskServerNoticeText(id: "tripAI.entry.serverNotice") }
             Button(action: ask) {
                 Label(L("自分で頼む", "Ask in your own words"), systemImage: "sparkles")
                     .font(JPFont.bodyEmphasis)
@@ -105,14 +101,16 @@ struct TripAIEntrySection: View {
 
 // MARK: - 自分で頼む
 
-/// 行き先・日数・好みの3つの札（埋まった形で開く）＋足したいときだけの1行。読めなかった札は真鍮で光らせ、1回で選べる
+/// 行き先・日数・好みの3つの札（埋まった形で開く）＋足したいときだけの1行。読めなかった札は真鍮で光らせ、1回で選べる。
+/// 2026-11-23 owner 判断（「めんどいから行き先指定なしでも作れるようにして」）: 行き先は既定で「おまかせ」。選ばずに押したら
+/// アプリが決める（`TripAIAutoPlace`・AI は使わない）。変えたいときだけ行き先の札から選ぶ
 struct TripAIAskSheet: View {
     @State var ask: TripAIAsk
     let placeChoices: [(label: String, prefecture: String)]
-    /// 打った文をサーバーへ送る人か（`AskServerNotice.shows`。呼ぶ側が同じ条件で決める）
-    let serverNotice: Bool
     let start: (TripAIAsk) -> Void
     let index: [OfficialSpot]
+    /// 行きたい場所（おまかせの行き先を決める2番目の手がかり）
+    var wishlist: Set<String> = []
     @Environment(\.dismiss) private var dismiss
     @State private var editing: Slot?
 
@@ -123,7 +121,7 @@ struct TripAIAskSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: JPSpace.s) {
                     HStack(spacing: JPSpace.xs) {
-                        slot(.place, L("行き先", "Place"), ask.hasPlace ? ask.place : nil)
+                        slot(.place, L("行き先", "Place"), ask.hasPlace ? ask.place : TripAIAutoPlace.slotLabel)
                         slot(.days, L("日数", "Days"), ask.days.map(TripAIAsk.daysLabel))
                         slot(.preference, L("好み", "Mood"), ask.preference ?? L("なし", "None"))
                     }
@@ -137,9 +135,8 @@ struct TripAIAskSheet: View {
                             .accessibilityIdentifier("tripAI.extra")
                     }
                     .jpFieldBox()
-                    // 2026-11-22 判断: 「どこで組むか」の1行（iPhone・雲の印、置き場の地域）はやめ、サーバーへ送る人にだけ
-                    // 旅行プラン用の知らせ（`AskText.tripServerNotice`）を、送る前（「この内容で作る」の上）に出す
-                    if serverNotice { AskServerNoticeText(id: "tripAI.serverNotice") }
+                    // 2026-11-22 判断: 「どこで組むか」の1行（iPhone・雲の印、置き場の地域）はやめた。
+                    // 2026-11-23 owner 判断: サーバーへ送る知らせも出さない（送る前の同意の画面 `AIServerConsentSheet` で知らせる）
                 }
                 .padding(.horizontal, JPSpace.gutter)
                 .padding(.top, JPSpace.xs)
@@ -151,12 +148,13 @@ struct TripAIAskSheet: View {
             .safeAreaInset(edge: .bottom) {
                 Button {
                     readExtra()
-                    guard ask.isComplete else {
-                        editing = ask.hasPlace ? .days : .place
+                    let made = ask.withAutoPlace(spots: index, wishlist: wishlist)
+                    guard made.isComplete else {
+                        editing = made.hasPlace ? .days : .place
                         return
                     }
                     dismiss()
-                    start(ask)
+                    start(made)
                 } label: {
                     Text(L("この内容で作る", "Make it")).jpPillButton(.main(onPhoto: false))
                 }
@@ -164,7 +162,7 @@ struct TripAIAskSheet: View {
                 .accessibilityIdentifier("tripAI.askStart")
                 .jpBottomBar()
             }
-            .onAppear { if !ask.hasPlace { editing = .place } else if ask.days == nil { editing = .days } }
+            .onAppear { if ask.days == nil { editing = .days } }
         }
     }
 
@@ -200,7 +198,13 @@ struct TripAIAskSheet: View {
         let options: [(String, () -> Void)]
         switch s {
         case .place:
-            options = placeChoices.map { c in (c.label, {
+            options = [(TripAIAutoPlace.slotLabel, {
+                ask.place = ""
+                ask.prefectures = []
+                ask.cities = []
+                ask.mustSpotIds = []
+                editing = ask.days == nil ? .days : nil
+            })] + placeChoices.map { c in (c.label, {
                 ask.place = c.label
                 ask.prefectures = [c.prefecture]
                 ask.cities = []
@@ -225,6 +229,19 @@ struct TripAIAskSheet: View {
                 }
             }
         }
+    }
+}
+
+/// 「行き先はおまかせで、○○にしました」（作っている画面と、できたプランの上）。字は脇の説明と同じ footnote・text2
+struct TripAIAutoPlaceLine: View {
+    let place: String
+
+    var body: some View {
+        Text(TripAIAutoPlace.line(place: place))
+            .font(JPFont.footnote)
+            .foregroundStyle(WebTheme.text2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("tripAI.autoPlace")
     }
 }
 
@@ -280,6 +297,10 @@ struct TripAIBuildingView: View {
                             .font(JPFont.footnote)
                             .foregroundStyle(WebTheme.text2)
                             .accessibilityIdentifier("tripAI.status")
+                    }
+                    // 行き先を選ばずに作った: アプリが決めた行き先を1行で言う（2026-11-23 owner）
+                    if job.ask.autoPlaced {
+                        TripAIAutoPlaceLine(place: job.ask.place)
                     }
                 }
                 if case .failed(let failure) = job.state {

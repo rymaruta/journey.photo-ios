@@ -133,7 +133,7 @@ struct DMSpotCard: View {
         VStack(alignment: .leading, spacing: 0) {
             DMSpotCardPhotoPlaceholder()
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
-                Text(DMSpotShare.eyebrow)
+                Text(eyebrow: DMSpotShare.eyebrow)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityHidden(true)
@@ -252,7 +252,7 @@ struct DMSpotCardText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(DMSpotShare.eyebrow)
+            Text(eyebrow: DMSpotShare.eyebrow)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             Text(name)

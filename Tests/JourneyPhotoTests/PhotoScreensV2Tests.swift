@@ -53,14 +53,14 @@ final class PhotoScreensV2Tests: XCTestCase {
     func testPhotoFootIsWhiteOnly() throws {
         let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
         for name in ["private func photoFoot", "private func pageDots", "private var placeRow",
-                     "private var spotGuideRow", "private func placeLabel"] {
+                     "private var spotGuideRow", "private func spotGuideLink", "private func placeLabel"] {
             assertWhiteOnly(member(name, in: view), name)
         }
         let place = member("private func placeLabel", in: view)
         XCTAssertTrue(place.contains(".foregroundStyle(WebTheme.foreground)"))
         XCTAssertTrue(place.contains(".foregroundStyle(WebTheme.muted2)"), "添え書きの灰が写真の上の透過でない")
         XCTAssertTrue(place.contains(".jpPhotoTextShadow()"))
-        XCTAssertTrue(member("private var spotGuideRow", in: view).contains(".jpPhotoTextShadow()"))
+        XCTAssertTrue(member("private func spotGuideLink", in: view).contains(".jpPhotoTextShadow()"))
         // 点は白と白 40%
         XCTAssertTrue(member("private func pageDots", in: view)
             .contains("Color.white.opacity(index == page ? 1 : Self.inactiveDotOpacity)"))

@@ -538,7 +538,8 @@ struct SearchView: View {
         readingTask = Task { @MainActor in
             // 2026-11-20 判断（札 #652）: 語を並べた文は**言葉の表だけ**で読む。端末の AI で読むと、回数を数えずに AI を使う
             // ことになる（CLAUDE.md「AI の機能には必ず回数の上限を付ける」）。AI に回すのは頼みと質問の形だけ（`AskQuery.form`）
-            let result = SearchSentence.readByTable(sentence)
+            // 写真の検索なので、月（「11月」）は季節の札にするだけでなく字の語にも残す（2026-11-23 判断）
+            let result = SearchSentence.readByTable(sentence, monthAsText: true)
             guard !Task.isCancelled else { return }
             isReadingSentence = false
             guard searched.trimmingCharacters(in: .whitespacesAndNewlines) == sentence, result.changesSearch else { return }

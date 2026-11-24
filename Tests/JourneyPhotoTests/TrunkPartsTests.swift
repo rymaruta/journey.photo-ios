@@ -298,7 +298,8 @@ final class TrunkPartsTests: XCTestCase {
     // MARK: 硬貨 0・かけら不足の表示
 
     func testNoCoinsAndFragmentsWording() {
-        XCTAssertEqual(TrunkGachaText.hint(coins: 0, phase: .idle), "公開の投稿1件で1枚もらえます")
+        // 2026-11-23（札 #716）: どこからも呼ばれていなかった古い `TrunkGachaText.hint`（「ころん」ほか）は消した
+        XCTAssertEqual(TrunkGachaText.spinHint(coins: 0, phase: .idle), "公開の投稿1件で、硬貨を1枚もらえます（1日3枚まで）")
         XCTAssertEqual(TrunkGachaText.exchangeNote(fragments: 3, selected: nil), "まだ持っていない部品から選べます\u{2002}あと 2 つ")
         XCTAssertFalse(TrunkPartsBoxText.canExchange(fragments: 4))
         XCTAssertTrue(TrunkPartsBoxText.canExchange(fragments: 5))
@@ -309,7 +310,7 @@ final class TrunkPartsTests: XCTestCase {
         XCTAssertEqual(TrunkGachaText.title(TrunkPartCatalog.part("lock.12")!), "錠前「金の星」", "金属の名前を重ねた")
         let kiku = TrunkPartCatalog.part("lock.2")!
         XCTAssertEqual(TrunkGachaText.arrivedWhileAway(TrunkGachaResult(part: kiku, duplicate: false, fragments: 0, coins: 0)),
-                       "カプセルの「菊」が部品箱に入りました。")
+                       "「菊」が出ました。部品箱に入れました")
         XCTAssertTrue(TrunkGachaText.arrivedWhileAway(TrunkGachaResult(part: kiku, duplicate: true, fragments: 1, coins: 0))
             .contains("かけら"))
     }
@@ -322,15 +323,18 @@ final class TrunkPartsTests: XCTestCase {
         let first = await model.gacha()
         XCTAssertEqual(first?.part.id, TrunkSample.gachaOrder[0])
         XCTAssertEqual(model.state?.coins, 1)
-        XCTAssertEqual(first?.duplicate, true, "見本は菊を持っている")
-        XCTAssertEqual(model.state?.fragments, 4)
+        // 1回目は見本が持っていない部品（新しい部品の開けた画面「トランクに付ける」を撮る・Mac run 1765）
+        XCTAssertEqual(first?.duplicate, false, "見本の1回目が持っている部品になっている（新しい部品の開けた画面を撮れない）")
+        XCTAssertEqual(TrunkGachaText.openActions(duplicate: first?.duplicate ?? true, coins: model.state?.coins ?? 0), .equip)
+        XCTAssertEqual(model.state?.fragments, 3, "新しい部品ではかけらは増えない")
+        XCTAssertTrue(model.state?.parts.contains(TrunkSample.gachaOrder[0]) ?? false, "出た部品が部品箱に入っていない")
         _ = await model.gacha()
         XCTAssertEqual(model.state?.coins, 0)
         XCTAssertTrue(model.state?.parts.contains("charm.12") ?? false)
         let none = await model.gacha()
         XCTAssertNil(none, "硬貨 0 で回った")
         XCTAssertEqual(model.actionError, TrunkText.refusal(code: "noCoins", fallback: ""))
-        // かけら 4 では交換しない
+        // かけら 3 では交換しない
         let before = model.state
         await model.exchange("key.12")
         XCTAssertEqual(model.state?.parts, before?.parts, "かけらが足りないのに交換した")

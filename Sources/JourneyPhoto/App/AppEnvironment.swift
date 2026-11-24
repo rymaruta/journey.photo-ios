@@ -22,6 +22,12 @@ final class AppEnvironment: ObservableObject {
     let notifications: NotificationService
     let moderation: ModerationService
     let account: AccountService
+    /// 「Apple でサインイン」（`/auth/apple`・札 #601）
+    let appleSignIn: AppleSignInService
+    /// 「Google でログイン」（`/auth/google`・札 #715）
+    let googleSignIn: GoogleSignInService
+    /// 「サインインの方法」（`/user/signin-methods`・札 #601・2026-11-23 owner）
+    let signinMethods: SigninMethodsService
     let albums: AlbumService
     let stories: StoryService
     /// ストーリーハイライト（アーカイブを束ねた輪）
@@ -45,8 +51,6 @@ final class AppEnvironment: ObservableObject {
     let purchases: PurchaseService
     /// 旅のトランク（`/user/trunk`・本人だけ・2026-10-17）
     let trunk: TrunkService
-    /// とおまわり号の要サーバーの部品（`/user/camper`・`/users/{uid}/camper…`・2026-10-19 段2）
-    let camper: CamperService
     /// メッセージ（`/dm`・1対1・文字だけ・2026-11-10 札 #505）
     let dm: DMService
     /// グループの DM（`/groups`・2026-11-20 札 #582）。本番に口が出るまでは一覧が読めず、入口は出ない
@@ -92,6 +96,9 @@ final class AppEnvironment: ObservableObject {
         self.notifications = NotificationService(api: api)
         self.moderation = ModerationService(api: api)
         self.account = AccountService(api: api)
+        self.appleSignIn = AppleSignInService(api: api)
+        self.googleSignIn = GoogleSignInService(api: api)
+        self.signinMethods = SigninMethodsService(api: api)
         self.albums = AlbumService(api: api)
         self.stories = StoryService(api: api)
         self.highlights = HighlightService(api: api)
@@ -103,7 +110,6 @@ final class AppEnvironment: ObservableObject {
         self.publicFeed = PublicFeedService(api: api)
         self.purchases = PurchaseService(api: api)
         self.trunk = TrunkService(api: api)
-        self.camper = CamperService(api: api)
         self.dm = DMService(api: api)
         self.groups = GroupService(api: api)
         self.tripShare = TripShareService(api: api)

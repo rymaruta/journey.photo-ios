@@ -328,12 +328,16 @@ public enum VerticalEdge { case top, bottom }
 
 public struct Animation {
     public static func easeOut(duration: Double) -> Animation { Animation() }
+    /// ゆっくり始まる（本物と同じ。日のページがめくれて出ていく）
+    public static func easeIn(duration: Double) -> Animation { Animation() }
     public static func linear(duration: Double) -> Animation { Animation() }
     public static func easeInOut(duration: Double) -> Animation { Animation() }
     public static func spring(response: Double = 0.5, dampingFraction: Double = 0.825) -> Animation { Animation() }
     public static let `default` = Animation()
     /// 繰り返す（骨格の脈打ち・本物の `repeatForever(autoreverses:)`）
     public func repeatForever(autoreverses: Bool = true) -> Animation { self }
+    /// 遅らせて始める（本物と同じ。荷札を押して少し遅れて傾く）
+    public func delay(_ delay: Double) -> Animation { self }
     /// 3次の曲線（旅の記録の線を引く動き）
     public static func timingCurve(_ c0x: Double, _ c0y: Double, _ c1x: Double, _ c1y: Double,
                                    duration: Double) -> Animation { Animation() }
@@ -364,8 +368,15 @@ public func withAnimation<Result>(_ animation: Animation? = .default,
 }
 public struct Transaction {
     public var animation: Animation?
+    /// 動きを付けない（本物と同じ）
+    public var disablesAnimations = false
     public init() {}
     public init(animation: Animation?) { self.animation = animation }
+}
+
+/// 決めた移り変わりで変える（本物と同じ。日めくりで動きを付けずに見出しへ移る）
+public func withTransaction<Result>(_ transaction: Transaction, _ body: () throws -> Result) rethrows -> Result {
+    try body()
 }
 
 // **Foundation の同じ型をそのまま使う。**

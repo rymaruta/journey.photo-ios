@@ -65,9 +65,6 @@ final class TripsDesignTests: XCTestCase {
     // MARK: - 寸法（板の値）
 
     func testBoardMeasures() {
-        XCTAssertEqual(TripStyle.coverCardHeight, 190)
-        XCTAssertEqual(TripStyle.rowMinHeight, 72)
-        XCTAssertEqual(TripStyle.rowThumb, CGSize(width: 72, height: 56))
         XCTAssertEqual(TripStyle.planThumb, 64)
         XCTAssertEqual(TripStyle.dateFieldHeight, 52)
         XCTAssertEqual(TripStyle.stopNumberSide, 24)
@@ -85,7 +82,7 @@ final class TripsDesignTests: XCTestCase {
 
     /// 押せるもの・字の決まり（CLAUDE.md）: 押せる行は 44 以上、線は土台の値の間
     func testTapTargetsAndStrokes() {
-        for height in [TripStyle.rowMinHeight, TripStyle.pickRowMinHeight, TripStyle.savedRowMinHeight,
+        for height in [TripStyle.pickRowMinHeight, TripStyle.savedRowMinHeight,
                        TripStyle.dateFieldHeight] {
             XCTAssertGreaterThanOrEqual(height, WebTheme.minTapTarget)
         }
@@ -168,26 +165,32 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertEqual(TripBookView.spokenDayHeader(1, monthDay: "09.12"), "\(TripBookView.spokenDay(1))\(L("、", ", "))09.12")
         XCTAssertFalse(TripBookView.spokenDayHeader(2, monthDay: "09.13").contains("DAY"))
         let day = OfflineTripManifest.Day(number: 2, date: nil, stops: [])
-        XCTAssertEqual(OfflineTripContent.dayHeading(day), L("2 日目", "Day 2"))
+        XCTAssertEqual(OfflineTripContent.dayHeading(day), L("2日目", "Day 2"))
     }
 
     // MARK: - 旅の一覧（板 Trips）
 
-    func testShelfUsesCoverCardThenRows() throws {
+    /// 旅の記録は年ごとの段に背表紙を並べる本棚（札 #714・2026-11-23 owner 決定）
+    func testShelfIsABookshelfOfSpines() throws {
         let shelf = try source("Features/Trips/TripShelf.swift")
-        let list = section("struct TripShelfList", in: shelf)
-        assertInOrder(["if index == 0 {", "TripShelf(trip: trip)", "} else {", "TripShelfRow(trip: trip)"],
-                      in: list, "最新の一冊だけ表紙の札、残りは行")
-        XCTAssertTrue(list.contains(".accessibilityIdentifier(\"trips.book\")"), "画面写真で探す名前")
-        XCTAssertTrue(list.contains("EmptyState(icon: nil, title:"), "0 冊は空の状態の部品（マイページは印なし・2026-11-12）")
-        let card = section("struct TripShelf:", in: shelf)
-        XCTAssertTrue(card.contains("TripStyle.coverCardHeight"))
-        XCTAssertTrue(card.contains("JPRadius.l"))
-        // 写真の上に真鍮を置かない（CLAUDE.md）
-        XCTAssertFalse(card.contains("WebTheme.accent"), "表紙の札（写真の上）に真鍮がある")
-        let row = section("struct TripShelfRow", in: shelf)
-        XCTAssertTrue(row.contains("JPFont.rowTitle"), "行の題は明朝の下限 18")
-        XCTAssertTrue(row.contains("TripStyle.rowThumb"))
+        // 部品の中に private の関数があるので、次の部品（struct）の頭までを1つの部品として読む
+        func part(_ marker: String) throws -> String {
+            let start = try XCTUnwrap(shelf.range(of: marker), "「\(marker)」が無い")
+            let rest = shelf[start.upperBound...]
+            return String(rest[..<(rest.range(of: "\nstruct ")?.lowerBound ?? rest.endIndex)])
+        }
+        let list = try part("struct TripShelfList")
+        assertInOrder(["if books.isEmpty {", "EmptyState(icon: nil, title:", "} else {", "TripBookshelfView(books: books)"],
+                      in: list, "0 冊は空の状態の部品（マイページは印なし・2026-11-12）、あれば本棚")
+        let bookshelf = try part("struct TripBookshelfView")
+        XCTAssertTrue(bookshelf.contains(".accessibilityIdentifier(book.isDevice ? \"trips.deviceBook\" : \"trips.book\")"),
+                      "画面写真で探す名前（投稿の旅と端末の旅）")
+        XCTAssertTrue(bookshelf.contains("TripBookshelf.shelves(books)"), "年ごとの段に分けていない")
+        XCTAssertTrue(bookshelf.contains(".contextMenu {"), "長押しで表紙を見られない")
+        let spine = try part("struct BookSpine: View")
+        // 背は写真の上ではないが、真鍮は件数バッジだけ（案の頁）
+        XCTAssertFalse(spine.contains("WebTheme.accent"), "背表紙に真鍮がある")
+        XCTAssertTrue(spine.contains("\"iphone\"") && spine.contains("\"lock.fill\""), "端末の旅と自分だけの旅の印が無い")
     }
 
     // MARK: - 旅の一冊・共有（板 TripBook・TripBookShare）

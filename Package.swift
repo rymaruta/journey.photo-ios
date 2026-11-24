@@ -52,11 +52,12 @@ let package = Package(
         // 定期購入（Pro）。SwiftUI と重なる口（`manageSubscriptionsSheet`）があるので SwiftUI を読む
         .target(name: "StoreKit", dependencies: ["SwiftUI"], path: "Shims/StoreKit"),
         .target(name: "ImageIO", path: "Shims/ImageIO"),
-        // 写真で作るキャンピングカーの立体（`CamperSceneView`・2026-10-18）。名前は SceneKit にしない
-        // （`canImport(SceneKit)` が真になると、メダルの画面の SceneKit の枝まで Linux で組むことになる）
-        .target(name: "SceneKitShim", dependencies: ["UIKit", "ImageIO", "QuartzCore"], path: "Shims/SceneKitShim"),
         .target(name: "CoreImage", dependencies: ["ImageIO"], path: "Shims/CoreImage"),
         .target(name: "UniformTypeIdentifiers", path: "Shims/UniformTypeIdentifiers"),
+        // Apple でサインイン（`SignInWithAppleButton`・札 #601）。ボタンは SwiftUI の部品なので SwiftUI を読む
+        .target(name: "AuthenticationServices", dependencies: ["SwiftUI"], path: "Shims/AuthenticationServices"),
+        // nonce の SHA-256（Apple でサインイン・札 #601）。Linux には CryptoKit が無い
+        .target(name: "CryptoKit", path: "Shims/CryptoKit"),
         .target(name: "Amplify", path: "Shims/Amplify"),
         .target(name: "AWSCognitoAuthPlugin", dependencies: ["Amplify"], path: "Shims/AWSCognitoAuthPlugin"),
         .target(name: "AWSPluginsCore", dependencies: ["Amplify"], path: "Shims/AWSPluginsCore"),
@@ -71,7 +72,8 @@ let package = Package(
             dependencies: [
                 "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "CoreImage", "UniformTypeIdentifiers", "UserNotifications",
-                "StoreKit", "QuartzCore", "SceneKitShim", "Network", "CoreMotion", "CoreBluetooth", "AudioToolbox", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "StoreKit", "QuartzCore", "Network", "CoreMotion", "CoreBluetooth", "AudioToolbox", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "AuthenticationServices", "CryptoKit",
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"]

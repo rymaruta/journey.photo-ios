@@ -16,8 +16,6 @@ struct TripReplanBar: View {
     let noticeOpensPro: Bool
     /// 置き換えたあと、元に戻せるか（画面を開いている間）
     let canUndo: Bool
-    /// チップの下に、日程をサーバーへ送ることの知らせを出すか（`AskServerNotice.shows`・2026-11-22 判断）
-    var serverNotice: Bool = false
     let run: (_ label: String, _ request: String, _ typed: Bool) -> Void
     let undo: () -> Void
     let openPro: () -> Void
@@ -63,10 +61,6 @@ struct TripReplanBar: View {
 
             if writing { writeField }
 
-            // 2026-11-22 判断: チップ（「雨なら」など）も「書いて頼む」も日程をサーバーへ送るので、開いているかに関係なく
-            // チップの下に1回だけ出す（送る前に見える所）
-            if serverNotice { AskServerNoticeText(id: "tripReplan.serverNotice") }
-
             if let working {
                 HStack(spacing: JPSpace.xs) {
                     ProgressView().tint(WebTheme.text2)
@@ -105,7 +99,7 @@ struct TripReplanBar: View {
     /// 自由に打つ欄（120 字まで・打った文は AI を呼ぶ前に `TripReplan.refusesTyped` で見る）
     private var writeField: some View {
         HStack(spacing: JPSpace.xs) {
-            JPTextField(L("例: 子どもと一緒、歩く距離を短く", "e.g. With kids, less walking"), text: $text)
+            JPTextField(L("例：子どもと一緒、歩く距離を短く", "e.g. With kids, less walking"), text: $text)
                 .focused($focused)
                 .onChange(of: text) { _, new in
                     if new.count > TripReplan.typedMax { text = String(new.prefix(TripReplan.typedMax)) }

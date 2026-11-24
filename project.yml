@@ -30,6 +30,12 @@ packages:
   # 「switch must be exhaustive」で組めない（run 1572、控えが無く依存を解き直した回）。控えが当たる回は
   # 古い版が戻るので見えないが、控えが外れると落ちる。どのターゲットにも足さない（版を縛るためだけ）。
   # smithy-swift が新しい aws-crt-swift に合った版を出したら外す
+  # 「Google でログイン」（札 #715・2026-11-23）。Google の公式の部品。**この版以上**（CLAUDE.md の部品の決まり）。
+  # nonce を渡せるのが 7.1.0 から。上は縛らない（新しい版で壊れたら、こちらを直して合わせる）
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    minVersion: 7.1.0
+    maxVersion: 100.0.0
   AwsCrtSwift:
     url: https://github.com/awslabs/aws-crt-swift
     exactVersion: 0.64.3
@@ -48,6 +54,9 @@ targets:
       # ID トークンを取り出す `AuthCognitoTokensProvider` がここに居る
       - package: Amplify
         product: AWSPluginsCore
+      # Google でログイン（札 #715・`GoogleSignInClient`）
+      - package: GoogleSignIn
+        product: GoogleSignIn
     configFiles:
       Debug: Config/Staging.xcconfig
       Release: Config/Production.xcconfig
@@ -89,6 +98,14 @@ targets:
         JPCognitoClientId: $(JP_COGNITO_CLIENT_ID)
         JPCognitoRegion: $(JP_COGNITO_REGION)
         JPEnvironmentName: $(JP_ENV_NAME)
+        # 「Google でログイン」（札 #715）。iOS の OAuth クライアント ID（公開の値・owner が 2026-11-23 に作った）。
+        # 部品が読む鍵。コードの `GoogleSignInConfig.clientID` と同じ値
+        GIDClientID: 280167931666-24o92d38usbft3ouk3jc4dk8tvgh3t8p.apps.googleusercontent.com
+        # Google の画面から戻る URL の型（逆さのクライアント ID）
+        CFBundleURLTypes:
+          - CFBundleURLName: com.journeyphoto.google-signin
+            CFBundleURLSchemes:
+              - com.googleusercontent.apps.280167931666-24o92d38usbft3ouk3jc4dk8tvgh3t8p
         # Pro の商品名の頭（`<束の名前>.pro.monthly`）。サーバーの `proProductIds(bundleId)` と同じ作り方
         JPStoreProductPrefix: $(JP_BUNDLE_ID)
         # アプリのアイコン長押しの「ストーリーを撮る」（札 #500）。拡張は足さない（`StorySceneDelegate` が受ける）。
@@ -124,8 +141,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(JP_BUNDLE_ID)
-        MARKETING_VERSION: "1.1.8"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.2.0"
+        CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_USER_SCRIPT_SANDBOXING: YES

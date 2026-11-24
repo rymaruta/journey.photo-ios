@@ -32,11 +32,11 @@ final class TripDayMapTests: XCTestCase {
         XCTAssertTrue(TripDayMap.hasPins(stops))
     }
 
-    /// 索引に無い（引けない）場所は鍵のまま・座標なし。座標の無い場所だけなら地図を出さない
+    /// 索引に無い（引けない）場所は座標なし（観光スポットは `sp_…` ではなく決まった言葉・撮影地は鍵のまま）。座標の無い場所だけなら地図を出さない
     func testUnknownItemsHaveNoPin() {
         let day = TripDay(items: [.spot(spotId: "sp_gone", note: nil), .location(slug: "nowhere", note: nil)])
         let stops = TripDayMap.stops(of: day, index: [], places: [])
-        XCTAssertEqual(stops.map(\.name), ["sp_gone", "nowhere"])
+        XCTAssertEqual(stops.map(\.name), [TripPlanText.unresolvedSpot, "nowhere"])
         XCTAssertFalse(TripDayMap.hasPins(stops))
         XCTAssertFalse(TripDayMap.hasPins([]))
     }

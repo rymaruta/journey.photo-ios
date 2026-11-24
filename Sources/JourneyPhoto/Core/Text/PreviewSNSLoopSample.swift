@@ -49,7 +49,8 @@ enum PreviewSNSLoopSample {
     /// 最後に書き替えた写真（id → 見本）。UI テストの1回の起動の中だけで使う
     nonisolated(unsafe) private static var lastReplaced: [String: Photo] = [:]
 
-    private static func remade(_ photo: Photo, createdAt: Date, addTag: String?, owner: String?) -> Photo? {
+    /// 写真を見本の投稿日で作り直す（撮影日 `date` は持たせない＝日は投稿日で数える）。旅の本棚の見本（`PreviewTripShelf`）も使う
+    static func remade(_ photo: Photo, createdAt: Date, addTag: String?, owner: String?) -> Photo? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var fields: [String: Any] = ["id": photo.id, "src": photo.src, "createdAt": formatter.string(from: createdAt)]

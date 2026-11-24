@@ -63,6 +63,8 @@ struct JourneyPhotoApp: App {
         // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）
         TabBarStyle.apply()
         PerfRecorder.shared.event("app.init.tabBarStyle")
+        // 消したとおまわり号の、端末全体の控えを1回だけ消す（2026-11-23・札 #709。2回目からは鍵を1つ読むだけ）
+        LeftoverCamperData.removeDeviceDataOnce()
         defer { PerfRecorder.shared.event("app.init.end") }
         do {
             try AuthGateway.configure()
@@ -314,6 +316,16 @@ struct JourneyPhotoApp: App {
                     let drafts = storyDrafts
                     // 写真の投稿を裏で送る係の知らせの口（「投稿しました　カードにする」「送れませんでした　もう一度」・案 B2）
                     PostUploadCenter.shared.configure(toasts: toasts, currentUserId: { auth.userId })
+                    // 投稿の知らせを場所で言い替える（札 #710 の案1・7）。行きたい場所の控えと観光スポットの索引を読む
+                    let wishes = wishlist
+                    let spotService = environment.spots
+                    // 要らない回は読まず、読むときも短い上限まで（`PostedPlaceNotice.resolve`・2026-11-23 確かめ役の指摘）
+                    PostUploadCenter.shared.placeNotice = { posted, spot, postedToSpot, ownerId, known in
+                        await PostedPlaceNotice.resolve(posted: posted, wishKeys: wishes.spotIds, spot: spot,
+                                                        postedToSpot: postedToSpot, ownerId: ownerId, known: known,
+                                                        memory: WishVisitMemory(),
+                                                        fetch: { [spotService] in await spotService.fetchIndexRows() })
+                    }
                     StoryUploadCenter.shared.configure(
                         currentUserId: { auth.userId },
                         send: { job, record in

@@ -93,7 +93,7 @@ enum APIError: LocalizedError, Equatable {
     ///
     /// **サーバーの `code` では選ばない。** `APIError.server` は `code` を持たない
     /// （足すと、状態と本文の2つで分けている呼び手のパターンが全部変わる）。`code` で文を選ぶ口は
-    /// それぞれ持っている（とおまわり号 `CamperText.refusal`・トランク `TrunkText.refusal`・購入 `PurchaseDelivery`）
+    /// それぞれ持っている（トランク `TrunkText.refusal`・購入 `PurchaseDelivery`）
     static func statusText(_ status: Int, hadServerText: Bool,
                            language: String = Locale.preferredAppLanguage) -> String {
         func t(_ ja: String, _ en: String) -> String { L(ja, en, language: language) }

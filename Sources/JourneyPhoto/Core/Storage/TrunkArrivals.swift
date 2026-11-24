@@ -41,6 +41,10 @@ final class TrunkArrivals: ObservableObject {
         let arrivals: [Arrival]
         /// 一緒に届いた硬貨（届いた画面に「硬貨 +1」を添える・2026-10-17 次の版）
         var coins: Int = 0
+        /// 一緒に届いたかけら（札 #713・サーバーが返したときだけ。届いた画面に「かけら +1」を添える）
+        var fragments: Int = 0
+        /// 同じ投稿で初めて押されたスタンプ（札 #712・`StampMoment`）。届いた画面が硬貨のあとに同じ画面の中で出す
+        var stamp: StampMoment.Pressed? = nil
         var id: String { arrivals.map(\.label.id).joined(separator: ",") }
         var first: Arrival { arrivals[0] }
     }
@@ -50,13 +54,23 @@ final class TrunkArrivals: ObservableObject {
     private(set) var pending: Batch?
     /// ラベルが届かなかった理由のうち、一言で知らせるもの（手持ちがいっぱい・トランクの容量）。
     /// ほかの理由（同じ写真・1日の上限・受け取らない設定・時間切れ・知らない値）は黙って何も出さない
-    enum Notice: Equatable {
+    indirect enum Notice: Equatable {
         case full, storage
         /// ラベルは届かなかったが、硬貨だけ届いた（受け取らない設定・2026-10-17 次の版）
         case coins(Int)
         /// 手持ちがいっぱい・容量で届かなかったが、硬貨は届いた（2026-10-17 の見直し: 硬貨のことも言う）
         case fullAndCoins(Int)
         case storageAndCoins(Int)
+        /// かけらだけ届いた（札 #713）
+        case fragments(Int)
+        /// ほかの一言（硬貨・手持ちがいっぱい・容量）に、かけらも届いたことを添える（札 #713）
+        case withFragments(Notice, Int)
+
+        /// 2つの文をつなぐ（前の文が「。」「.」で終わっていなければ足す）
+        static func joined(_ a: String, _ b: String) -> String {
+            let ends = a.hasSuffix("。") || a.hasSuffix(".")
+            return ends ? a + " " + b : a + L("。", ".") + " " + b
+        }
 
         init?(_ skip: TrunkLabelSkip?) {
             switch skip {
@@ -73,6 +87,8 @@ final class TrunkArrivals: ObservableObject {
             case .coins(let n): return TrunkText.coinNotice(n)
             case .fullAndCoins(let n): return TrunkText.fullNotice + " " + TrunkText.coinAlsoNotice(n)
             case .storageAndCoins(let n): return TrunkText.storageNotice + " " + TrunkText.coinAlsoNotice(n)
+            case .withFragments(let base, let f): return Self.joined(base.text, TrunkText.fragmentAlsoNotice(f))
+            case .fragments(let f): return L("かけらを\(f)つもらいました。部品箱で集められます", "You got \(Plural.count(f, "fragment")). Collect them in your parts box.")
             }
         }
     }
@@ -133,7 +149,7 @@ final class TrunkArrivals: ObservableObject {
     /// 下書きを公開した・投稿した応答の配った結果を渡す（`TrunkDealt`）
     func deliver(_ dealt: TrunkDealt, photoTitle: String, photoURL: URL? = nil, now: Date = Date()) {
         deliver(dealt.label.map { [Arrival(label: $0, photoTitle: photoTitle, photoURL: photoURL)] } ?? [],
-                notice: Notice(dealt.labelSkipped), coins: dealt.coin, now: now)
+                notice: Notice(dealt.labelSkipped), coins: dealt.coin, fragments: dealt.fragment, now: now)
     }
 
     /// 入っている人が替わった（ログアウトを含む）。**前の人に届いた束と一言を捨てる**（2026-10-17 の読み直し）
@@ -155,17 +171,25 @@ final class TrunkArrivals: ObservableObject {
 
     /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）と、届いた硬貨の数。
     /// 硬貨は届いた画面に添える。ラベルが無く理由の一言も無ければ「硬貨 +1」の一言にする
-    func deliver(_ arrivals: [Arrival], notice: Notice?, coins: Int = 0, now: Date = Date()) {
+    func deliver(_ arrivals: [Arrival], notice: Notice?, coins: Int = 0, fragments: Int = 0,
+                 stamp: StampMoment.Pressed? = nil, now: Date = Date()) {
         let coins = max(0, coins)
+        let fragments = max(0, fragments)
         var notice = notice ?? (arrivals.isEmpty && coins > 0 ? .coins(coins) : nil)
         if coins > 0, arrivals.isEmpty {
             if notice == .full { notice = .fullAndCoins(coins) }
             if notice == .storage { notice = .storageAndCoins(coins) }
         }
+        // かけら（札 #713）: ラベルが届かなかった一言に添える（硬貨・いっぱい・容量のどれと重なっても消さない。届いた画面では札にする）
+        if arrivals.isEmpty, fragments > 0 {
+            notice = notice.map { .withFragments($0, fragments) } ?? .fragments(fragments)
+        }
         guard !arrivals.isEmpty || notice != nil else { return }
         deliveredAt = now
         if !arrivals.isEmpty {
-            pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals, coins: (pending?.coins ?? 0) + coins)
+            // スタンプは1つだけ出す（待っている束に先のものがあれば、それを残す）
+            pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals, coins: (pending?.coins ?? 0) + coins,
+                            fragments: (pending?.fragments ?? 0) + fragments, stamp: pending?.stamp ?? stamp)
         } else {
             pendingNotice = notice
         }

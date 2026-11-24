@@ -22,6 +22,8 @@ struct AccountService {
     /// スコープ外で、読むときに名前を伏せる扱いになっている
     /// （`api-user/src/account.ts` / `comments.ts` の注記）。
     func deleteAccount() async throws {
+        // 「Apple でサインイン」の人の Apple の取り消し（Apple の決まり・札 #601）は、サーバーの退会の中で行う
+        // （2026-11-23 確かめ役の指摘: Web・古いアプリから退会しても漏れない。落ちたら 500 で結び付けは残る）
         try await api.authorizedVoid(.delete, "/user/account", timeout: Self.deleteTimeout)
     }
 

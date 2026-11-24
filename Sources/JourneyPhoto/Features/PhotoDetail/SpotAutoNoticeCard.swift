@@ -26,7 +26,7 @@ struct SpotAutoNoticeCard: View {
         JPCard {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
                 // 黒地の札の上の眉ラベルは真鍮（デザインシステム 05）
-                Text(SpotAutoNoticeText.eyebrow)
+                Text(eyebrow: SpotAutoNoticeText.eyebrow)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityHidden(true)

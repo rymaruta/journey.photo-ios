@@ -114,10 +114,10 @@ final class MyPageScrollPerfTests: XCTestCase {
     func testDeviceTripsIsObservedOnlyInsideTheTripsTab() throws {
         let view = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
         XCTAssertFalse(view.contains("@ObservedObject private var deviceTrips"), "マイページ全体が端末の一冊を見張っている")
-        XCTAssertTrue(view.contains("private struct MyPageTripsShelf<Tools: View>: View {\n    @ObservedObject var deviceTrips: DeviceTripShelfStore"))
+        XCTAssertTrue(view.contains("private struct MyPageTripsShelf: View {\n    @ObservedObject var deviceTrips: DeviceTripShelfStore"))
         XCTAssertTrue(view.contains("MyPageTripsShelf(deviceTrips: deviceTrips,"))
-        // 「まだ旅はありません」を出す決まりは今までどおり（投稿した一冊が0で端末の一冊があるときは出さない）
-        XCTAssertTrue(view.contains("if !trips.isEmpty || !hasDeviceBooks {\n                TripShelfList(trips: trips, isPublic: isPublic)"))
+        // 投稿した一冊と端末の一冊を1つの本棚に渡す（札 #714）。「まだ旅はありません」はどちらも0冊のときだけ（`TripShelfList`）
+        XCTAssertTrue(view.contains("TripShelfList(trips: trips, isPublic: isPublic, isMine: true, deviceBooks: deviceBooks, deviceNames: deviceTrips.names)"))
     }
 
     // MARK: 縮めた絵の控えの後片づけ（2026-10-28 確かめ役の指摘）
@@ -155,14 +155,12 @@ final class MyPageScrollPerfTests: XCTestCase {
     }
 
     /// 🔴 旅の記録のタブの行を待つのは共通の助け（長めに待ち、出なければタブを押し直す）。
-    /// `CriticalFlowTests` のキャンピングカーの部屋が 15 秒で落ちていた（2026-10-28 の Mac）
+    /// `CriticalFlowTests` のキャンピングカーの部屋が 15 秒で落ちていた（2026-10-28 の Mac）。
+    /// その試験はとおまわり号と一緒に消した（2026-11-23・札 #709）ので、画面写真の試験の道だけを見る
     func testUITestsShareTheTripsTabWait() throws {
         let helper = try source("UITests/JourneyPhotoUITests/TripsTabWait.swift")
         XCTAssertTrue(helper.contains("tripsTab.tap()"), "出なければタブを押し直していない")
         XCTAssertTrue(helper.contains("static let firstWait: TimeInterval = 30"))
-        let critical = try source("UITests/JourneyPhotoUITests/CriticalFlowTests.swift")
-        XCTAssertTrue(critical.contains("TripsTabWait.waitForRow(camper, tripsTab: tripsTab)"))
-        XCTAssertFalse(critical.contains("camper.waitForExistence(timeout: 15)"), "15 秒で諦める待ち方が残っている")
         let shots = try source("UITests/JourneyPhotoUITests/ScreenshotTests.swift")
         XCTAssertTrue(shots.contains("TripsTabWait.waitForRow(row, tripsTab: tripsTab)"))
     }

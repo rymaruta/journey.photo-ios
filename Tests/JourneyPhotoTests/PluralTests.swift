@@ -22,7 +22,7 @@ final class PluralTests: XCTestCase {
         let files = [
             "Core/Text/TrunkInside.swift", "Core/Text/TrunkText.swift", "Features/Trunk/TrunkView.swift",
             "Features/Trunk/TrunkPartsBoxView.swift", "Features/Trunk/TrunkSpinViewer.swift", "Core/Text/PassBook.swift",
-            "Features/Pass/PassHomeSlot.swift", "Core/Push/PassBundleNotifier.swift", "Core/Camper/CamperCatalog.swift",
+            "Features/Pass/PassHomeSlot.swift", "Core/Push/PassBundleNotifier.swift",
             "Core/Text/TripPicker.swift",
         ]
         let bad = [#"\) (medals|tickets|labels|coins|people|cards|trips|days|night photos|posts)[ ".]"#]

@@ -199,15 +199,24 @@ final class ProfileTravelRecordTests: XCTestCase {
         XCTAssertTrue(shelf.contains("TripBookView(trip: trip, isPublic: isPublic, isMine: isMine)"), "棚から開いた一冊に印が渡らない")
     }
 
-    /// 🔴 人の棚の説明文は本人向けの後半（「旅の写真からまとめて」）を出さない。自分の棚は今までどおり
-    func testOthersShelfExplanationDropsOwnerPart() throws {
-        XCTAssertTrue(TripShelfList.explanation(isMine: true).contains(L("「旅の写真からまとめて」", "From a trip in your photos")))
+    /// 🔴 旅が無いときの1行（2026-11-23 owner 決定・札 #714）。人の棚は本人の操作（「載せる」）を言わない。
+    /// **旅があるときは出さない**（前は一覧の下にも出していた）
+    func testShelfExplanationIsOnlyForTheEmptyShelf() throws {
+        XCTAssertEqual(TripShelfList.explanation(isMine: true), L("同じ旅で撮った写真を2枚載せると、旅の記録が一冊できます",
+                                                                  "Post two photos from the same trip to make a travel book"))
         XCTAssertEqual(TripShelfList.explanation(isMine: true), TripShelfList.explanation)
-        XCTAssertFalse(TripShelfList.explanation(isMine: false).contains(L("旅の写真からまとめて", "From a trip in your photos")))
-        XCTAssertTrue(TripShelfList.explanation(isMine: true).hasPrefix(TripShelfList.explanation(isMine: false)))
+        XCTAssertFalse(TripShelfList.explanation(isMine: false).contains(L("載せると", "Post")))
+        for text in [TripShelfList.explanation(isMine: true), TripShelfList.explanation(isMine: false)] {
+            XCTAssertFalse(text.contains("・") || text.contains("·"), text)
+        }
         let shelf = try source("Features/Trips/TripShelf.swift")
-        XCTAssertEqual(shelf.components(separatedBy: "Self.explanation(isMine: isMine)").count - 1, 2,
-                       "空の状態と一覧の下の両方で、自分の棚かを見る")
+        XCTAssertEqual(shelf.components(separatedBy: "Self.explanation(isMine: isMine)").count - 1, 1,
+                       "説明の1行は空の状態だけで出す")
+        let empty = try XCTUnwrap(shelf.range(of: "if books.isEmpty {"))
+        let explanation = try XCTUnwrap(shelf.range(of: "Self.explanation(isMine: isMine)"))
+        let shelfView = try XCTUnwrap(shelf.range(of: "TripBookshelfView(books: books)"))
+        XCTAssertTrue(empty.upperBound < explanation.lowerBound && explanation.upperBound < shelfView.lowerBound,
+                      "説明の1行が旅のある棚にも出ている")
     }
 
     /// 🔴 一冊の写真の個別ページは公開写真にだけ在る（入口が「全部ある」と決めない）

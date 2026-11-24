@@ -61,7 +61,7 @@ enum TrunkWelcomeText {
     static let stageCoins: [StageCoin] = [
         StageCoin(size: 88, tilt: 62, turn: -24, rotation: -14, x: -74, y: 46),
         StageCoin(size: 88, tilt: 56, turn: 30, rotation: 12, x: 76, y: 52),
-        StageCoin(size: 116, tilt: 0, turn: -8, rotation: 0, x: 0, y: -10),
+        StageCoin(size: 116, tilt: 0, turn: 0, rotation: 0, x: 0, y: -10),
     ]
 
     static var turn: String { L("カプセルを回す", "Turn the capsule machine") }

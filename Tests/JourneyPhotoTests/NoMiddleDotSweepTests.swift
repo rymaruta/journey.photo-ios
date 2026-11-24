@@ -14,7 +14,6 @@ final class NoMiddleDotSweepTests: XCTestCase {
 
     /// 区切りではない・画面に出ない中黒（ファイル名と、文字列の中身）
     static let allowed: Set<String> = [
-        "CamperCatalog.swift|・",                       // 番号の桁の埋め（記号の並び）
         "ContactText.swift|・",                         // 電話番号を読むときに読み飛ばす字
         "DailyQuiz.swift|Journey Photo · Where is this? \\(shortDate(date)) ✓",  // ほかの SNS に貼る共有の文
         "DailyQuiz.swift|Journey Photo · Where is this? \\(shortDate(date)) ✗",
@@ -30,6 +29,7 @@ final class NoMiddleDotSweepTests: XCTestCase {
         "OfficialSpotService.swift|[spots] 読めなかった・重複した区分の行を \\(list.dropped) 件落としました",
         "ShareCardMap.swift|（）()、，,・ 　/",            // 利用者の書いた地名を切る字
         "ShareCardText.swift|・",                       // 利用者の書いた題を折り返す字
+        "PhotoTrip.swift|,，、（(・･/／",                 // 利用者の書いた撮影地を切る字（観光スポットの名前と比べる）
         "TripPlanFixture.swift|金沢・福井の旅",            // 見本の利用者の題（利用者の書いた文の見本）
         "PostSuggest.swift|・",                         // 端末の AI の答えから中黒を「、」に直す字（#622）
         "PostSuggest.swift|·",                         // 同上
@@ -48,8 +48,6 @@ final class NoMiddleDotSweepTests: XCTestCase {
             .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
         XCTAssertGreaterThan(files.count, 100)
         for file in files {
-            // 写真の内側の開発用の一覧（Mac の画面写真で家具を並べて見るだけ・利用者には出ない）
-            if file.lastPathComponent == "CamperRoomContactSheet.swift" { continue }
             let text = try String(contentsOf: file, encoding: .utf8)
             for literal in Self.literals(text) where literal.contains("・") || literal.contains("·") {
                 let key = "\(file.lastPathComponent)|\(literal)"

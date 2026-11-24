@@ -199,7 +199,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertEqual(view.components(separatedBy: "JPEyebrowLine(").count - 1, 3, "節の眉が3つでない")
         XCTAssertFalse(view.contains("JPSectionTitle"), "v1 の灰の小さい見出しが残っている")
         XCTAssertFalse(view.contains("JPCard"), "行を札で囲む v1 の形が残っている")
-        for id in ["menu.tripPlans", "menu.albums", "menu.pass", "menu.trunk", "menu.camper", "menu.favorites",
+        for id in ["menu.tripPlans", "menu.albums", "menu.pass", "menu.trunk", "menu.favorites",
                    "menu.settings", "menu.logout"] {
             XCTAssertTrue(view.contains("\"\(id)\""), "\(id) の道しるべを落とした")
         }

@@ -406,7 +406,7 @@ struct TrunkStickView: View {
 
     private var trayHeader: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(L("手持ちのラベル", "Your pocket"))
+            Text(eyebrow: L("手持ちのラベル", "Your pocket"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             Spacer()

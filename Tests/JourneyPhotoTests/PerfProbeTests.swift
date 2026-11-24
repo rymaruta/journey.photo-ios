@@ -362,16 +362,6 @@ final class PerfProbeTests: XCTestCase {
         XCTAssertFalse(built, "無効のときは名前を作らない")
     }
 
-    /// 「中に入る」の段（押した・部屋へ送った・部屋が出た・外の画面が出た/消えた）が配線されている
-    func testCamperEnterStepsAreWired() throws {
-        let garage = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
-        let room = try source("Sources/JourneyPhoto/Features/Camper/Room/CamperRoomView.swift")
-        for name in ["camper.enter.tap", "camper.enter.push", "camper.insideRoom=", "camper.garage.appear", "camper.garage.disappear"] {
-            XCTAssertTrue(garage.contains("PerfRecorder.shared.step(\"\(name)"), name)
-        }
-        XCTAssertTrue(room.contains("PerfRecorder.shared.step(\"camper.room.appear\")"))
-    }
-
     /// 同じ名前は最初の1回だけ（何度も起きる出来事が 40 件の枠を使い切らない）。細かい 2 区間は枠を使わない
     func testSameEventNameIsKeptOnlyOnce() {
         let clock = FakeClock()

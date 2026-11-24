@@ -114,16 +114,23 @@ final class SpotLightEditUXTests: XCTestCase {
         XCTAssertTrue(parts.contains("if busy {\n                ProgressView()"), "札に輪を出す口が無い")
     }
 
-    /// 「この場所から、次の一枚へ」は**説明の帯**。地・縁・真鍮・矢印の記号を付けない（ボタンに見せない）
-    func testJourneyCueDoesNotLookTappable() async throws {
+    /// 「この観光スポットから、次の一枚へ（見つける → 行く → 撮る → 残す）」の説明の帯は出さない
+    /// （2026-11-23 判断: 見れば分かる・説明文に頼らない。各段はこの頁の本物の操作が担う）
+    func testNoJourneyExplanationBand() async throws {
         let page = try source("Features/Spots/OfficialSpotView.swift")
-        let cue = try segment(page, from: "var journeyCue: some View {")
-        XCTAssertTrue(cue.contains("見つける → 行く → 撮る → 残す"))
-        for look in [".background(", ".overlay(", "strokeBorder", "chevron.right", "WebTheme.accent", "Image(systemName:"] {
-            XCTAssertFalse(cue.contains(look), "説明の帯に押せる見た目（\(look)）が残っている")
-        }
+        XCTAssertFalse(page.contains("var journeyCue"), "説明の帯が戻っている")
+        XCTAssertFalse(page.contains(#"L("見つける → 行く → 撮る → 残す""#), "流れの説明の行が戻っている")
+        XCTAssertFalse(page.contains(#"L("この観光スポットから、次の一枚へ""#), "説明の見出しが戻っている")
         XCTAssertFalse(page.contains("func journeyStep("), "押せない段の札が残っている")
-        XCTAssertFalse(cue.contains("Button"))
+        // 画面写真の巡回も、消した帯を探さない
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
+                               encoding: .utf8)
+        XCTAssertFalse(shots.contains("spot.official.journeyCue"), "画面写真の巡回が消した説明の帯を探している")
+        // 説明の代わりの本物の操作は残す
+        XCTAssertTrue(page.contains(#".accessibilityIdentifier("spot.official.directions")"#))
+        XCTAssertTrue(page.contains(#".accessibilityIdentifier("spot.official.post")"#))
     }
 
     // MARK: - 2. 光と天気の知らせ

@@ -28,7 +28,7 @@ struct HomeSignUpBenefitsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HomeSignUpBenefitsLayout.headingGap) {
-            Text(SignUpBenefit.heading)
+            Text(eyebrow: SignUpBenefit.heading)
                 .jpEyebrow()
                 // 黒地の上なので真鍮
                 .foregroundStyle(WebTheme.accent)

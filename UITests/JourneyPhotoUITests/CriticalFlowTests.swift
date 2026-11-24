@@ -10,7 +10,6 @@ import CoreLocation
 ///   2. いいね・保存: 押して数と印が変わる → もう一度で戻る
 ///   3. コメント: 書いて送る → 一覧に出る（送れなかった知らせは `PhotoDetailViewModel` の単体テストが見る）
 ///   4. ログアウト → ログイン（見本の認証）→ マイページに戻れる
-///   5. キャンピングカー: 部屋に入る → 写真を飾る → 額に写る
 ///
 /// 2026-10-22 判断: **書き込みは端末の中だけ**（`-JPPreviewLocalBackend`・`PreviewBackend`）。CI は資格情報を
 /// 持たないので staging の試験用の利用者でも入れず、持たせるには Actions の秘密に触る。鍵の要る口だけを端末の中で答え、
@@ -323,7 +322,11 @@ final class CriticalFlowTests: JPUITestCase {
         // 上がったら知らせ「投稿しました　カードにする」（共有カードは画面いっぱいに出さない・1.1.83 の決めを置き換えた）
         // run 1465: 知らせの入れ物（`toast`）の label は空で、字は子の StaticText「投稿しました」（要素の木で確かめた）。
         // 字そのものを、押した直後から見る（知らせは6秒で消える）
-        let postedText = app.staticTexts["投稿しました"].firstMatch
+        // 2026-11-23（札 #710 の案1・7）: 1行目は場所で「行きたい場所に行けました」「〇〇の最初の1枚になりました」に替わる。
+        // どれでも「上がった」知らせとして待つ（文が替わっても落ちない）
+        let postedText = app.staticTexts.matching(NSPredicate(
+            format: "label == %@ OR label == %@ OR label ENDSWITH %@",
+            "投稿しました", "行きたい場所に行けました", "の最初の1枚になりました")).firstMatch
         let toastShown = postedText.waitForExistence(timeout: 60)
         print("[postedToast] shown=\(toastShown) uploadOpen=\(thumb.exists) card=\(app.buttons["toast.action"].exists)")
         XCTAssertTrue(toastShown, "裏で送っても「投稿しました」が出ない（上がっていない）")
@@ -887,6 +890,75 @@ final class CriticalFlowTests: JPUITestCase {
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
     }
 
+    /// **確認コードは6桁そろったら自動で確かめる**（2026-11-23・模型 NL2x「登録の確認コード」・`VerificationCodeEntry`）。
+    /// 見本の認証で登録の確認コードの画面から開き（`-JPPreviewVerificationCode`・見本のコードは `PreviewBackend.verificationCode`）:
+    /// 違う6桁 → 押さずに確かめて「コードが違います」が箱の上に出る → 箱が空に戻る → 正しい6桁 → 押さずに確かめてログインし、
+    /// マイページに戻る（「登録を完了する」のボタンは無い）
+    func testVerificationCodeConfirmsAtSixDigits() {
+        let app = launch(["-JPPreviewVerificationCode", "YES"])
+        let (nameLine, form) = signOutToForm(app)
+
+        let field = app.textFields["signin.code"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "確認コードの画面が開かない")
+        XCTAssertFalse(app.buttons["登録を完了する"].exists, "「登録を完了する」のボタンが残っている")
+        enter("000000", into: field, "確認コードの欄")
+        let error = app.descendants(matching: .any)["signin.code.error"].firstMatch
+        XCTAssertTrue(error.waitForExistence(timeout: 15), "違う6桁で押さずに確かめない（失敗の文が出ない）")
+        // 箱が空に戻る（揺らしてから 0.6 秒）
+        Thread.sleep(forTimeInterval: 1.5)
+        // 欄の読み上げの値は、空のとき「空」（`VerificationCodeField.spokenValue`）
+        let emptied = (field.value as? String) ?? ""
+        XCTAssertTrue(emptied.isEmpty || emptied == "空", "違うコードのあと箱が空に戻らない（\(emptied)）")
+        field.typeText("4829")
+        XCTAssertTrue(error.waitForNonExistence(timeout: 5), "打ち直しても違うコードの文が残る")
+        field.typeText("13")
+        XCTAssertTrue(nameLine.waitForExistence(timeout: 30), "正しい6桁で押さずに確かめてログインしない")
+        XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのに確認コードの画面が残っている")
+    }
+
+    /// **ログインに失敗した文は、欄のすぐ上に見える所で出る**（2026-11-23・模型 NL2x「失敗の文が下端より下に押し出されて見えない」）。
+    /// 違うパスワードでログイン → 失敗の文（`signin.error`）が出る・キーボードを下ろした1画面で送らずに見える・メールの欄のすぐ上・
+    /// 主ボタンも1画面に残る。
+    /// 標準の字と大きい字（アクセシビリティ XL）の両方で見る。375×667 の寸法は単体テスト（`SignInLayoutTests`）の見積もりで見る
+    func testSignInFailureIsVisibleAboveFields() {
+        for (extra, tag) in [([String](), ""), (["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], "（大きい字）")] {
+            let app = launch(extra)
+            _ = signOutToForm(app)
+
+            let email = app.textFields["signin.email"].firstMatch
+            XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い\(tag)")
+            enter(Self.previewEmail, into: email, "メールアドレスの欄")
+            let password = app.secureTextFields["signin.password"].firstMatch
+            XCTAssertTrue(password.waitForExistence(timeout: 5), "パスワードの欄が無い\(tag)")
+            enter("Wrong-0000", into: password, "パスワードの欄")
+            let submit = app.buttons["signin.submit"].firstMatch
+            XCTAssertTrue(wait(submit, "enabled == true", timeout: 5), "入れてもログインが押せない\(tag)")
+            submit.tap()
+
+            let error = app.descendants(matching: .any)["signin.error"].firstMatch
+            XCTAssertTrue(error.waitForExistence(timeout: 15), "違うパスワードでも失敗の文が出ない\(tag)")
+            // キーボードを下ろして（下ろした状態の1画面で見えるか）
+            if app.keyboards.firstMatch.exists { app.descendants(matching: .any)["signin.form"].firstMatch.swipeDown(velocity: .slow) }
+            Thread.sleep(forTimeInterval: 1)
+            let window = app.windows.firstMatch.frame
+            let keyboard = app.keyboards.firstMatch
+            print("[signin-error]\(tag) window=\(window) error=\(error.frame) email=\(email.frame) submit=\(submit.frame) "
+                  + "keyboard=\(keyboard.exists ? "\(keyboard.frame)" : "無し")")
+            XCTAssertTrue(error.isHittable, "失敗の文が画面の外にある\(tag)（\(error.frame)）")
+            XCTAssertLessThanOrEqual(error.frame.maxY, window.maxY, "失敗の文が下端より下\(tag)")
+            // 測るのは欄のまとまり（欄の名前の行＋箱・`signin.email.field`）の上端。箱の内側の打つ所（`signin.email`）を測ると、
+            // 模型 NL2x どおりの間 12 でも名前の行と箱の内側の余白が足されて 47.67pt になる（Mac run 1769・2026-11-23）
+            let field = app.descendants(matching: .any)["signin.email.field"].firstMatch
+            XCTAssertTrue(field.exists, "メールの欄のまとまりが無い\(tag)")
+            print("[signin-error]\(tag) field=\(field.frame)")
+            XCTAssertLessThanOrEqual(error.frame.maxY, field.frame.minY + 1, "失敗の文が欄のすぐ上にない\(tag)")
+            XCTAssertLessThanOrEqual(field.frame.minY - error.frame.maxY, 20, "失敗の文が欄から離れている\(tag)（模型の間は 12）")
+            XCTAssertTrue(submit.isHittable, "失敗の文が出て主ボタンが画面の外へ押し出された\(tag)")
+            XCTAssertLessThanOrEqual(submit.frame.maxY, window.maxY, "主ボタンが下端より下\(tag)")
+            app.terminate()
+        }
+    }
+
     // MARK: - 4b. 探す: 最近の検索
 
     /// **前に探した言葉が欄の下に残り、押すとその言葉で探せる。1つずつ消せる**（2026-11-14 判断・`RecentSearchesStore`）
@@ -1247,8 +1319,9 @@ final class CriticalFlowTests: JPUITestCase {
         shot.name = "A4-いいねから登録の画面"
         shot.lifetime = .keepAlways
         add(shot)
-        let back = app.buttons["ログインに戻る"].firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 5), "登録の画面に「ログインに戻る」が無い")
+        // 2026-11-23: 枠つきの「ログインに戻る」をやめ、切り替えの一行（「アカウントをお持ちの方は ログイン」）に
+        let back = app.buttons["signin.switch"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "登録の画面に切り替えの一行（ログイン）が無い")
         back.tap()
         let email = app.textFields["signin.email"].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い")
@@ -1421,93 +1494,5 @@ final class CriticalFlowTests: JPUITestCase {
         shot.name = "A10-探す（0件）"
         shot.lifetime = .keepAlways
         add(shot)
-    }
-
-    // MARK: - 5. キャンピングカー
-
-    /// 部屋に入る → 写真 → 額に入っていない1枚を選んで「この額に飾る」→ 部屋に戻ると、その写真が額に写っている
-    func testCamperRoomHangPhotoShowsInFrame() {
-        // 毎回最初の並び（保存しない）。見本の通信は要らないが、同じ起動で揃える
-        let app = launch(["-JPPreviewCamperRoomReset", "YES"])
-        tab(app, 4)
-        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
-        XCTAssertTrue(tripsTab.waitForExistence(timeout: 20), "マイページに「旅の記録」のタブが無い")
-        // 見出しの読み込みでタブの列が動く間は押さない（`ScreenshotTests.selectTripsTab` の注記）
-        Thread.sleep(forTimeInterval: 3)
-        reveal(tripsTab, in: app, "旅の記録のタブ", pushes: 4)
-        tripsTab.tap()
-        let camper = app.buttons["trips.camper"].firstMatch
-        // 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（run 728・2026-10-28 の Mac でここが落ちた）。
-        // 長めに待ち、出なければタブを押し直してもう一度待つ（`TripsTabWait`・`ScreenshotTests.openTripsRow` と共通）
-        XCTAssertTrue(TripsTabWait.waitForRow(camper, tripsTab: tripsTab), "「写真で作るキャンピングカー」の行が無い")
-        reveal(camper, in: app, "キャンピングカーの行")
-        camper.tap()
-        let enter = app.buttons["camper.room.enter"].firstMatch
-        XCTAssertTrue(enter.waitForExistence(timeout: 20), "キャンピングカーに「中に入る」が無い")
-        reveal(enter, in: app, "中に入る")
-        enter.tap()
-
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        XCTAssertTrue(scene.waitForExistence(timeout: 20), "部屋に入れない")
-        // 札 #435（2026-11-14）: 「中に入る」の段（`step=` の camper.enter.*）を、通った回も残す（冷えた起動の比べる元）
-        notePerfProbe(app, label: "camperEntered")
-        XCTAssertTrue(wait(scene, "value CONTAINS 'camper-room-ready'", timeout: 60), "部屋を組み終えない")
-
-        app.buttons["camper.room.tool.photos"].firstMatch.tap()
-        XCTAssertFalse(app.buttons["camper.room.addFrame"].firstMatch.waitForExistence(timeout: 3),
-                       "最初の並びの部屋に額が無い")
-        let photos = app.buttons.matching(identifier: "camper.room.photo")
-        XCTAssertTrue(photos.firstMatch.waitForExistence(timeout: 30), "飾れる写真が出ない")
-        // 額に保存した中身の印画が載るまで待つ（写真は本物の公開写真を読む）
-        XCTAssertTrue(waitUntil(20) { !self.marker(scene, "framed").isEmpty }, "額に写真が載らない（今は \(scene.value ?? "")）")
-        Thread.sleep(forTimeInterval: 3)
-        let framedBefore = marker(scene, "framed")
-
-        // 額に入っていない1枚
-        let candidates = photos.allElementsBoundByIndex.prefix(12)
-        guard let pick = candidates.first(where: {
-            let id = $0.value as? String ?? ""
-            return !id.isEmpty && !framedBefore.contains(id) && $0.isHittable
-        }) else {
-            return XCTFail("額に入っていない写真が無い（額 \(framedBefore.count)・写真 \(photos.count)）")
-        }
-        let photoId = pick.value as? String ?? ""
-        pick.tap()
-        XCTAssertTrue(wait(pick, "selected == true", timeout: 5), "写真を押しても選ばれない")
-        // 選んだだけでは見本（preview）として載り、保存した中身（framed）にはまだ無い
-        XCTAssertTrue(waitUntil(15) { self.marker(scene, "preview").contains(photoId) },
-                      "選んだ写真 \(photoId) が見本として額に載らない（今は \(scene.value ?? "")）")
-        XCTAssertFalse(marker(scene, "framed").contains(photoId), "「この額に飾る」を押す前に保存した中身に入っている")
-        let hang = app.buttons["camper.room.hang"].firstMatch
-        XCTAssertTrue(wait(hang, "enabled == true", timeout: 5), "「この額に飾る」が押せない")
-        hang.tap()
-        XCTAssertTrue(waitUntil(15) { self.marker(scene, "framed").contains(photoId) },
-                      "飾った写真 \(photoId) が額の中身に入らない（今は \(scene.value ?? "")）")
-
-        // 部屋に戻っても（見本ではなく保存した中身で描き直す）額に写っている
-        app.buttons["camper.room.back"].firstMatch.tap()
-        XCTAssertTrue(waitUntil(20) {
-            self.marker(scene, "framed").contains(photoId) && self.marker(scene, "preview").isEmpty
-        }, "部屋に戻ると飾った写真 \(photoId) が額に無い（今は \(scene.value ?? "")）")
-    }
-
-    /// 部屋の読み上げの値から、額の中身の id を読む（` framed=a,b preview=c`・`CamperRoomView.framedMarker`）。
-    /// `framed` は保存した中身、`preview` は選んだだけの見本
-    private func marker(_ scene: XCUIElement, _ name: String) -> [String] {
-        let value = scene.value as? String ?? ""
-        guard let start = value.range(of: " \(name)=") else { return [] }
-        let rest = value[start.upperBound...]
-        let end = rest.firstIndex(of: " ") ?? rest.endIndex
-        return rest[..<end].split(separator: ",").map(String.init)
-    }
-
-    /// 条件が満たされるまで待つ（最長 `timeout` 秒）
-    private func waitUntil(_ timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return true }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        return condition()
     }
 }

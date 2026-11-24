@@ -280,7 +280,7 @@ extension SignatureShareCardSheet {
     /// 頭: 真鍮の眉「投稿しました」（黒地の上の合図）と明朝の一行「カードにして、ほかの SNS にも」
     var postedHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(PostedShareCardText.eyebrow)
+            Text(eyebrow: PostedShareCardText.eyebrow)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             Text(PostedShareCardText.title)

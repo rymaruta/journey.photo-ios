@@ -45,57 +45,192 @@ enum TrunkText {
           "Your trunk is nearly at its storage limit, so this label couldn\u{2019}t be received. Delete some labels in your pocket to receive again.")
     }
 
-    // MARK: 作り直し
+    // MARK: 作り直し（札 #706・2026-11-23 owner 承認: 全員・ラベルごとに3回・届いた画面のまま）
 
-    /// 「あと 2 回」
-    static func rerollsLeft(_ n: Int) -> String { L("あと \(max(0, n)) 回", "\(max(0, n)) left") }
-
-    static var rerollNote: String {
-        L("1回の作り直しで候補が3つ出ます。いまの図柄を選べば、そのままにできます。",
-          "Each redo offers three designs. Pick the current one to keep it as it is.")
+    /// 届いた画面の作り直しの段
+    enum RedoStep: Equatable {
+        /// 出さない（サーバーが対応していない・好きなデザインのラベル・手持ちに無い）
+        case hidden
+        /// まだ作り直せる（`left` は残りの回数）
+        case ready(left: Int)
+        /// 3回を使い切った（候補から選ぶだけ）
+        case usedUp
     }
 
-    static var rerollLead: String {
-        L("土地と季節はそのまま、図柄だけを作り直します。形、色、絵が変わります。",
-          "The place and season stay; only the design is redone. The shape, colors and picture change.")
+    static func redoStep(_ state: TrunkState?, label: TrunkLabel) -> RedoStep {
+        guard let state, state.supportsLabelReroll, label.custom == nil,
+              let current = state.pocket.first(where: { $0.id == label.id }) else { return .hidden }
+        return current.rerollsLeft > 0 ? .ready(left: current.rerollsLeft) : .usedUp
     }
 
-    /// 作り直しの画面の段（2026-10-17 判断: **開いただけでは回数を使わない**。「作り直す」を押して初めて使う）
-    enum RerollStep: Equatable {
-        /// まだ作り直していない。押すと1回使って候補3つ（`left` は今月の残り）
-        case start(left: Int)
-        /// 候補が出ている（選ぶまで残る・回数はもう使った）
-        case choosing([Int])
-        /// 今月の回数を使い切った
-        case noneLeft
-        /// Pro でない
-        case notPro
+    /// 「作り直す　あと 3 回」（区切りは空白・中黒を使わない）
+    static func redoTitle(left: Int, again: Bool = false) -> String {
+        let n = max(0, left)
+        return again ? L("もう一度作り直す\u{2002}あと \(n) 回", "Try again\u{2002}\(n) left")
+                     : L("作り直す\u{2002}あと \(n) 回", "Redo\u{2002}\(n) left")
     }
 
-    static func rerollStep(_ state: TrunkState?, labelId: String) -> RerollStep {
-        guard let state else { return .start(left: 0) }
-        if let pending = state.pendingReroll, pending.labelId == labelId { return .choosing(Array(pending.seeds.prefix(3))) }
-        guard state.isPro else { return .notPro }
-        return state.rerollsLeft > 0 ? .start(left: state.rerollsLeft) : .noneLeft
+    /// 読み上げ（「作り直す、あと 3 回」）
+    static func redoAccessibility(left: Int) -> String {
+        L("作り直す、あと \(max(0, left)) 回", "Redo, \(max(0, left)) left")
     }
 
-    /// 押す前の注記（モック RerollStart）
-    static var rerollStartNote: String {
-        L("押すと1回使い、候補が3つ出ます。開いただけでは回数は減りません。毎月3回、繰り越しなし。",
-          "Tapping uses one redo and shows three designs. Just opening this doesn\u{2019}t use one. 3 a month, no carry-over.")
+    static var redoUsedUp: String {
+        L("作り直しは3回までです。4つから選んで貼ってください", "You can redo up to 3 times. Pick one of the four to stick.")
     }
 
-    /// 「作り直す · 今月あと 2 回」
-    static func rerollStartTitle(left: Int) -> String {
-        L("作り直す\u{2002}今月あと \(max(0, left)) 回", "Redo\u{2002}\(max(0, left)) left this month")
+    static var redoOffline: String {
+        L("電波が無いので作り直せません。貼るのは電波が戻ってから", "You\u{2019}re offline, so you can\u{2019}t redo now. Stick it once you\u{2019}re back online.")
+    }
+
+    static var redoFailed: String {
+        L("作り直せませんでした。回数は減っていません", "Couldn\u{2019}t redo it. Your redos weren\u{2019}t used.")
+    }
+
+    /// 候補の札の下の字（「最初」「1回目」…）
+    static func candidateCaption(_ index: Int) -> String {
+        index == 0 ? L("最初", "First") : L("\(index)回目", "Redo \(index)")
+    }
+
+    /// 候補の札の読み上げ
+    static func candidateAccessibility(_ index: Int) -> String {
+        index == 0 ? L("最初の図柄", "First design") : L("\(index)回目の図柄", "Redo \(index) design")
+    }
+
+    /// 候補の列の下の一行（作る前: 何が起きるか。作ったあと: 押すと戻せること）
+    static func candidatesHint(rerolls: Int) -> String {
+        rerolls > 0 ? L("押すと、前の図柄に戻せます", "Tap one to go back to an earlier design")
+                    : L("作り直すと、ここに候補が並びます", "Redo and your options line up here")
+    }
+
+    /// 空いている枠の読み上げ（まだ作っていない回）
+    static func candidateEmptyAccessibility(_ index: Int) -> String {
+        L("\(index)回目はまだ作っていません", "Redo \(index) not made yet")
+    }
+
+    // MARK: 好きなデザインで作る（札 #706。画面では「カスタム」と言わない）
+
+    /// 進み具合の1行目
+    static var customProgressTitle: String { L("好きなデザインで作れるまで", "Until you can make your own design") }
+
+    /// 進み具合の2行目の数（「あと 2 回の投稿」）
+    static func customPostsLeft(_ n: Int) -> String {
+        L("あと \(max(1, n)) 回の投稿", "\(max(1, n)) more post\(max(1, n) == 1 ? "" : "s")")
+    }
+
+    /// 作れる回数があるとき（進み具合の代わり）
+    static func customReady(tickets: Int) -> String {
+        tickets > 1 ? L("好きなデザインで作れます（\(tickets) 回分）", "You can make your own design (\(tickets) left)")
+                    : L("好きなデザインで作れます", "You can make your own design")
+    }
+
+    /// 進み具合の読み上げ
+    static func customProgressAccessibility(_ p: TrunkCustomProgress) -> String {
+        p.canMake
+            ? customReady(tickets: p.tickets)
+            : L("好きなデザインで作れるまで、あと \(p.postsLeft) 回の投稿", "\(p.postsLeft) more posts until you can make your own design")
+    }
+
+    static var customTitle: String { L("好きなデザインで作る", "Make your own design") }
+
+    /// 届いた画面のお礼の一行（作れるようになった投稿）
+    static var customThanks: String { L("今回は、好きなデザインで作れます", "This time, you can make your own design") }
+
+    static var customKeepTitle: String { L("このまま貼る", "Stick as is") }
+
+    static var customLaterNote: String { L("あとでも手持ちから作れます", "You can also make it later from your pocket") }
+
+    /// 作る画面の眉ラベル（英字の刷り。画面の言語で変えない）
+    static let customEyebrow = "YOUR DESIGN"
+
+    static var customFixedNote: String { L("字は投稿の土地と季節のまま", "The words stay as the place and season of your post") }
+
+    static var customFoilNote: String {
+        L("箔押しのラベルは、色が箔のままです", "Gold-foil labels keep their foil colors")
+    }
+
+    static var customShapeTab: String { L("形", "Shape") }
+    static var customPaletteTab: String { L("色", "Color") }
+    static var customArtTab: String { L("絵", "Picture") }
+
+    /// 作る画面の主ボタン（届いた画面から: 作って貼る・手持ちから: 作るだけ）
+    static func customDoneTitle(sticks: Bool) -> String {
+        sticks ? L("このデザインで貼る", "Stick with this design") : L("このデザインにする", "Use this design")
+    }
+
+    static var customShuffleTitle: String { L("おまかせで組み直す", "Shuffle") }
+
+    static var customMade: String { L("好きなデザインで作りました", "Made your design") }
+
+    /// 手持ちの帯のボタン
+    static var customPocketTitle: String { L("好きなデザインで作る", "Make your design") }
+
+    /// 形・色・絵の札の読み上げ（「形：切符」「絵：もみじ」）。番号では言わない（2026-11-23 確かめ役の指摘）
+    static func customOptionAccessibility(tab: String, name: String) -> String { L("\(tab)：\(name)", "\(tab): \(name)") }
+
+    /// 形の名前（`TrunkLabelDesign.customShapes` の並び）
+    static func shapeName(_ shape: TrunkLabelShape) -> String {
+        switch shape {
+        case .oval: return L("楕円", "Oval")
+        case .circle: return L("円", "Circle")
+        case .rect: return L("四角", "Rectangle")
+        case .ticket: return L("切符", "Ticket")
+        case .shield: return L("盾", "Shield")
+        case .diamond: return L("ひし形", "Diamond")
+        case .hexagon: return L("六角形", "Hexagon")
+        case .octagon: return L("八角形", "Octagon")
+        case .banner: return L("旗", "Banner")
+        case .burst: return L("星形", "Starburst")
+        }
+    }
+
+    /// 色の組の名前（`TrunkLabelDesign.customPalettes` の並び・地の色で言う）
+    static func paletteName(_ index: Int) -> String {
+        let names: [(String, String)] = [
+            ("生成り", "Cream"), ("赤茶", "Rust"), ("藤色", "Wisteria"), ("若葉", "Leaf green"), ("水色", "Pale blue"),
+            ("橙", "Orange"), ("紺", "Navy"), ("夜空", "Night sky"), ("深緑", "Deep green"), ("えんじ", "Crimson"),
+            ("金茶", "Golden brown"), ("薄藍", "Pale indigo"),
+        ]
+        guard names.indices.contains(index) else { return L("色 \(index + 1)", "Color \(index + 1)") }
+        return L(names[index].0, names[index].1)
+    }
+
+    /// 絵の名前（`TrunkLabelDesign.customArts` に入る絵）
+    static func artName(_ art: TrunkLabelArt) -> String {
+        switch art {
+        case .fuji: return L("富士山", "Mt. Fuji")
+        case .pagoda: return L("塔", "Pagoda")
+        case .torii: return L("鳥居", "Torii gate")
+        case .sakura: return L("桜", "Cherry blossom")
+        case .maple: return L("もみじ", "Maple leaf")
+        case .wave: return L("波", "Wave")
+        case .sun: return L("太陽", "Sun")
+        case .moon: return L("月", "Moon")
+        case .ship: return L("船", "Ship")
+        case .train: return L("汽車", "Train")
+        case .lighthouse: return L("灯台", "Lighthouse")
+        case .cloud: return L("雲", "Cloud")
+        default: return art.rawValue
+        }
     }
 
     /// 作り直しの断り（サーバーの `code`）を画面の言葉に
     static func refusal(code: String?, fallback: String) -> String {
         switch code {
         case "proOnly": return L("Pro の機能です", "This is a Pro feature")
-        case "noRerollsLeft": return L("今月の作り直しは使い切りました。来月また3回使えます。",
-                                       "You\u{2019}ve used this month\u{2019}s redos. You get three more next month.")
+        // 作り直し・好きなデザイン（#706）
+        case "noRerollsLeft": return L("このラベルの作り直しは使い切りました（1枚につき3回まで）。",
+                                       "You\u{2019}ve used all redos for this label (3 per label).")
+        case "rerollOrder": return L("作り直しの回数が合いませんでした。読み直してください。",
+                                     "The redo count didn\u{2019}t match. Reload and try again.")
+        case "custom": return L("好きなデザインで作ったラベルは、作り直せません。",
+                                "A label with your own design can\u{2019}t be redone.")
+        case "noCustom": return L("好きなデザインで作れる回数がありません。投稿すると貯まります。",
+                                  "You can\u{2019}t make your own design right now. Keep posting to earn one.")
+        case "badCustom": return L("そのデザインは選べませんでした。選び直してください。",
+                                   "That design couldn\u{2019}t be used. Choose again.")
+        case "notInPocket": return L("貼ったラベルには使えません。手持ちに戻してから選んでください。",
+                                     "This can\u{2019}t be used on a stuck label. Move it back to your pocket first.")
         case "pendingReroll": return L("ほかのラベルの作り直しが選びかけです。先にそちらを選んでください。",
                                        "Another label\u{2019}s redo is waiting. Choose a design there first.")
         case "notFound": return L("ラベルが見つかりませんでした。読み直してください。", "That label wasn\u{2019}t found. Reload and try again.")
@@ -256,14 +391,20 @@ enum TrunkText {
     static let noPocketLabels = L("手持ちのラベルがありません。写真を投稿すると届きます。",
                                   "No labels in your pocket. Post a photo to get one.")
 
-    /// 硬貨だけが届いた一言（ラベルは受け取らない設定・2026-10-17 次の版）
+    /// 硬貨だけが届いた一言（ラベルは受け取らない設定・2026-10-17 次の版）。
+    /// 2026-11-23（札 #716・案の頁の「言葉」）: 何をもらって何に使えるかを文で（「硬貨 +1、」の記号の並びをやめた）
     static func coinNotice(_ n: Int) -> String {
-        L("硬貨 +\(n)、カプセルの機械で部品と換えられます", "+\(n) coin, use it at the capsule machine for a trunk part")
+        L("硬貨を\(n)枚もらいました。カプセルの機械で使えます", "You got \(Plural.count(n, "coin")). Use it at the capsule machine.")
     }
 
     /// ラベルが届かなかった一言に添える硬貨（手持ちがいっぱいでも硬貨は届く）
     static func coinAlsoNotice(_ n: Int) -> String {
-        L("硬貨は +\(n) 届いています。", "You still got +\(n) coin.")
+        L("硬貨は\(n)枚もらいました。", "You still got \(Plural.count(n, "coin")).")
+    }
+
+    /// 投稿のお礼でかけらも届いたときに添える一言（札 #713。サーバーが `fragment` を返したときだけ）
+    static func fragmentAlsoNotice(_ n: Int) -> String {
+        L("かけらも\(n)つもらいました。", "You also got \(Plural.count(n, "fragment")).")
     }
 
     /// 届いた画面の硬貨の札（「硬貨 +1」）
@@ -286,7 +427,8 @@ enum TrunkLocal {
         let write = pos == nil && slot != nil && (owner == nil || take)
         let stuck = pos.map { label.withPos(TrunkPlacement.clamp($0)) } ?? label.withSlot(write ? slot : nil)
         let rest = write && owner != nil ? s.stuck.map { $0.id == owner?.id ? $0.withSlot(nil) : $0 } : s.stuck
-        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [stuck] + rest,
+        // 作り直しの候補は貼ったら消す（回数は残す・サーバーの `stickMutation` と同じ・#706）
+        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [stuck.droppingCandidates()] + rest,
                       pendingReroll: s.pendingReroll?.labelId == id ? .some(nil) : nil)
     }
 
@@ -312,17 +454,27 @@ enum TrunkLocal {
                pendingReroll: s.pendingReroll?.labelId == id ? .some(nil) : nil)
     }
 
-    /// 作り直し（候補の種3つ）。Pro で、回数が残っているときだけ
-    static func reroll(_ s: TrunkState, id: String, seeds: [Int]) -> TrunkState {
-        guard s.isPro, s.rerollsLeft > 0, s.pocket.contains(where: { $0.id == id }) else { return s }
-        if s.pendingReroll?.labelId == id { return s }
-        return s.copy(rerollsLeft: s.rerollsLeft - 1, pendingReroll: .some(TrunkPendingReroll(labelId: id, seeds: seeds)))
+    /// 作り直し（#706・サーバーの `rerollMutation` と同じ）: 手持ちのラベルで、好きなデザインでなく、回数が残っているときだけ。
+    /// 種を1つ候補に足し、その種を選んだ状態にする
+    static func reroll(_ s: TrunkState, id: String, seed: Int) -> TrunkState {
+        guard let label = s.pocket.first(where: { $0.id == id }), label.custom == nil, label.rerollsLeft > 0 else { return s }
+        return s.copy(pocket: s.pocket.map { $0.id == id ? $0.withReroll(seed: seed) : $0 })
     }
 
+    /// 候補から選ぶ（サーバーの `chooseMutation` と同じ: 候補か今の種だけ）
     static func choose(_ s: TrunkState, id: String, seed: Int) -> TrunkState {
-        guard let pending = s.pendingReroll, pending.labelId == id else { return s }
-        let pocket = s.pocket.map { $0.id == id && (pending.seeds.contains(seed) || $0.seed == seed) ? $0.withSeed(seed) : $0 }
-        return s.copy(pocket: pocket, pendingReroll: .some(nil))
+        guard let label = s.pocket.first(where: { $0.id == id }), label.choices.contains(seed) else { return s }
+        return s.copy(pocket: s.pocket.map { $0.id == id ? $0.withSeed(seed) : $0 })
+    }
+
+    /// 好きなデザインで作る（サーバーの `customMutation` と同じ: 手持ちのラベルに、使える回数を1つ使って付ける）
+    static func custom(_ s: TrunkState, id: String, custom: TrunkLabelCustom) -> TrunkState {
+        guard custom.isValid, let label = s.pocket.first(where: { $0.id == id }) else { return s }
+        if label.custom == custom { return s }
+        guard let progress = s.custom, progress.tickets > 0 else { return s }
+        let next = TrunkCustomProgress(posts: progress.posts, tickets: progress.tickets - 1, every: progress.every,
+                                       rerollsPerLabel: progress.rerollsPerLabel)
+        return s.copy(pocket: s.pocket.map { $0.id == id ? $0.withCustom(custom) : $0 }, custom: .some(next))
     }
 
     static func setModel(_ s: TrunkState, _ model: TrunkModel) -> TrunkState {
@@ -428,8 +580,14 @@ enum TrunkSample {
                                         tag: "tag.4", charm: "charm.1", key: "key.4",
                                         pins: ["pin.1", "pin.7"], patches: ["patch.1"])
 
-    /// 見本のカプセルの機械で出る順（めずらしい錠前「菊」→ まだ持っていない部品 → 持っている部品（かけら））
-    static let gachaOrder = ["lock.2", "charm.12", "pin.1", "patch.6"]
+    /// 見本のカプセルの機械で出る順（めずらしい錠前「船の舵」→ まだ持っていない部品 → 持っている部品（かけら））。
+    ///
+    /// 2026-11-23 判断（1.2.0 の統合・Mac run 1765 の `testCapturesTrunkGacha`「開けた画面が出ない」）: 1回目は前は「菊」（`lock.2`）だったが、
+    /// 見本は菊を持っていて付けてもいる（`parts`・`equipped`）ので、1回目がいつも「持っている部品」になっていた。
+    /// 札 #716 から持っている部品の開けた画面は「もう1回まわす」で「トランクに付ける」が出ないため、新しい部品の開けた画面
+    /// （画面写真 98a）を撮れなかった。**1回目は見本が持っていない、同じめずらしさ・同じ真鍮の錠前「船の舵」（`lock.6`）にする**。
+    /// 菊は付け替えの見本（モック Equip の「古都」）で付けているので、持っている部品からは外さない
+    static let gachaOrder = ["lock.6", "charm.12", "pin.1", "patch.6"]
 
     /// 貼ったあと動かした切符の見本（札 #605・`-JPPreviewTrunkWrinkles`）。owner の実機の「月崎」と同じ組
     /// （春・切符の形・生成りの地 #F3E6CC・桜の絵）になる種
@@ -442,20 +600,26 @@ enum TrunkSample {
                       creasedMoves: Int? = PreviewSession.trunkWrinkleMoves) -> TrunkState {
         let stuckLabels = empty ? [] : (creasedMoves == nil ? stuck : [creased] + stuck)
         return TrunkState(model: .leather, effectiveModel: .leather,
-                   pocket: empty ? [] : pocket, stuck: stuckLabels,
+                   // 届いた画面の見本では、届いた1枚も手持ちに入れる（届いた画面で作り直す・貼るを端末の中で動かすため・#706）
+                   pocket: empty ? [] : (PreviewSession.opensTrunkArrived ? [arrived] + pocket : pocket), stuck: stuckLabels,
                    limit: isPro ? TrunkState.proLimit : TrunkState.freeLimit, isPro: isPro,
                    rerollsLeft: isPro ? 2 : 0, pendingReroll: nil,
                    posts: empty ? 0 : 42, receiveLabels: true,
                    coins: coins ?? (empty ? 0 : 2), parts: empty ? [] : parts, fragments: empty ? 0 : 3,
-                   equipped: empty ? .none : equipped)
+                   equipped: empty ? .none : equipped,
+                   custom: TrunkCustomProgress(posts: customPosts ?? 1, tickets: customTickets ?? 0, every: isPro ? 2 : 3))
     }
+
+    /// 見本の好きなデザインの進み（`-JPPreviewTrunkCustomReady` で作れる状態にする・#706）
+    static var customPosts: Int? { PreviewSession.trunkCustomReady ? 0 : nil }
+    static var customTickets: Int? { PreviewSession.trunkCustomReady ? 1 : nil }
 
     /// 届いた画面の見本の1枚（モック LabelArrived の「京都 · 桜」）
     static let arrived = label("a-kyoto", .season, "京都", latin: "Kyoto", country: "日本", season: .spring, seed: 41_207,
                                at: "2026-04-03T09:00:00Z")
 
-    /// 作り直しの見本の候補の種
-    static let rerollSeeds = [20_001, 20_002, 20_003]
+    /// 作り直しの見本の種（`n` 回目。ラベルごとに違う種にする・#706）
+    static func rerollSeed(_ label: TrunkLabel, n: Int) -> Int { 20_000 + n * 7 + abs(label.seed % 1_000) }
 }
 
 /// 古び方の区切りの知らせを出した印（人ごとに端末へ・退会で消す `AccountLocalData`）

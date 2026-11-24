@@ -379,7 +379,7 @@ struct PassSettingsView: View {
     }
 
     private func eyebrow(_ text: String) -> some View {
-        Text(text)
+        Text(eyebrow: text)
             .jpEyebrow()
             .foregroundStyle(WebTheme.accent)
             .padding(.horizontal, JPSpace.xxs)
@@ -443,7 +443,7 @@ struct PassIntroSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.l) {
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(PassTicket.featureName)
+                    Text(eyebrow: PassTicket.featureName)
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     Text(L("旅先で、わたしの乗車券を交換する", "Swap your ticket on your travels"))

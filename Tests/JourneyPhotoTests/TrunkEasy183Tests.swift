@@ -82,9 +82,11 @@ final class TrunkEasy183Tests: XCTestCase {
         XCTAssertEqual(shown.text, "取り消せませんでした。電波のあるところでもう一度お試しください")
         XCTAssertNil(toasts.undo, "失敗の知らせにまた取り消しが付いている")
         // 部品・型・届いた画面の取り消しは、戻せたかを返す（成否を捨てない）
-        for path in ["Features/Trunk/TrunkGachaView.swift", "Features/Trunk/TrunkPartsBoxView.swift"] {
-            XCTAssertTrue(try source(path).contains("{ [model] in await model.equip(before) })"), "\(path) の取り消しが成否を返さない")
-        }
+        XCTAssertTrue(try source("Features/Trunk/TrunkGachaView.swift").contains("{ [model] in await model.equip(before) })"),
+                      "カプセルの取り消しが成否を返さない")
+        // 部品箱は前の書き込みを待ってから戻す（2026-11-23・`TrunkPartsBoxTapTests.testUndoWhileSavingStillRestores`）
+        XCTAssertTrue(try source("Features/Trunk/TrunkPartsBoxView.swift").contains("{ [model] in await model.undoEquip(to: before) })"),
+                      "部品箱の取り消しが成否を返さない")
         XCTAssertTrue(try source("Features/Trunk/TrunkViewModel.swift").contains("{ [weak self] in await self?.setModel(before) ?? false })"))
         XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("await model.unstickAll(stuck) == stuck.count"))
     }
@@ -148,7 +150,7 @@ final class TrunkEasy183Tests: XCTestCase {
         let arrivals = TrunkArrivals()
         arrivals.noteStuckFromArrival(count: 2, left: 1)
         XCTAssertEqual(arrivals.stuckNotice, "2 枚貼りました。1 枚は手持ちにあります")
-        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("left: ids.count - stuck.count"))
+        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("left: ids.count + customStuck.count - stuck.count"), "好きなデザインで貼った分（#706）も数えて残りを言っていない")
     }
 
     // MARK: カプセルの機械（ボタン1つ＋ハンドル）
@@ -198,9 +200,9 @@ final class TrunkEasy183Tests: XCTestCase {
     /// 🔴 送ったあとに切れた・時間切れは、読み直した硬貨の数で言い分ける（「硬貨は減っていません」と決めつけない）
     func testGachaUnsureMessages() {
         XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 3), "回せませんでした。硬貨は減っていません")
-        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 2), "回っていました。出た部品は部品箱に入っています")
+        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 2), "回せていました。出た部品は部品箱にあります")
         XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: nil),
-                       "回ったか確かめられませんでした。電波のあるところで部品箱を開くと分かります")
+                       "回せたか分かりませんでした。電波のある所で部品箱を開くと分かります")
         XCTAssertFalse(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: nil).contains("減っていません"))
     }
 
@@ -216,15 +218,23 @@ final class TrunkEasy183Tests: XCTestCase {
 
     // MARK: 部品箱・付け替え（押すとすぐ保存・ひとつ戻す）
 
+    /// 2026-11-23（札 #711）: 持っている部品を押すとその場で付く（シートも付け替えの画面も通らない）。
+    /// 持っていない部品は手に入れ方のシート。「付け替える」の画面と入口はなくした
     func testPartsBoxAndEquipWiring() throws {
         let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
-        XCTAssertTrue(box.contains("viewing = part"), "持っている部品を押してもシートが出ない")
-        XCTAssertTrue(box.contains("TrunkPartSheet(model: model, part: part)"))
+        XCTAssertTrue(box.contains("                        toggle(part)\n"), "持っている部品を押しても付かない")
+        XCTAssertTrue(box.contains("let saving = model.equipNow(next.equipped)"), "先に絵を替えていない")
+        XCTAssertTrue(box.contains("missing = part"), "持っていない部品を押しても手に入れ方が出ない")
+        XCTAssertTrue(box.contains("TrunkMissingPartSheet(model: model, part: part)"))
         XCTAssertTrue(box.contains("TrunkKindTab("), "種類が選んでいるタブ（真鍮の字と下線）でない")
-        XCTAssertFalse(box.contains("付け替えを保存していません"), "保存の確かめが残っている")
-        XCTAssertFalse(box.contains("trunk.equip.save"), "右上の保存が残っている")
-        XCTAssertTrue(box.contains("trunk.equip.undo"), "「ひとつ戻す」が無い")
+        XCTAssertTrue(box.contains(".sensoryFeedback(.impact(weight: .light), trigger: picks)"), "付けたときに軽く震えない")
+        XCTAssertTrue(box.contains("seconds: TrunkPartsBoxText.undoSeconds"), "「元に戻す」を 3 秒にしていない")
         XCTAssertTrue(box.contains("trunk.parts.coins"), "硬貨のチップから機械へ行けない")
+        for gone in ["TrunkEquipView", "trunk.parts.equip", "TrunkPartSheet", "付け替えを保存していません", "trunk.equip.save"] {
+            XCTAssertFalse(box.contains(gone), "\(gone) が残っている")
+        }
+        XCTAssertEqual(TrunkPartsBoxText.undoTitle, "元に戻す")
+        XCTAssertEqual(TrunkPartsBoxText.undoSeconds, 3)
     }
 
     /// 付け替えは押すたびに保存され、前の付け方へ戻せる（見本で）
@@ -385,12 +395,6 @@ final class TravelScreens183Tests: XCTestCase {
         XCTAssertTrue(quiz.contains("DailyQuizSkeleton()"), "読み込み中が骨格でない")
     }
 
-    func testCamperVisitCardsAndSkeleton() throws {
-        let visit = try source("Features/Camper/CamperVisitView.swift")
-        XCTAssertTrue(visit.contains("CamperVisitSkeleton()"), "読み込み中が回る輪のまま")
-        XCTAssertFalse(visit.contains("友達の車を読み込んでいます…"))
-        XCTAssertEqual(visit.components(separatedBy: "CamperVisitActionCard(icon:").count - 1, 2, "贈る・薪が2枚の札でない")
-    }
 }
 
 /// カプセルの機械の失敗の言い分け（本物の口を台本で返す・2026-11-12 確かめ役の指摘）
@@ -446,7 +450,7 @@ final class TrunkGachaFailure183Tests: XCTestCase {
         ScriptedProtocol.script = [.init(match: "/user/trunk/gacha", status: 502, body: ""),
                                    .init(match: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"coins":2}"#)]
         _ = await model.gacha()
-        XCTAssertEqual(model.actionError, "回っていました。出た部品は部品箱に入っています")
+        XCTAssertEqual(model.actionError, "回せていました。出た部品は部品箱にあります")
         XCTAssertEqual(model.state?.coins, 2)
 
         // 読み直しも失敗: 分からないと言う（「減っていません」と言わない）
@@ -480,7 +484,6 @@ final class NoDotSeparator183Tests: XCTestCase {
         // 前に「·」で区切っていた所（確かめ役が挙げた 6 か所）
         let checks: [(String, String)] = [
             ("Features/Profile/VisitedPrefectureCard.swift", "で撮った写真 · "),
-            ("Features/Camper/CamperVisitView.swift", "1日1回 · "),
             ("Features/Trunk/TrunkPartsBoxView.swift", "\"· \" + L(\"カプセルを回す\""),
             ("Features/Trunk/TrunkPartsBoxView.swift", "枚 · カプセルを回す"),
             ("Core/Text/VisitedMapText.swift", "· 記録する"),

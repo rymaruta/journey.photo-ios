@@ -34,6 +34,8 @@ struct PhotoDetailView: View {
     @Environment(\.isPresented) private var isPresented
     /// 「視差効果を減らす」: 下へ引いている間に写真を縮めない・戻すばねを弾ませない（札 #592）
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 大きな字（AX）では撮影地と観光スポットを1行にまとめない（`PhotoTrip.joinsPlaceAndSpot`・2026-11-23 判断）
+    @Environment(\.dynamicTypeSize) private var placeTypeSize
     /// 写真を下へ引いている量（札 #592・`PhotoDetailPull`）の入れ物。**画面が出たときに1回だけ作る**
     /// （`@State` の初期値だと、格子のマスが行き先を作るたびに箱が割り当てられる・`PhotoDetailPullHolder`）。
     /// 入れ物は何も知らせないので、引いている間もこの画面の `body` は描き直さない（見張るのは `DetailPullFollow` だけ）
@@ -255,7 +257,7 @@ struct PhotoDetailView: View {
     var siblings: [Photo] { context.isEmpty ? [photo] : context }
 
     private var ownerId: String? { current.userId ?? current.uploadedBy }
-    private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
+    private var isMine: Bool { PhotoOwnership.isMine(photo: current, me: auth.userId) }
 
     /// コメントの節の目印。吹き出しを押したらここまで送る
     private static let commentsAnchor = "photo.comments"
@@ -946,6 +948,7 @@ struct PhotoDetailView: View {
             }
             socialBar(proxy)
             tripSection
+            PhotoDetailExtras(photo: shown)   // 札 #710 の案9・10（行きたい場所の1行・色の名前）
             Group {
                 if let exif = shown.exif {
                     ExifRow(exif: exif)
@@ -1049,27 +1052,45 @@ struct PhotoDetailView: View {
     @ViewBuilder
     private var placeRow: some View {
         if let location = shown.location?.trimmingCharacters(in: .whitespaces), !location.isEmpty {
-            if let lead = spotLead {
-                NavigationLink {
-                    SpotDetailView(spot: lead.spot, photos: lead.photos)
-                } label: {
-                    placeLabel(location, spotSuffix: true)
+            // 撮影地と観光スポットが同じ名前なら、観光スポットの行をこの行の右に寄せて1行にする
+            // （2026-11-23 判断・`PhotoTrip.placeSharesSpotName`）。行き先はどちらも残す（撮影地の頁と観光スポットの頁）
+            let joined = joinedGuide
+            HStack(spacing: JPSpace.m) {
+                if let lead = spotLead {
+                    NavigationLink {
+                        SpotDetailView(spot: lead.spot, photos: lead.photos)
+                    } label: {
+                        placeLabel(location, spotSuffix: joined == nil, spokenAsPlace: joined != nil)
+                    }
+                    .buttonStyle(.plain)
+                    // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+                    // ——今日それで「写真の詳細」としてログイン画面を撮っていた
+                    .accessibilityIdentifier("photo.spotLink")
+                } else {
+                    NavigationLink {
+                        // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
+                        TagPhotosView(kind: .location(location), opened: shown)
+                    } label: {
+                        placeLabel(location, spotSuffix: false, spokenAsPlace: joined != nil)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("photo.placeLink")
                 }
-                .buttonStyle(.plain)
-                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-                // ——今日それで「写真の詳細」としてログイン画面を撮っていた
-                .accessibilityIdentifier("photo.spotLink")
-            } else {
-                NavigationLink {
-                    // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
-                    TagPhotosView(kind: .location(location), opened: shown)
-                } label: {
-                    placeLabel(location, spotSuffix: false)
+                if let joined {
+                    spotGuideLink(joined.loaded, joined.spot, nameShown: true)
+                        .fixedSize()
+                        .layoutPriority(1)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("photo.placeLink")
             }
         }
+    }
+
+    /// 撮影地の行に寄せる観光スポット（撮影地と同じ名前のときだけ）。寄せたら下の `spotGuideRow` は出さない
+    private var joinedGuide: (loaded: PhotoTrip.Loaded, spot: OfficialSpot)? {
+        guard let loaded = tripStage.loaded, let spot = loaded.spot,
+              PhotoTrip.joinsPlaceAndSpot(location: shown.location, spotName: spot.name,
+                                          accessibilitySize: placeTypeSize.isAccessibilitySize) else { return nil }
+        return (loaded, spot)
     }
 
     /// 「撮影スポット · [名前] ›」（板 02 の `hasSpotGuide` の行・2026-10-14）。**`spotId` で台帳の行が
@@ -1079,34 +1100,40 @@ struct PhotoDetailView: View {
     /// 当たりは 44pt（負の余白で並びは詰める・板の `margin: -8px 0`）
     @ViewBuilder
     private var spotGuideRow: some View {
-        if let loaded = tripStage.loaded, let spot = loaded.spot {
-            NavigationLink {
-                // 写真は公開写真の全部（撮影地に1枚しか無い写真でも渡す）。ブロック・通報は渡す時点で絞る
-                OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
-                                 photosKnown: loaded.photos != nil)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "book.closed")
-                        .font(.caption)
-                        .accessibilityHidden(true)
-                    // 呼び名は「撮影スポット」（2026-10-11 owner。板の「撮影スポットのガイド」は旧い呼び名）。
-                    // 撮影地の行と見分けられるよう、台帳の名前を添える
-                    Text(L("観光スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
-                        .underline(true, color: Color.white.opacity(0.6))
-                        .lineLimit(1)
-                    Text("›").accessibilityHidden(true)
-                }
-                .font(.caption)
-                .foregroundStyle(WebTheme.foreground)
-                .jpPhotoTextShadow()
-                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
-                .contentShape(Rectangle())
-                .padding(.vertical, -8)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("観光スポット: \(spot.name)", "Photo spot: \(spot.name)"))
-            .accessibilityIdentifier("photo.spotGuide")
+        if let loaded = tripStage.loaded, let spot = loaded.spot, joinedGuide == nil {
+            spotGuideLink(loaded, spot, nameShown: false)
         }
+    }
+
+    /// 観光スポットの頁へ行くリンク。`nameShown`（撮影地の行に同じ名前がもう出ている）なら名前を添えない
+    private func spotGuideLink(_ loaded: PhotoTrip.Loaded, _ spot: OfficialSpot, nameShown: Bool) -> some View {
+        NavigationLink {
+            // 写真は公開写真の全部（撮影地に1枚しか無い写真でも渡す）。ブロック・通報は渡す時点で絞る
+            OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
+                             photosKnown: loaded.photos != nil)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "book.closed")
+                    .font(.caption)
+                    .accessibilityHidden(true)
+                // 呼び名は「観光スポット」（2026-11-12 owner）。撮影地の行と見分けられるよう、
+                // 名前が違うときだけ台帳の名前を添える（同じ名前なら撮影地の行の右に寄せて添えない）
+                Text(nameShown ? L("観光スポット", "Photo spot")
+                               : L("観光スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
+                    .underline(true, color: Color.white.opacity(0.6))
+                    .lineLimit(1)
+                Text("›").accessibilityHidden(true)
+            }
+            .font(.caption)
+            .foregroundStyle(WebTheme.foreground)
+            .jpPhotoTextShadow()
+            .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+            .contentShape(Rectangle())
+            .padding(.vertical, nameShown ? 0 : -8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("観光スポット: \(spot.name)", "Photo spot: \(spot.name)"))
+        .accessibilityIdentifier("photo.spotGuide")
     }
 
     /// 「この近くの撮影スポット · [名前] ›」（2026-10-16・行き止まりの直し）。
@@ -1299,13 +1326,16 @@ struct PhotoDetailView: View {
     /// 板: 12pt・白・下線（白 60%）、添え書きは白 50%。写真の裾に乗るので影を付ける。
     /// **添え書きは白 72% に上げてある**——50% だと明るい写真の裾で読めなかった
     /// （影を付けても足りない）。本文の2次の字（`muted2`）と同じ濃さ
-    private func placeLabel(_ location: String, spotSuffix: Bool) -> some View {
+    /// `spokenAsPlace`: 観光スポットの行と1行にまとめたとき。「撮影地の詳細」の添え書きが無くなるので、
+    /// 読み上げで「撮影地: 金閣寺」と言う（隣の「観光スポット: 金閣寺」と聞き分けられるように・2026-11-23 判断）
+    private func placeLabel(_ location: String, spotSuffix: Bool, spokenAsPlace: Bool = false) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "mappin")
                 .font(.caption)
             // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。行き先は元の文字で引く
             Text(LocationMatch.display(location))
                 .underline(true, color: Color.white.opacity(0.6))
+                .accessibilityLabel(PhotoTrip.placeSpokenName(LocationMatch.display(location), joined: spokenAsPlace))
                 .lineLimit(1)
             if spotSuffix {
                 Text(PhotoMetaLine.separator + L("撮影地の詳細", "Place details"))
@@ -1532,7 +1562,7 @@ struct PhotoDetailView: View {
         let target = shown
         // 人の写真の画像（共有カード）は書き出さない（2026-11-12・#577・`PhotoDetailRules.showsSocialCard`）
         guard !preparingThreads, let url = target.detailImageURL,
-              PhotoDetailRules.showsSocialCard(ownerId: target.userId ?? target.uploadedBy, me: auth.userId,
+              PhotoDetailRules.showsSocialCard(ownerId: PhotoOwnership.ownerId(of: target), me: auth.userId,
                                                shareable: CollectionScreen.isShareable(target)) else { return }
         let link = PhotoLink.shortURL(photoId: target.id) ?? shareURL(for: current)
         preparingThreads = true
@@ -1696,7 +1726,7 @@ struct PhotoDetailView: View {
     /// 「ストーリーに載せる」を出すか（札 #541 の ①）。**自分の、全体に公開した写真だけ**
     /// （2026-11-12 判断・#577・`SendSheetLayout.canShareToStory`。サーバーも人の写真は 403 で断る）
     private var canShareToStory: Bool {
-        SendSheetLayout.canShareToStory(ownerId: shown.userId ?? shown.uploadedBy, me: auth.userId,
+        SendSheetLayout.canShareToStory(ownerId: PhotoOwnership.ownerId(of: shown), me: auth.userId,
                                         canSendPhoto: canSendPhoto)
     }
 
@@ -1707,7 +1737,7 @@ struct PhotoDetailView: View {
         let target = shown
         // 人の写真の絵は作らない（2026-11-12・#577。ボタンは出さないが、押した後に束を送った回も断る）
         guard !preparingStory, let url = target.detailImageURL,
-              SendSheetLayout.canShareToStory(ownerId: target.userId ?? target.uploadedBy, me: auth.userId,
+              SendSheetLayout.canShareToStory(ownerId: PhotoOwnership.ownerId(of: target), me: auth.userId,
                                               canSendPhoto: canSendPhoto) else { return }
         // 送るシートが閉じきる前に作る画面を重ねない（iOS が取りこぼす）。読み込みと並べて待つ
         let started = Date()
@@ -3359,8 +3389,7 @@ enum PhotoDetailRules {
     /// **自分の、全体に公開した写真だけ**（2026-11-12 判断・#577・owner の原則「基本的にその人のもの」）。
     /// 人の写真の画像を手にできる道は作らない。持ち主へ連れて行くリンクの共有は送るシートに残す
     static func showsSocialCard(ownerId: String?, me: String?, shareable: Bool) -> Bool {
-        guard shareable, let ownerId, !ownerId.isEmpty, let me, !me.isEmpty else { return false }
-        return ownerId == me
+        shareable && PhotoOwnership.isMine(ownerId: ownerId, me: me)
     }
 
     ///

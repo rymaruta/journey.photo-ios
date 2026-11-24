@@ -113,9 +113,16 @@ struct TrunkWelcomeView: View {
         ZStack {
             TrunkStyle.glow(width: 340, height: 250)
             ForEach(Array(TrunkWelcomeText.stageCoins.enumerated()), id: \.offset) { _, coin in
-                TrunkCoinMark(size: coin.size, tilt: coin.tilt, turn: coin.turn)
-                    .rotationEffect(.degrees(coin.rotation))
-                    .offset(x: coin.x, y: coin.y)
+                Group {
+                    if coin.tilt == 0 {
+                        // 手前の1枚は大きい絵（ゆっくり傾いて光り、押すと針が揺れて北で止まる・札 #716）
+                        TrunkCoinShowcase(size: coin.size)
+                    } else {
+                        TrunkCoinMark(size: coin.size, tilt: coin.tilt, turn: coin.turn)
+                    }
+                }
+                .rotationEffect(.degrees(coin.rotation))
+                .offset(x: coin.x, y: coin.y)
             }
         }
         .frame(height: 230)

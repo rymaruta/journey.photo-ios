@@ -136,33 +136,18 @@ final class TrunkReviewFixesTests: XCTestCase {
         XCTAssertEqual(model.state?.stuck.map(\.id), ["p-1"])
     }
 
-    // MARK: 6. 開いただけでは作り直しの回数を使わない
+    // MARK: 6. 届いた画面を開いただけでは作り直さない（#706: 作り直しは「作り直す」を押したときだけ）
 
-    func testRerollStartsOnlyWhenAsked() throws {
-        let pro = TrunkSample.state(isPro: true)
-        let id = pro.pocket[0].id
-        XCTAssertEqual(TrunkText.rerollStep(pro, labelId: id), .start(left: 2), "開いた時点で候補を出す段になっている")
-        let rolled = TrunkLocal.reroll(pro, id: id, seeds: [7, 8, 9])
-        XCTAssertEqual(TrunkText.rerollStep(rolled, labelId: id), .choosing([7, 8, 9]))
-        XCTAssertEqual(TrunkText.rerollStep(rolled, labelId: pro.pocket[1].id), .start(left: 1))
-        XCTAssertEqual(TrunkText.rerollStep(TrunkSample.state(isPro: false), labelId: id), .notPro)
-        let spent = TrunkState(model: .leather, pocket: pro.pocket, stuck: [], limit: 150, isPro: true,
-                               rerollsLeft: 0, posts: 0, receiveLabels: true)
-        XCTAssertEqual(TrunkText.rerollStep(spent, labelId: id), .noneLeft)
-        XCTAssertEqual(TrunkText.rerollStartTitle(left: 2), L("作り直す\u{2002}今月あと 2 回", "Redo · 2 left this month"))
-        XCTAssertTrue(TrunkText.rerollStartNote.contains(L("開いただけでは", "Just opening")), "押す前の注記が無い")
-    }
-
-    /// 作り直しの画面の作りが、開いたときに口を叩かない（候補を出す段は押してから）
+    /// 段は読むだけ（開いた時点で口を叩かない）。無料でもラベルごとに3回（Pro の月3回はやめた・2026-11-23）
     @MainActor
-    func testOpeningRerollDoesNotSpend() async {
+    func testOpeningArrivalDoesNotReroll() async {
         let model = TrunkViewModel(preview: nil)
         model.bind(trunkService())
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200,
-                                         body: #"{"pocket":[\#(label("p-1"))],"stuck":[],"isPro":true,"rerolls":{"left":3}}"#)]
+                                         body: #"{"pocket":[\#(label("p-1"))],"stuck":[],"isPro":false,"custom":{"n":1,"t":0,"every":3}}"#)]
         await model.load(offline: false)
-        // 画面を開いた（= 段を読むだけ）
-        XCTAssertEqual(TrunkText.rerollStep(model.state, labelId: "p-1"), .start(left: 3))
+        let label = try? XCTUnwrap(model.state?.pocket.first)
+        XCTAssertEqual(label.map { TrunkText.redoStep(model.state, label: $0) }, .ready(left: 3))
         XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path.hasSuffix("/reroll") })
     }
 

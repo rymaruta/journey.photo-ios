@@ -96,17 +96,52 @@ enum AccountLocalData {
         defaults.removeObject(forKey: FoundingGiftGate.doneKey(userId))
         defaults.removeObject(forKey: TrunkAgingNotice.key(userId))
         defaults.removeObject(forKey: TrunkWrinkles.key(userId))
-        // 写真で作るキャンピングカーの飾りと「届いた」を見せた印（2026-10-18）
-        CamperStore.removeData(for: userId, defaults: defaults)
-        // とおまわり号の中の家具の配置（2026-10-19）
-        CamperRoomStore.removeData(for: userId, defaults: defaults)
-        CamperRoomSeenStore.removeData(for: userId, defaults: defaults)
+        // 写真で作るキャンピングカー（とおまわり号）の、端末に残った控え（2026-11-23 に機能を消した・札 #709）
+        LeftoverCamperData.removeData(for: userId, defaults: defaults)
         // はじめてのいいね・コメントを祝った印（2026-11-08）
         FirstReaction.removeData(for: userId, defaults: defaults)
+        // 友達の行きたい場所の札の印と、「行きたい場所に行けました」を知らせた鍵（2026-11-23・札 #710）
+        FriendWishMemory(defaults: defaults).removeAll(for: userId)
+        WishVisitMemory(defaults: defaults).removeAll(for: userId)
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）
         TripBookCard.removeAll()
         if let username, !username.isEmpty {
             PendingVerificationStore(defaults: defaults).forget(username: username)
         }
+    }
+}
+
+/// とおまわり号（写真で作るキャンピングカー）の、端末に残った控えの鍵（2026-11-23 判断・札 #709）。
+///
+/// 機能は消した（戻すには枝 `archive/camper`（1d8dbfc251b0）から）が、前の版で使った人の端末には
+/// 飾り・「届いた」の印・部屋の家具の配置が残っている。退会のときに消すため、**鍵の名前だけ**をここに残す
+/// （前の `CamperStore`・`CamperRoomStore`・`CamperRoomSeenStore`・`CamperServerState` の鍵と同じ綴り）
+enum LeftoverCamperData {
+
+    /// 部屋の種類（前の `CamperRoomKind` の rawValue）
+    nonisolated static let rooms = ["car", "sideRear", "sideFront", "porch", "locker", "loft", "bunk", "trailer"]
+
+    /// その人の鍵（飾り・「届いた」を見せた印・届いた部品の受け箱・部屋ごとの家具の配置・新しい家具を見た印）
+    nonisolated static func keys(for userId: String) -> [String] {
+        ["camper.loadout.\(userId)", "camper.seen.\(userId)", "camper.inbox.\(userId)", "camper.room.seen.\(userId)"]
+            + rooms.map { "camper.room.\(userId).\($0)" }
+    }
+
+    static func removeData(for userId: String, defaults: UserDefaults = .standard) {
+        for key in keys(for: userId) { defaults.removeObject(forKey: key) }
+    }
+
+    /// 人ごとではない、端末全体の鍵（前の `CamperRoomCoach.key` の手引きを見た印と、
+    /// `CamperRoomPanelSplit` の編集の板の高さの割合）。退会では消えないので、起動のときに1回だけ消す
+    nonisolated static let deviceKeys = ["camper.room.coach.v1", "camper.room.editPanelFraction"]
+
+    /// 端末全体の鍵を消し終えた印（2回目からは何もしない）
+    nonisolated static let deviceKeysClearedKey = "leftover.camper.deviceKeysCleared.v1"
+
+    /// 起動のときに呼ぶ。**1回だけ**、端末全体の鍵（`deviceKeys`）だけを消す（人ごとの鍵は退会のときに消す）
+    static func removeDeviceDataOnce(defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: deviceKeysClearedKey) else { return }
+        for key in deviceKeys { defaults.removeObject(forKey: key) }
+        defaults.set(true, forKey: deviceKeysClearedKey)
     }
 }

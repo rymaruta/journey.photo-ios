@@ -12,7 +12,8 @@ App Store Connect に貼る文面。**2026-11-15 に 1.1.91 で書き、2026-11-
   AI の回数（1日と月の上限。サーバーの AI は Pro だけ。`AskLimits`、`TripAILimits`、`TripAIRunner`）、
   AI に頼む（探す）、文で探す、投稿の AI の候補と見え方のプレビュー、今週のお題、返信とメンションの通知、プロフィールのリンクの共有
 - 2026-11-22 判断: サーバーの AI の送り先は「サーバーに送り、委託先の AI で処理」と書き、使っている AI、サービス、地域の名前は書かない
-  （アプリの知らせ `AskText.serverNotice` と同じ言い方。CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」に合わせる）
+  （送る前の同意の画面 `AIServerConsentSheet` と同じ言い方。CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」に合わせる）。
+  2026-11-23 owner 判断: アプリの画面の注記（「委託先の AI で処理します」）は外し、送ることの知らせと許可は同意の画面だけで行う
 - 字数は Python の `len()`（文字数）で数えた。上限を超えていない
 - **名前、サブタイトル、キーワード、画面写真は、新しい版を審査に出すときしか変えられない。** 宣伝文はいつでも変えられる
 
@@ -125,9 +126,9 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – 行った県を日本地図に塗って、回数を記録（あなただけの記録です）
 – 自分の旅の1枚を、搭乗券や切手の形にしてストーリーへ
 
-■ 旅のトランクと、とおまわり号
+■ 旅のトランク
+– 投稿のお礼に届く旅のラベルを、自分のトランクに貼っていけます
 – 公開で投稿すると硬貨がもらえ、カプセルの機械に入れるとトランクの部品が出てきます。硬貨と部品は購入できません
-– キャンピングカー「とおまわり号」に家具を置いて、額に自分の写真を飾れます
 
 ■ すれちがい乗車券（任意、初期設定はオフ）
 – オンにした人だけ、近くにいる Journey Photo の利用者と、選んだ公開写真1枚とひとことを Bluetooth で交換します。位置や連絡先は送りません
@@ -139,7 +140,7 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – 電波なしで使える旅：地図、作例、光の時刻を端末に
 – Pro マークと Pro 限定の章
 – 特別な乗車券：真鍮、漆、革などの券面
-– 旅のトランクをもっと：特別なトランク6型、ラベルの図柄の作り直し月3回、手持ち150枚（無料は30枚）
+– 旅のトランクをもっと：特別なトランク6型、好きなデザインを2投稿ごとに、手持ち150枚（無料は30枚）
 – 月額500円、年額5,000円。無料の試用はありません
 – お支払いは購入の確定時に Apple ID に請求されます。期間が終わる24時間前までに解約しない限り、自動で更新されます。解約と管理は App Store のアカウント設定から行えます。ファミリー共有には対応していません
 – 作例を重ねて撮るカメラは、Pro でなくても使えます
@@ -202,9 +203,9 @@ KEEP YOUR TRIPS
 - Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device
 - Trip books and shared albums
 
-TRAVEL TRUNK AND DETOUR
+TRAVEL TRUNK
+- Stick the travel labels you get for posting on your own trunk
 - Earn coins by posting publicly and get trunk parts from the capsule machine. Coins and parts cannot be bought
-- Decorate Detour, your camper, with furniture and your own photos
 
 PASS (OPTIONAL, OFF BY DEFAULT)
 - Only if you turn it on, your phone swaps a ticket card with nearby Journey Photo users over Bluetooth: one public photo you chose and a short note. No location or contacts are sent
@@ -215,7 +216,7 @@ JOURNEY PHOTO PRO (OPTIONAL, AUTO-RENEWABLE SUBSCRIPTION)
 - Offline trips
 - A Pro mark and Pro-only chapters
 - Special Pass ticket designs
-- More from your Travel trunk: 6 special trunks, 3 label redesigns a month, room for 150 labels (30 for free)
+- More from your Travel trunk: 6 special trunks, your own label design every 2 posts, room for 150 labels (30 for free)
 - 500 yen per month or 5,000 yen per year. No free trial. Payment is charged to your Apple ID at confirmation of purchase and renews automatically unless canceled at least 24 hours before the end of the period. Manage or cancel in your App Store account settings. Family Sharing is not supported
 - The composition-overlay camera is free for everyone
 Terms of Use: https://journey-photo.com/terms
@@ -266,7 +267,7 @@ japan,sightseeing,golden hour,sunrise,sunset,sakura,autumn,landscape,camera,map,
 – 行った県を日本地図に塗って、回数を記録できます
 – 投稿したらすぐ SNS に載せられるカード。額装、フィルム、縦書きなどの形から選べます
 – コメントへの返信、プロフィールのピン留め、QR コード、おすすめの人
-– 旅のトランクと、キャンピングカー「とおまわり号」の中に入れるように
+– 旅のトランク：投稿のお礼に届くラベルを貼って、部品で飾れます
 – すれちがい乗車券（初期設定はオフ）：オンにした人だけ、近くの人と公開写真1枚を交換。カードはその場で届きます
 – Pro に、特別な乗車券と旅のトランクの特典が加わりました。作例を重ねて撮るカメラは、Pro でなくても使えます
 – 設定に「意見を送る」と「検索エンジンにプロフィールを表示しない」
@@ -292,7 +293,7 @@ A big update since the fall, with many new ways to share travel photos.
 - Color in the prefectures you have visited on a map of Japan
 - Share cards right after you post, with Mat, Film, Vertical and more
 - Replies to comments, pinned photos, a profile QR code and suggested people
-- Your Travel trunk, and you can step inside Detour, your camper
+- Your Travel trunk: stick the labels you get for posting and decorate it with parts
 - Pass (off by default): swap one public photo with people nearby, only if you turn it on
 - Pro now includes special Pass tickets and Travel trunk extras. The composition-overlay camera is free for everyone
 - "Send feedback" and "Hide my profile from search engines" in Settings

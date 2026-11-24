@@ -19,6 +19,8 @@ struct TripAIAsk: Equatable {
     var extra: String = ""
     /// 先に入れたい場所（札の元になった行きたい場所）
     var mustSpotIds: [String] = []
+    /// 行き先を選ばずに作ったので、アプリが決めた（「行き先はおまかせで、○○にしました」を出す・2026-11-23 owner）
+    var autoPlaced: Bool = false
 
     var hasPlace: Bool { !prefectures.isEmpty }
     var isComplete: Bool { hasPlace && days != nil }
@@ -51,6 +53,72 @@ struct TripAIAsk: Equatable {
 
     /// 日数の札の選択肢
     static let dayChoices = [1, 2, 3, 4]
+
+    /// 行き先が空なら、アプリが行き先を決めて埋める（`TripAIAutoPlace`）。決められなければそのまま返す
+    func withAutoPlace(spots: [OfficialSpot], wishlist: Set<String>, now: Date = Date()) -> TripAIAsk {
+        guard !hasPlace, let pick = TripAIAutoPlace.choose(text: extra, spots: spots, wishlist: wishlist, now: now) else { return self }
+        var out = self
+        out.place = pick.place
+        out.prefectures = pick.prefectures
+        out.cities = pick.cities
+        out.mustSpotIds = []
+        out.autoPlaced = true
+        return out
+    }
+}
+
+/// 行き先を選ばずに「この内容で作る」を押したときの行き先（2026-11-23 owner「めんどいから行き先指定なしでも作れるようにして」）。
+///
+/// AI は使わない（回数を増やさない）。決めた行き先で頼むので、端末の AI もサーバーの AI も今の道のまま動く（サーバーは変えない）。
+/// 決め方の順（2026-11-23 判断）:
+/// 1. 頼みの文（足した1行）に地名があればそれ
+/// 2. 行きたい場所に入っている県のうち、いちばん多い県
+/// 3. 今の季節に見頃の案内がある観光スポットがいちばん多い県
+/// 4. どれも無ければ、写真のある観光スポットがいちばん多い県（よく見られる所。人気の数は台帳に無いので、載っている数で見る）
+/// 同じ数なら県の名前の順（`TripAISuggestion.groupsByPrefecture`）。国内の公開の観光スポットだけを見る
+enum TripAIAutoPlace {
+    enum Source: Equatable { case text, wishlist, season, popular }
+
+    struct Pick: Equatable {
+        let place: String
+        let prefectures: [String]
+        let cities: Set<String>
+        let source: Source
+    }
+
+    static func choose(text: String, spots: [OfficialSpot], wishlist: Set<String>, now: Date = Date()) -> Pick? {
+        let read = TripAIAsk.reading(text, spots: spots)
+        if read.hasPlace {
+            return Pick(place: read.place, prefectures: read.prefectures, cities: read.cities, source: .text)
+        }
+        let domestic = spots.filter { ($0.region?.country ?? "").isEmpty && !$0.isDraft && $0.region?.prefecture != nil }
+        if let pref = TripAISuggestion.groupsByPrefecture(domestic.filter { wishlist.contains($0.spotId) }).first?.prefecture {
+            return pick(pref, .wishlist)
+        }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Tokyo") ?? .current
+        let season = SpotBodyText.season(ofMonth: cal.component(.month, from: now))
+        if let pref = TripAISuggestion.groupsByPrefecture(domestic.filter { $0.hasSeason(season) }).first?.prefecture {
+            return pick(pref, .season)
+        }
+        if let pref = TripAISuggestion.groupsByPrefecture(domestic.filter(\.hasPhoto)).first?.prefecture
+            ?? TripAISuggestion.groupsByPrefecture(domestic).first?.prefecture {
+            return pick(pref, .popular)
+        }
+        return nil
+    }
+
+    private static func pick(_ prefecture: String, _ source: Source) -> Pick {
+        Pick(place: TripAIDestination.prefectureShort(prefecture), prefectures: [prefecture], cities: [], source: source)
+    }
+
+    /// 作ったプランの上に出す1行
+    static func line(place: String) -> String {
+        L("行き先はおまかせで、\(place)にしました", "No place chosen, so we picked \(place)")
+    }
+
+    /// 行き先の札の既定（選ばなくても作れる）
+    static var slotLabel: String { L("おまかせ", "Any") }
 }
 
 /// 好みの札（頼みの文から拾う語と、押すだけで足せる語）

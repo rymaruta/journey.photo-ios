@@ -64,7 +64,7 @@ struct TripPlanPickSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 眉（板: 「1日目 12月24日」の真鍮）→ 明朝の題
-                    Text(Self.eyebrow(dayIndex: day, date: dayLabels.indices.contains(day) ? dayLabels[day].date : nil))
+                    Text(eyebrow: Self.eyebrow(dayIndex: day, date: dayLabels.indices.contains(day) ? dayLabels[day].date : nil))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     Text(L("場所を足す", "Add places"))

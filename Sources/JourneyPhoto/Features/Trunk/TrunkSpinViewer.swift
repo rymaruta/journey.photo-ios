@@ -50,7 +50,7 @@ struct TrunkSpinViewer: View {
                     .accessibilityValue(PreviewSession.userId != nil ? renderMarker : "")
                     .accessibilityIdentifier("trunk.spin.box")
                 VStack(spacing: 8) {
-                    Text(L("手に取って回す", "Turn it over"))
+                    Text(eyebrow: L("手に取って回す", "Turn it over"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     Text(TrunkText.info(model).name)

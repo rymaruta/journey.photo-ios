@@ -124,17 +124,28 @@ final class TripShareTests: XCTestCase {
     // MARK: - 受信箱・知らせ
 
 
-    func testAddedByShowsOnlyOthers() {
+    func testAddedByShowsOnlyOthers() throws {
         let plan = TripPlan(planId: "p", title: "t", days: [day("a", "b")],
                             share: TripShare(ownerId: "me", memberIds: ["me", "u2"], rev: 1),
                             addedBy: ["s:a": "u2", "s:b": "me"])
         let members = [TripMember(id: "me", name: "わたし", username: nil, deleted: nil, owner: true),
                        TripMember(id: "u2", name: "あお", username: nil, deleted: nil, owner: nil)]
-        XCTAssertEqual(TripShareText.addedBy(plan, .spot(spotId: "a", note: nil), members: members, me: "me"),
-                       L("あお が足しました", "Added by あお"))
+        let by = TripShareText.addedBy(plan, .spot(spotId: "a", note: nil), members: members, me: "me")
+        XCTAssertEqual(by?.name, "あお")
+        // 名前と「が足しました」の間に空白を入れない（字の太さと色で分ける・2026-11-23）
+        XCTAssertEqual(by?.text, L("あおが足しました", "Added by あお"))
+        let view = try source("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
+        XCTAssertTrue(view.contains("+ Text(by.name).fontWeight(.semibold).foregroundStyle(WebTheme.text2)"),
+                      "名前を字の太さ・色で分けていない")
         XCTAssertNil(TripShareText.addedBy(plan, .spot(spotId: "b", note: nil), members: members, me: "me"))
         let own = TripPlan(planId: "q", title: "t", days: [day("a")], addedBy: ["s:a": "u2"])
         XCTAssertNil(TripShareText.addedBy(own, .spot(spotId: "a", note: nil), members: members, me: "me"), "共有していないプランには出さない")
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
     }
 
     func testInviteLinkIsWebPage() {

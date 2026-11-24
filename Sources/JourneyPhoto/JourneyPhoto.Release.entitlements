@@ -13,5 +13,15 @@
 <dict>
     <key>aps-environment</key>
     <string>production</string>
+    <!--
+      「Apple でサインイン」（札 #601・2026-11-23）。
+      owner が App ID com.journeyphoto.JourneyPhoto で「Sign In with Apple」を有効にした（2026-11-23）。
+      staging の App ID は無い（staging の束はシミュレーターだけで、シミュレーターは署名のプロファイルを使わない）。
+      🔴 **この権限は別のコミットに分けてある**（main に入れるときに外せるように）。Mac ではまだ確かめていない
+    -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
 </dict>
 </plist>

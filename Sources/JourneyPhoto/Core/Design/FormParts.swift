@@ -19,11 +19,14 @@ struct JPField<Content: View>: View {
 
     let title: String
     var multiline = false
+    /// 1行の欄の高さ（既定は板の 48。ログイン画面は画面の大きさで 44 / 50・2026-11-23 判断・`SignInLayout.Metrics`）
+    var height: CGFloat = JPHeight.field
     let content: Content
 
-    init(_ title: String, multiline: Bool = false, @ViewBuilder content: () -> Content) {
+    init(_ title: String, multiline: Bool = false, height: CGFloat = JPHeight.field, @ViewBuilder content: () -> Content) {
         self.title = title
         self.multiline = multiline
+        self.height = height
         self.content = content()
     }
 
@@ -33,7 +36,7 @@ struct JPField<Content: View>: View {
             content
                 .font(.subheadline)
                 .accessibilityLabel(title)
-                .jpFieldBox(multiline: multiline)
+                .jpFieldBox(multiline: multiline, height: height)
         }
     }
 }
@@ -42,11 +45,11 @@ extension View {
     /// 入力欄の枠（`JPField` の中身と同じ形: 地 白 6%・縁・角 12・高さ 48）。
     /// **欄の名前の見出しを別に置く画面**（投稿の「撮影地」は候補の行が欄の下に続く）でも同じ枠を使う
     /// （2026-10-21・撮影地の欄だけ枠が無く、押せる欄に見えなかった・全画面の点検 run 609）
-    func jpFieldBox(multiline: Bool = false) -> some View {
+    func jpFieldBox(multiline: Bool = false, height: CGFloat = JPHeight.field) -> some View {
         self
             .padding(.horizontal, 14)
             .padding(.vertical, multiline ? 12 : 0)
-            .frame(maxWidth: .infinity, minHeight: multiline ? 88 : 48,
+            .frame(maxWidth: .infinity, minHeight: multiline ? 88 : height,
                    alignment: multiline ? .topLeading : .leading)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
@@ -556,6 +559,10 @@ struct JPRowLabel: View {
     var iconColor: Color = WebTheme.muted2
     /// SF Symbols に無い絵（設定の Pro の行の Pro マーク・線の絵・板 43）。あれば `systemImage` より先に使う
     var icon: AnyView?
+    /// 右の件数バッジ（真鍮・`CountBadge`）。無ければ出さない（マイページの旅のトランクの行・2026-11-23 札 #709）
+    var badge: Int?
+    /// 右の小さな絵（矢印の手前・旅のスタンプ帳の最近の3つ・2026-11-23 札 #712）。無ければ出さない
+    var accessory: AnyView?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -588,6 +595,10 @@ struct JPRowLabel: View {
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(1)
             }
+            if let badge {
+                CountBadge(count: badge, maximum: 99)
+            }
+            if let accessory { accessory }
             if chevron {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))

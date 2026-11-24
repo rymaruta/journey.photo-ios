@@ -78,7 +78,7 @@ struct TripAddSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
-                    Text(place.name)
+                    Text(eyebrow: place.name)
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)
@@ -178,7 +178,7 @@ struct TripAddSheet: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: JPSpace.xs) {
                     ForEach(Array(plan.days.enumerated()), id: \.offset) { di, d in
-                        chip(L("\(di + 1) 日目", "Day \(di + 1)"), on: day == di,
+                        chip(L("\(di + 1)日目", "Day \(di + 1)"), on: day == di,
                              disabled: d.items.count >= TripPlanService.itemsPerDayMax) { day = di }
                     }
                     if plan.days.count < TripPlanService.daysMax {
@@ -187,7 +187,7 @@ struct TripAddSheet: View {
                 }
             }
             if let already {
-                Text(L("このプランの \(already + 1) 日目にもう入っています", "Already on day \(already + 1) of this trip"))
+                Text(L("このプランの\(already + 1)日目にもう入っています", "Already on day \(already + 1) of this trip"))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
             }
@@ -298,7 +298,7 @@ struct TripAddSheet: View {
             TripPlanChanges.shared.changed(plan.planId)
             await wish()
             let title = plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title
-            toasts.show(L("「\(title)」の \(dayNumber) 日目に入れました", "Added to day \(dayNumber) of “\(title)”"))
+            toasts.show(L("「\(title)」の\(dayNumber)日目に入れました", "Added to day \(dayNumber) of “\(title)”"))
             dismiss()
         }
     }
@@ -321,7 +321,7 @@ struct TripAddSheet: View {
     /// 「2 日目に入れる」（nil は新しい日）
     nonisolated static func addTitle(day: Int?) -> String {
         guard let day else { return L("新しい日に入れる", "Add as a new day") }
-        return L("\(day + 1) 日目に入れる", "Add to day \(day + 1)")
+        return L("\(day + 1)日目に入れる", "Add to day \(day + 1)")
     }
 }
 

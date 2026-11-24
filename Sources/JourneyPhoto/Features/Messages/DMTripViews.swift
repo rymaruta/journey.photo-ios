@@ -185,7 +185,7 @@ struct DMTripDraftStep: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(L("\(peerName) との会話から", "From your chat with \(peerName)"))
+                    Text(eyebrow: L("\(peerName) との会話から", "From your chat with \(peerName)"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)

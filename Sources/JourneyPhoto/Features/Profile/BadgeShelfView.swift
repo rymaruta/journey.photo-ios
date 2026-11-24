@@ -198,7 +198,7 @@ struct BadgeShelfView: View {
         let count = BadgeCatalog.shelfCount(shown)
         return VStack(alignment: .leading, spacing: JPSpace.xs) {
             HStack(alignment: .firstTextBaseline) {
-                Text(isMine ? L("獲得したメダル", "Medals")
+                Text(eyebrow: isMine ? L("獲得したメダル", "Medals")
                             : L("\(profile?.name ?? "") のメダル", "\(profile?.name ?? "")'s medals"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)

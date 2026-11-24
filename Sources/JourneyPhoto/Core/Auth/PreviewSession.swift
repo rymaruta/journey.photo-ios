@@ -31,6 +31,32 @@ enum PreviewSession {
         #endif
     }
 
+    /// ログイン画面の Apple・Google のボタンを、通信せずに「使える」として描く（Debug のみ・UI テストの絵だけ）。
+    /// `-JPPreviewExternalSignIn YES`。2026-11-23 判断: 本番・staging の口の答えに左右されずに、ボタンのある形の絵を撮るため。
+    /// 覚え（`ExternalSignInMemory`）には書かない。Release では必ず false
+    static let externalSignInKey = "JPPreviewExternalSignIn"
+
+    static var forcesExternalSignIn: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: externalSignInKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// ログイン画面を、登録の確認コードの画面（6桁の箱）から開く（Debug のみ・UI テストだけ）。`-JPPreviewVerificationCode YES`。
+    /// 2026-11-23 判断: 本物の Cognito に登録せずに確認コードの画面の絵を撮り、見本の認証（`-JPPreviewLocalBackend`）と
+    /// 合わせて「6桁で自動で確かめてログインする」流れを確かめるため。送り先は見本のメール（`PreviewBackend.email`）。Release では必ず false
+    static let verificationCodeKey = "JPPreviewVerificationCode"
+
+    static var opensVerificationCode: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: verificationCodeKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 鍵を持たずに入っている利用者 ID。入っていなければ `nil`。
     static var userId: String? {
         #if DEBUG
@@ -329,6 +355,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで旅のスタンプ帳に見本を入れる（Debug のみ・札 #712）。`-JPPreviewStampBook empty|few|many`。
+    /// 見本の利用者は鍵を持たず、自分の写真の口を叩けないので、帳面そのものを入れる（写真は持たない）。
+    /// 名前は観光スポットの索引にある実在の行（案の頁の模型と同じ）。日付は例。Release では必ず nil
+    static let stampBookKey = "JPPreviewStampBook"
+
+    static var stampBookSample: StampBook? {
+        #if DEBUG
+        guard userId != nil, let kind = UserDefaults.standard.string(forKey: stampBookKey) else { return nil }
+        return StampBookSamples.book(kind)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでマイページを開いたら Pro の案内（`PaywallView`）を1度だけ出す（Debug のみ）。
     /// `-JPPreviewPaywall YES`。
     ///
@@ -503,6 +543,22 @@ enum PreviewSession {
         #endif
     }
 
+    /// 旅のトランクの最初の画面を、案の状態の1つで出す（Debug のみ・札 #711）。`-JPPreviewTrunkHome coins`
+    /// （手持ち0・硬貨あり）・`none`（どちらも0）・`first`（まだ何も届いていない・揺れと光を毎回）・`loading`（読み込み中のまま）・
+    /// `offline`（圏外で前に読んだトランクを出す）。`-JPPreviewTrunk` と一緒のときだけ効く。Release では必ず nil
+    static let trunkHomeKey = "JPPreviewTrunkHome"
+
+    static var trunkHome: String? {
+        #if DEBUG
+        guard trunkSample != nil, let raw = UserDefaults.standard.string(forKey: trunkHomeKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              ["coins", "none", "first", "loading", "offline"].contains(raw) else { return nil }
+        return raw
+        #else
+        return nil
+        #endif
+    }
+
     /// 旅のトランクの見本の硬貨の枚数（Debug のみ・2026-10-17 次の版）。`-JPPreviewTrunkCoins 0` で
     /// カプセルの機械の「硬貨がありません」を撮る。無ければ見本の 2 枚。Release では必ず nil
     static let trunkCoinsKey = "JPPreviewTrunkCoins"
@@ -532,6 +588,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// 旅のトランクの見本を「好きなデザインで作れる」状態にする（Debug のみ・札 #706）。`-JPPreviewTrunkCustomReady YES` で
+    /// 進みが 0・使える回数が 1（届いた画面の主ボタンが「好きなデザインで作る」になる絵）。見本の起動のときだけ効く。
+    /// Release では必ず false
+    static let trunkCustomReadyKey = "JPPreviewTrunkCustomReady"
+
+    static var trunkCustomReady: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: trunkCustomReadyKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストで、起動のときに「ラベルが届きました」の画面を1回出す（Debug のみ）。`-JPPreviewTrunkArrived YES`。
     /// 投稿しないと届かないので、見本の1枚（`TrunkSample.arrived`）で出す。入っている見本の利用者のときだけ。
     /// Release では必ず false
@@ -543,6 +613,16 @@ enum PreviewSession {
         return UserDefaults.standard.bool(forKey: trunkArrivedKey)
         #else
         return false
+        #endif
+    }
+
+    /// 見本の届いた画面に、初めて押されたスタンプ（札 #712）も添える（`-JPPreviewTrunkArrivedStamp YES`・Debug のみ）
+    static var trunkArrivedStamp: StampMoment.Pressed? {
+        #if DEBUG
+        guard opensTrunkArrived, UserDefaults.standard.bool(forKey: "JPPreviewTrunkArrivedStamp") else { return nil }
+        return StampBookSamples.pressed
+        #else
+        return nil
         #endif
     }
 
@@ -586,70 +666,6 @@ enum PreviewSession {
         #endif
     }
 
-    /// UI テストで、とおまわり号の要サーバーの部品の見本を出す（Debug のみ・2026-10-19 第2段）。`-JPPreviewCamper YES`。
-    ///
-    /// 鍵を持たない見本の入り方では `GET /user/camper`・`GET /users/{uid}/camper` が読めないので、分母 131・届いた画面・
-    /// 友達の車の絵が撮れない。**サーバーには何も送らない**——自分の車は `CamperServerSample.mine`、友達の車は
-    /// `CamperServerSample.visit`、贈る・薪は見本の答え。入っている見本の利用者のときだけ。Release では必ず false
-    static let camperKey = "JPPreviewCamper"
-
-    static var camperSample: Bool {
-        #if DEBUG
-        guard userId != nil else { return false }
-        return UserDefaults.standard.bool(forKey: camperKey)
-        #else
-        return false
-        #endif
-    }
-
-    /// UI テストで、とおまわり号の「中に入る」の動き（扉が開く → 口へ寄る → 部屋へ）をゆっくりにする倍率（Debug のみ・2026-10-21）。
-    /// `-JPPreviewCamperEnterSlow 6`。途中の光（扉が開いた瞬間・寄っている途中・切り替わる直前）を画面写真で確かめるため。
-    /// 入っている見本の利用者のときだけ。Release では必ず 1
-    static let camperEnterSlowKey = "JPPreviewCamperEnterSlow"
-
-    static var camperEnterSlow: Double {
-        #if DEBUG
-        guard userId != nil else { return 1 }
-        let k = UserDefaults.standard.double(forKey: camperEnterSlowKey)
-        return k > 1 ? min(k, 20) : 1
-        #else
-        return 1
-        #endif
-    }
-
-    /// UI テストで、とおまわり号の描画の数（1 コマの時間・値渡しの回数）を数えて読み上げの値に出す（Debug のみ・2026-10-31・#430）。
-    /// `-JPPreviewCamperPerf YES`。`CamperRenderMeter`。入っている見本の利用者のときだけ。Release では必ず false
-    static let camperPerfKey = "JPPreviewCamperPerf"
-
-    /// メモリの内訳を測るための A/B（2026-11-07・札 #430・測るだけ）。`-JPPreviewCamperAA none|2x|4x` で、とおまわり号の外観・部屋の
-    /// SCNView の輪郭のなめらかさ（`antialiasingMode`）を切り替える。Debug かつ入っている見本の利用者のときだけ。指定が無い・Release では nil（本番の既定のまま）
-    static let camperAAKey = "JPPreviewCamperAA"
-
-    static var camperAA: String? {
-        #if DEBUG
-        guard userId != nil else { return nil }
-        guard let v = UserDefaults.standard.string(forKey: camperAAKey)?.lowercased(), ["none", "2x", "4x"].contains(v) else { return nil }
-        return v
-        #else
-        return nil
-        #endif
-    }
-
-    /// 測定専用の差し替え（2026-11-07・札 #430・Debug の見本の利用者のときだけ。Release では必ず nil）。
-    /// `-JPPreviewCamperDiag lightbed|lightfurniture|halftex|keepmesh`: ベッドを箱に・家具を全部箱に・貼り絵を半分の寸法に・家具の網の配列を手放さない（軽量化の前の動き）。見た目の確認は不要
-    static let camperDiagKey = "JPPreviewCamperDiag"
-
-    static var camperDiag: String? {
-        #if DEBUG
-        guard userId != nil else { return nil }
-        guard let v = UserDefaults.standard.string(forKey: camperDiagKey)?.lowercased(),
-              ["lightbed", "lightfurniture", "halftex", "keepmesh"].contains(v) else { return nil }
-        return v
-        #else
-        return nil
-        #endif
-    }
-
     /// UI テストで、旅のトランクの重さ（1 コマの間隔・主スレッドの停止・Canvas を描いた回数と時間・回す箱の 1 コマ・
     /// 貼り絵の大きさ・メモリ）を数えて読み上げの値に出す（Debug のみ・2026-11-11「旅のトランク重すぎる」・測るだけ）。
     /// `-JPPreviewTrunkPerf YES`。`TrunkPerfMeter`。入っている見本の利用者のときだけ。Release では必ず false
@@ -681,32 +697,6 @@ enum PreviewSession {
         #endif
     }
 
-    static var camperPerf: Bool {
-        #if DEBUG
-        guard userId != nil else { return false }
-        return UserDefaults.standard.bool(forKey: camperPerfKey)
-        #else
-        return false
-        #endif
-    }
-
-    /// UI テストで、友達の車の画面（板 CamperVisit）へ**マイページの旅の記録から直接**入る行を出す（Debug のみ・2026-10-19）。
-    /// `-JPPreviewCamperVisit YES`。
-    ///
-    /// 人のプロフィールの本物の入口（フォローしている人の頁だけ）は、ホームの写真の並びとフォローの関係次第で見本の
-    /// 起動では出ないことがあり、画面写真（95i・95j）が撮れなかった。**本物の入口の条件は変えない**——ここは見本の友達
-    /// （`CamperServerSample.friendId`）の車へ入る別の行を、見本の起動のときだけ足す。中身は見本で、サーバーには何も送らない。
-    /// 入っている見本の利用者のときだけ。Release では必ず false
-    static let camperVisitKey = "JPPreviewCamperVisit"
-
-    static var camperVisitSample: Bool {
-        #if DEBUG
-        guard userId != nil else { return false }
-        return UserDefaults.standard.bool(forKey: camperVisitKey)
-        #else
-        return false
-        #endif
-    }
 
     /// UI テストで、起動のときに「はじめての硬貨」の案内を1回出す（Debug のみ・2026-10-18）。`-JPPreviewTrunkWelcome YES`
     /// で 10 枚、`-JPPreviewTrunkWelcome 3` で上限に当たって 3 枚だけ増えた姿。**サーバーには何も送らない**
@@ -872,6 +862,20 @@ enum PreviewSession {
         return UserDefaults.standard.bool(forKey: groupsKey)
         #else
         return false
+        #endif
+    }
+
+    /// 見本の通信に「サインインの方法」（`/user/signin-methods`・札 #601）の答えを足す。`-JPPreviewSigninMethods <形>`。
+    /// 形は `linked`（メールと Apple・Apple は解除できる）か `last`（Apple で作った人・Apple は最後の1つで解除できない）。
+    /// **これが無いと口は 503**（設定の行は出ない・口の無いサーバーと同じ）。Release では必ず nil
+    static let signinMethodsKey = "JPPreviewSigninMethods"
+
+    static var signinMethods: String? {
+        #if DEBUG
+        guard localBackend else { return nil }
+        return UserDefaults.standard.string(forKey: signinMethodsKey)
+        #else
+        return nil
         #endif
     }
 

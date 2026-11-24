@@ -55,14 +55,31 @@ struct AskLibrary {
         var dayPart: ShootingTime.DayPart?
         var keyword: String?
         var near = false
+        /// 書かれていた月（「11月下旬」の 11）。季節は `season` に入れてあり、ここは並べる順にだけ使う
+        var month: Int?
+        /// 頼んだ数（「5選」の 5・`maxSpots` まで）。無ければ `maxSpots`
+        var count: Int?
 
         var filter: ShootingTime.Filter { .init(season: season, dayPart: dayPart) }
+
+        /// 札に出す数（頼んだ数と `maxSpots` の小さい方）
+        var limit: Int { min(max(count ?? AskLibrary.maxSpots, 1), AskLibrary.maxSpots) }
+    }
+
+    /// 頼みの文から数と月を読む（端末の AI の道具にも同じ数と月を渡す・2026-11-23 判断）
+    static func requested(_ sentence: String) -> (count: Int?, month: Int?) {
+        let r = SearchSentence.readByTable(sentence)
+        return (r.count.map { min(max($0, 1), maxSpots) }, r.month)
     }
 
     /// 言葉の表の読み取りと頼みの中身から、選ぶ条件を作る
     static func query(reading: SearchSentence.Reading, intent: AskQuery.Intent, sentence: String,
                       spots: [OfficialSpot]) -> Query {
         var q = Query(season: reading.season, dayPart: reading.dayPart, near: intent.near)
+        // 2026-11-23 判断（owner の画面写真「11月下旬のおすすめの観光スポット5選教えて」で見出しは5つ、札は8枚）:
+        // 頼んだ数だけ選ぶ。月は季節に直してある（`SearchSentence.readByTable`）
+        q.count = reading.count.map { min(max($0, 1), maxSpots) }
+        q.month = reading.month
         // 地名は台帳の県と市から当てる（旅行プランの AI と同じ当て方・`TripAIDestination.match`）
         if let match = TripAIDestination.match(sentence, spots: spots), let pref = match.prefectures.first {
             q.place = match.cities.count == 1 ? match.cities.first : pref
@@ -91,6 +108,7 @@ struct AskLibrary {
 
     /// 条件で選ぶ。近さで探すときは現在地から `nearKm` の中を近い順、それ以外は写真のある所を先に台帳の順
     func pickSpots(_ q: Query, limit: Int = AskLibrary.maxSpots) -> [Pick] {
+        let limit = min(limit, q.limit)
         var pool = spots
         if let place = q.place, !place.isEmpty {
             pool = pool.filter { s in
@@ -113,7 +131,9 @@ struct AskLibrary {
             // 写真のある所を先に（札の顔が空にならない）。並びは崩さない
             // 2026-11-20 判断（run 1608 の絵で「おすすめ」が海外の所から並んだ）: 国内（`country` が空）を先に、その中で写真のある所を先に
             let domestic: (Pick) -> Bool = { ($0.spot.region?.country ?? "").isEmpty }
-            let order: (Pick) -> Int = { (domestic($0) ? 0 : 2) + ($0.spot.hasPhoto ? 0 : 1) }
+            // 2026-11-23 判断: 月を書いた頼みは、案内の文にその月がある所を先に（国内の中で、写真より先）
+            let monthHit: (Pick) -> Bool = { p in q.month.map { Self.mentions(p.spot, month: $0, season: q.season) } ?? false }
+            let order: (Pick) -> Int = { (domestic($0) ? 0 : 4) + (monthHit($0) ? 0 : 2) + ($0.spot.hasPhoto ? 0 : 1) }
             picks = picks.enumerated().sorted { (order($0.element), $0.offset) < (order($1.element), $1.offset) }.map(\.element)
         }
         return Array(picks.prefix(limit))
@@ -138,6 +158,29 @@ struct AskLibrary {
         return L("\(head)\(cond)所", "Places \(head)\(cond)".trimmingCharacters(in: .whitespaces))
     }
 
+    /// 案内の文（その季節の文。季節が無ければ全部の季節の文）に「11月」「１１月」「十一月」があるか。
+    /// 「1月」が「11月」「12月」に当たらないよう、前の字が数字でない所だけを見る
+    static func mentions(_ spot: OfficialSpot, month: Int, season: ShootingTime.Season?) -> Bool {
+        let texts = spot.seasons.filter { season == nil || $0.season == season?.rawValue }.map(\.text)
+        let kanji = SearchSentence.kanjiNumbers.first { $0.1 == month }?.0
+        return texts.contains { raw in
+            let t = Array(SearchSentence.fold(raw))
+            for word in ["\(month)月"] + (kanji.map { ["\($0)月"] } ?? []) {
+                let w = Array(word)
+                var i = 0
+                while i + w.count <= t.count {
+                    if Array(t[i..<(i + w.count)]) == w {
+                        let before = i > 0 ? t[i - 1] : " "
+                        let isDigit = before.isNumber || SearchSentence.kanjiNumbers.contains { $0.0 == String(before) }
+                        if !isDigit { return true }
+                    }
+                    i += 1
+                }
+            }
+            return false
+        }
+    }
+
     static func matches(_ spot: OfficialSpot, keyword: String) -> Bool {
         let k = SearchSentence.fold(keyword)
         var fields: [String] = [spot.name, spot.category ?? "", spot.summary ?? "", spot.reading ?? ""]
@@ -158,6 +201,17 @@ struct AskLibrary {
         if let g = ShootingTime.guide(for: spot, filter: query.filter) { return g }
         if let s = spot.summary, !s.isEmpty { return s }
         return nil
+    }
+
+    /// その回の季節で札と AI に渡す1行（2026-11-23 判断・owner の画面写真で、11月の頼みに本土寺の概要
+    /// 「…アジサイ…」が出ていた）。季節が分かればその季節の案内、無ければ概要
+    static func guide(for spot: OfficialSpot, season: ShootingTime.Season?) -> String? {
+        guide(for: spot, query: Query(season: season))
+    }
+
+    /// 答えの読み取りの札（`AskAnswer.chips`）から、その回の季節を読む。季節の札が無ければ nil
+    static func season(fromChips chips: [String]) -> ShootingTime.Season? {
+        ShootingTime.Season.allCases.first { chips.contains($0.label) }
     }
 
     // MARK: - みんなの写真

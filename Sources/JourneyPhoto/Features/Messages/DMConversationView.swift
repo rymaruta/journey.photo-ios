@@ -654,7 +654,7 @@ struct DMConversationView: View {
     private func storyCardFace(_ message: DMMessage, state: DMStoryCardState) -> some View {
         let owner = message.mine ? peerName : L("あなた", "You")
         return VStack(alignment: message.mine ? .trailing : .leading, spacing: 6) {
-            Text(L("ストーリーへの返信", "STORY REPLY"))
+            Text(eyebrow: L("ストーリーへの返信", "STORY REPLY"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             storyThumb(state, owner: owner)

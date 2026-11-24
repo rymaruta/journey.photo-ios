@@ -82,16 +82,9 @@ final class UXAuditFixesATests: XCTestCase {
 
     // MARK: - 2. 開発の言葉
 
-    func testVisitTileSaysWhoCollectedTheParts() async {
-        XCTAssertEqual(CamperText.visitPartsTitle(owner: "mio"), L("mio が集めた部品", "Parts mio collected"))
-        XCTAssertEqual(CamperText.visitPartsTitle(owner: "  "), L("友達が集めた部品", "Parts your friend collected"))
-        XCTAssertEqual(CamperText.visitPartsTitle(owner: nil), L("友達が集めた部品", "Parts your friend collected"))
-        XCTAssertFalse(CamperText.visitPartsTitle(owner: "mio").contains("サーバー"))
-    }
-
     /// 画面の言葉に開発の言葉（要サーバー・Server parts）を出さない
     func testNoDeveloperWordsOnScreen() async throws {
-        let files = ["Features/Camper/CamperVisitView.swift", "Features/Profile/FavoritesView.swift",
+        let files = ["Features/Profile/FavoritesView.swift",
                      "Core/Storage/WishlistSync.swift", "Core/Store/StoreService.swift"]
         for file in files {
             let text = try source(file)
@@ -103,8 +96,6 @@ final class UXAuditFixesATests: XCTestCase {
                 XCTAssertFalse(line.contains("購入をサーバーに"), "\(file): \(line)")
             }
         }
-        XCTAssertTrue(try source("Features/Camper/CamperVisitView.swift")
-            .contains("tile(CamperText.visitPartsTitle(owner: ownerName)"))
     }
 
     // MARK: - 3. ストーリーの「ひとことを書く」
@@ -127,7 +118,7 @@ final class UXAuditFixesATests: XCTestCase {
     func testUploadPlaceFieldHasTheSameBoxAsTitle() async throws {
         let parts = try source("Core/Design/FormParts.swift")
         let field = slice(parts, from: "struct JPField<Content: View>: View {", to: "extension View {")
-        XCTAssertTrue(field.contains(".jpFieldBox(multiline: multiline)"), "タイトル・説明の枠が共通の部品を通らない")
+        XCTAssertTrue(field.contains(".jpFieldBox(multiline: multiline"), "タイトル・説明の枠が共通の部品を通らない")
         let place = try source("Features/Upload/PlaceSearchField.swift")
         let body = slice(place, from: "private var placeField: some View", to: "/// **打つたびに投げない。**")
         XCTAssertTrue(body.contains("if boxed"))
@@ -231,7 +222,7 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertFalse(SpotScreen.firstPhotoInvite.contains("0"))
         XCTAssertFalse(SpotScreen.subtitle(region: "熊本県", photoCount: 0).contains("0枚"))
         XCTAssertTrue(SpotScreen.subtitle(region: "熊本県", photoCount: 0).contains(SpotScreen.firstPhotoInvite))
-        XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: false), L("最初の1枚を投稿", "Post the first photo"))
+        XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: false), L("最初の1枚を投稿する", "Post the first photo"))
         XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: true),
                        L("この観光スポットの写真を投稿", "Post a photo of this spot"))
     }

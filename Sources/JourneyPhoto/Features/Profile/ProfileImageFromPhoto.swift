@@ -41,7 +41,7 @@ enum ProfileImageFromPhoto {
     @MainActor
     static func myPhotos(environment: AppEnvironment) async -> [Photo]? {
         if let previewId = PreviewSession.userId {
-            return (try? await environment.gallery.fetchPhotos())?.filter { ($0.userId ?? $0.uploadedBy) == previewId }
+            return (try? await environment.gallery.fetchPhotos()).map { PhotoOwnership.mine($0, me: previewId) }
         }
         return try? await environment.photos.myPhotos()
     }
