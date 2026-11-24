@@ -293,6 +293,97 @@ enum TripBookshelf {
                     country: spineCountry([name]))
     }
 
+    // MARK: - 一冊の控え
+
+    /// 背表紙の見た目を決める値（`BookSpine` はこれが変わったときだけ描き直す・2026-11-24 判断）
+    struct SpineLook: Equatable {
+        let id: String
+        let text: String
+        let photoCount: Int
+        let days: Int
+        let isDevice: Bool
+        let isPrivate: Bool
+        let month: Int
+        let cloth: UInt32
+        /// 背の窓の表紙（投稿した旅は縮めた絵の URL と切り抜きの中心、端末の旅は写真の id）
+        let coverURL: URL?
+        let coverFocal: Photo.FocalPoint?
+        let coverId: String?
+
+        init(_ book: Book) {
+            id = book.id
+            text = book.spineText
+            photoCount = book.photoCount
+            days = book.days
+            isDevice = book.isDevice
+            isPrivate = book.isPrivate
+            month = book.month
+            cloth = book.cloth
+            switch book.source {
+            case .posted(let trip):
+                coverURL = trip.cover?.pinImageURL
+                coverFocal = trip.cover?.focalPoint
+                coverId = trip.cover?.id
+            case .device(let trip):
+                coverURL = nil
+                coverFocal = nil
+                coverId = trip.cover?.id
+            }
+        }
+    }
+
+    /// 棚の一冊の控え（2026-11-24 判断・owner「本を開く・閉じる動きが重い」TestFlight 1.2.1）。
+    ///
+    /// **背の県（`spinePrefecture`）は旅が変わったときだけ引く。** 写真1枚ずつ撮影地の文字を読み、座標から約1,900の役所の点で
+    /// いちばん近い県を探すので、冊数・枚数が増えるほど重い。棚の `body` で毎回引いていたので、一冊を開く・閉じるたびに
+    /// マイページが描き直されると（`onDisappear`・`onAppear` で状態を書く）、動きの最中にすべての旅の県を引き直していた。
+    /// 同じ旅（`==`）・同じ地名なら前に作った一冊をそのまま返す。棚に無くなった旅は控えから落とす
+    final class BookMemo {
+        private let resolver: PrefectureResolver
+        private var posted: [String: (trip: TripBook.Trip, book: Book)] = [:]
+        private var device: [String: (trip: LibraryTrip, name: String?, book: Book)] = [:]
+        /// 一冊を作り直した回数（試験）
+        private(set) var builtCount = 0
+
+        init(resolver: PrefectureResolver = TripBookshelf.spineResolver) {
+            self.resolver = resolver
+        }
+
+        /// 投稿した旅 → 端末の旅の順の一冊（`TripShelfList` の並び）
+        func books(posted trips: [TripBook.Trip], device deviceTrips: [LibraryTrip], names: [String: String]) -> [Book] {
+            var nextPosted: [String: (trip: TripBook.Trip, book: Book)] = [:]
+            var nextDevice: [String: (trip: LibraryTrip, name: String?, book: Book)] = [:]
+            var made: [Book] = []
+            made.reserveCapacity(trips.count + deviceTrips.count)
+            for trip in trips {
+                let book: Book
+                if let kept = posted[trip.id], kept.trip == trip {
+                    book = kept.book
+                } else {
+                    book = TripBookshelf.book(trip, resolver: resolver)
+                    builtCount += 1
+                }
+                nextPosted[trip.id] = (trip, book)
+                made.append(book)
+            }
+            for trip in deviceTrips {
+                let name = names[trip.id]
+                let book: Book
+                if let kept = device[trip.id], kept.trip == trip, kept.name == name {
+                    book = kept.book
+                } else {
+                    book = TripBookshelf.book(trip, name: name, resolver: resolver)
+                    builtCount += 1
+                }
+                nextDevice[trip.id] = (trip, name, book)
+                made.append(book)
+            }
+            posted = nextPosted
+            device = nextDevice
+            return made
+        }
+    }
+
     // MARK: - 背の地の色
 
     /// 写真の色が無いときの布の色（案の頁の見本の8色。どれも黒地の上で白い字が読める暗さ）
