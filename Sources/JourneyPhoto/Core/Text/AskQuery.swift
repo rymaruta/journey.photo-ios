@@ -92,6 +92,24 @@ enum AskQuery {
         "place", "spot", "where", "sightseeing", "view",
     ]
 
+    /// 旅の計画の言い方（2026-11-24 判断・owner「メジャーなところで旅行プラン組みたいのに組めなかった」）。
+    /// 前は「プラン」「旅程」「泊」などに「作」「組」が無いと旅行プランの AI へ行かず、「京都旅行のプラン」「東京 3日間」
+    /// 「大阪のモデルコース」「京都を回るルート」は観光スポットの答えになり、旅行プランができなかった（`TripAIPlanRouteTests`）
+    static let tripWords = ["旅行", "旅", "観光", "trip"]
+    static let routeWords = ["プラン", "計画", "コース", "ルート", "日程", "行程", "回り方", "まわり方", "巡り方", "めぐり方",
+                             "回る", "まわる", "巡る", "めぐる", "回りたい", "巡りたい"]
+    /// 料金や使い方の質問（「Pro プラン」「旅行プランの共有のやり方」）は旅の計画にしない
+    static let notTripWords = ["pro", "無料プラン", "有料", "料金", "値段", "使い方", "やり方", "方法", "仕方", "どうやって",
+                               "共有", "削除", "消し", "招待"]
+
+    static func asksForTrip(_ folded: String) -> Bool {
+        guard !notTripWords.contains(where: folded.contains) else { return false }
+        if ["モデルコース", "旅程", "行程", "itinerary"].contains(where: folded.contains) { return true }
+        if tripWords.contains(where: folded.contains) && routeWords.contains(where: folded.contains) { return true }
+        // 日数の言い方（「3日間」「2泊3日」「日帰り」。日付の「11月3日」は読まない・`TripAIDays.parse`）
+        return TripAIDays.parse(folded) != nil
+    }
+
     /// 頼みの中身を読む（`reading` は言葉の表の読み取り）
     static func intent(_ raw: String, reading: SearchSentence.Reading) -> Intent {
         let text = SearchSentence.fold(raw).lowercased()
@@ -102,6 +120,7 @@ enum AskQuery {
                                   || text.contains("泊") || text.contains("日帰り")
                                   // 2026-11-21 判断（札 #675 の答えの形）: 「2日の旅行プランにして」（次に頼めること、版3の例）も旅行プランの頼み
                                   || text.contains("プランにし") || text.contains("プランにす"))
+            || asksForTrip(text)
         let spotish = spotWords.contains { text.contains($0) } || text.contains("おすすめ") || text.contains("オススメ")
         // 撮り方や持ち物の相談（「夕日を撮るコツは」）は、場所の言葉が無ければ観光スポットを探していない
         let advice = adviceWords.contains { text.contains($0) }

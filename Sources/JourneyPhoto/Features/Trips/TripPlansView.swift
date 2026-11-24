@@ -197,17 +197,10 @@ struct TripPlansView: View {
         showAIJob = true
     }
 
-    /// 「自分で頼む」の行き先の札（行きたい場所の多い県から、足りなければ台帳の多い県）
-    private var placeChoices: [(label: String, prefecture: String)] {
+    /// 「自分で頼む」の行き先の札（行きたい場所の多い県のあとに、よく行かれる行き先・`TripAIPlaceChoices`）
+    private var placeChoices: [TripAIPlaceChoice] {
         let wished = TripAIDestination.suggestions(wishlist: aiIndex.filter { wishlist.spotIds.contains($0.spotId) })
-        var prefs = wished
-        if prefs.count < 6 {
-            let ranked = TripAISuggestion.groupsByPrefecture(aiIndex.filter { ($0.region?.country ?? "").isEmpty }).map(\.prefecture)
-            for p in ranked {
-                if prefs.count < 6, !p.isEmpty, !prefs.contains(p) { prefs.append(p) }
-            }
-        }
-        return prefs.map { (TripAIDestination.prefectureShort($0), $0) }
+        return TripAIPlaceChoices.make(first: wished, spots: aiIndex)
     }
 
     /// 自分の旅の一冊（マイページの「旅の記録」と同じ棚・`TripBook.shelfTrips`）

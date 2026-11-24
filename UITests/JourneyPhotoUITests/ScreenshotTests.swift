@@ -4394,21 +4394,51 @@ final class ScreenshotTests: JPUITestCase {
 
     // MARK: - 旅行プランを組み直す（札 #667・案のページの案1）
 
-    /// 見本のプランを開き、「雨なら」を押して組み直した案が出るまで進める。案が出たら true。
-    /// 見本の AI（`-JPTripAIFixture`・サーバーへは送らない）は必ず変わる案を返す（日を入れ替え、候補を1つ足す）
+    /// 見本のプランを開き、「書いて頼む」に条件を打って組み直した案が出るまで進める。案が出たら true。
+    /// 見本の AI（`-JPTripAIFixture`・サーバーへは送らない）は必ず変わる案を返す（日を入れ替え、候補を1つ足す）。
+    /// 2026-11-24 判断: 「雨なら」「もっとゆっくり」のチップは AI を使わずにすぐ組み直すので、AI の案は「書いて頼む」で出す
     private func openTripReplanProposal(_ app: XCUIApplication) -> Bool {
         guard openFixturePlan(app) else { return false }
         // 観光スポットの名前（台帳）が読めてから押す（読めないと組み直す場所が無い）
         guard app.staticTexts["ひがし茶屋街"].firstMatch.waitForExistence(timeout: 30) else { return false }
-        let rain = app.buttons["tripReplan.chip.rain"].firstMatch
-        guard rain.waitForExistence(timeout: 10), rain.isHittable else { return false }
-        rain.tap()
+        let write = app.buttons["tripReplan.write"].firstMatch
+        guard write.waitForExistence(timeout: 10), write.isHittable else { return false }
+        write.tap()
+        let field = app.textFields["tripReplan.field"].firstMatch
+        guard field.waitForExistence(timeout: 5) else { return false }
+        field.tap()
+        field.typeText("雨の日向けに")
+        let send = app.buttons["tripReplan.send"].firstMatch
+        guard send.waitForExistence(timeout: 5), send.isHittable else { return false }
+        send.tap()
         return app.descendants(matching: .any)["tripReplan.preview"].firstMatch.waitForExistence(timeout: 30)
     }
 
-    /// **プランを開く →「雨なら」→ 案を見る →「この案にする」**（札 #667）。押す回数はチップと「この案にする」の 2 回。
+    /// **プランを開く →「もっとゆっくり」**（2026-11-24 判断・`TripQuickReplan`）。押す回数は 1 回で、すぐ日程が変わる（AI を使わない）。
+    /// 見本のプランは1日目3か所・2日目2か所なので、1日2か所になり、遠回りの千里浜が日の下の「外しました　戻す」へ行く。
+    /// 「元に戻す」で戻る
+    func testTripReplanSlowAppliesAtOnce() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES"])
+        guard openFixturePlan(app), app.staticTexts["ひがし茶屋街"].firstMatch.waitForExistence(timeout: 30) else {
+            return unreached(app, "旅行プランの見本", probes: ["tripReplan.bar"])
+        }
+        let slow = app.buttons["tripReplan.chip.slow"].firstMatch
+        XCTAssertTrue(slow.waitForExistence(timeout: 10) && slow.isHittable, "「もっとゆっくり」が押せない")
+        slow.tap()
+        // 案の見比べを出さずに、すぐ置き換わる（「元に戻す」が出る）
+        let undo = app.buttons["tripReplan.undoApplied"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "押してもすぐ変わらない")
+        XCTAssertFalse(app.descendants(matching: .any)["tripReplan.preview"].firstMatch.exists, "見比べの案が出ている")
+        XCTAssertFalse(app.descendants(matching: .any)["tripReplan.working"].firstMatch.exists, "AI を待っている")
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "65q-旅行プランをもっとゆっくりにした")
+        undo.tap()
+        XCTAssertTrue(waitGone(undo, timeout: 5), "元に戻したのに「元に戻す」が残っている")
+    }
+
+    /// **プランを開く →「書いて頼む」→ 案を見る →「この案にする」**（札 #667）。押す回数は送ると「この案にする」の 2 回。
     /// 案を見ている間は日程が変わらない（「今」に戻すと元の並び）。置き換えたら「元に戻す」で戻る
-    func testTripReplanRainThenAccept() {
+    func testTripReplanWrittenThenAccept() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1"])
         guard openTripReplanProposal(app) else { return unreached(app, "組み直した案", probes: ["tripReplan.bar", "tripReplan.notice"]) }
         XCTAssertTrue(app.descendants(matching: .any)["tripReplan.changedRow"].firstMatch.exists, "入れ替えた行に印が無い")
@@ -4434,7 +4464,7 @@ final class ScreenshotTests: JPUITestCase {
         let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1"])
         guard openTripReplanProposal(app) else { return unreached(app, "組み直した案", probes: ["tripReplan.bar", "tripReplan.notice"]) }
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "65p-旅行プランを組み直した案（雨なら）")
+        shoot(app, "65p-旅行プランを組み直した案（書いて頼む）")
     }
 
     private func waitGone(_ element: XCUIElement, timeout: TimeInterval) -> Bool {

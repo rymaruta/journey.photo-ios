@@ -594,8 +594,8 @@ struct AskScreen: View {
         }
     }
 
-    private var placeChoices: [(label: String, prefecture: String)] {
-        AskPlanFlow.placeChoices(engine: engine)
+    private var placeChoices: [TripAIPlaceChoice] {
+        AskPlanFlow.placeChoices(engine: engine, spots: officialSpots)
     }
 
     /// 答えの外の口（台帳、公開の写真、行きたい場所、旅行プラン、現在地、回数、AI）。2026-11-21 に探すの画面から移した
@@ -709,7 +709,7 @@ enum AskConversationRule {
 struct AskPlanFlow: ViewModifier {
     @Binding var ask: TripAIAsk?
     let index: [OfficialSpot]
-    let placeChoices: [(label: String, prefecture: String)]
+    let placeChoices: [TripAIPlaceChoice]
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var wishlist: WishlistStore
@@ -745,11 +745,12 @@ struct AskPlanFlow: ViewModifier {
 
     /// 行き先の選択肢（答えに出た観光スポットの県から6つまで）
     @MainActor
-    static func placeChoices(engine: AskEngine) -> [(label: String, prefecture: String)] {
+    static func placeChoices(engine: AskEngine, spots: [OfficialSpot]) -> [TripAIPlaceChoice] {
         var prefs: [String] = []
         for id in engine.thread.flatMap(\.answer.spotIds) {
             if let p = engine.spotsById[id]?.region?.prefecture, !prefs.contains(p), prefs.count < 6 { prefs.append(p) }
         }
-        return prefs.map { (TripAIDestination.prefectureShort($0), $0) }
+        // 会話の県のあとに、よく行かれる行き先（2026-11-24 判断・会話が無いと札が「おまかせ」だけだった）
+        return TripAIPlaceChoices.make(first: prefs, spots: spots)
     }
 }
