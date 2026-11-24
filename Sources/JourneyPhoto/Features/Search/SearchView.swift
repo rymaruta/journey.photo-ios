@@ -100,6 +100,9 @@ struct SearchView: View {
     var body: some View {
         // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
         let _ = PerfRecorder.shared.searchBody(query: query)
+        // 段ごとの評価回数と、なぜ評価し直したか（UI テストのときだけ・札 #594・地図の `body.map` と同じ形・2026-11-24）
+        let _ = PerfTimeline.shared.count("body.search")
+        let _ = PerfChangeLog.note(Self.self)
         VStack(spacing: 0) {
             // 検索中も探す口と種類の切り替えを画面上部に残す。
             // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。

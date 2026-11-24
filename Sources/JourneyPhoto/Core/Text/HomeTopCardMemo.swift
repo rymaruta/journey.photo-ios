@@ -39,7 +39,17 @@ final class HomeTopCardMemo {
         let revision: Int
     }
 
+    /// 自分の写真から決まる2枚の鍵（2026-11-24・札 #594）。写真・開いた印・今日（端末の暦日）と時刻帯
+    struct PhotoCardsKey: Equatable {
+        let myPhotos: [Photo]
+        let openedBookDays: Set<String>
+        let today: Date?
+        let timeZone: TimeZone
+    }
+
     private let pool = DerivedMemo<Int, SpotSwipe.CoverPool>()
+    private let photo = DerivedMemo<PhotoCardsKey, HomeTopCard.PhotoCards?>()
+    private let posted = DerivedMemo<[Photo], [LibraryTrips.PostedShot]>()
     private let friendWish = DerivedMemo<FriendWishKey, FriendWish.Hit?>()
     private let shelf = DerivedMemo<ShelfKey, HomeSpotShelf.Shelf?>()
     private let needs = DerivedMemo<ShelfKey, [OfficialSpot]>()
@@ -66,7 +76,24 @@ final class HomeTopCardMemo {
         friendWish.value(for: key, make)
     }
 
+    /// 自分の写真から決まる2枚（一冊ができた・1年前）。写真・開いた印・今日が変わったときだけ計算する（2026-11-24・札 #594）。
+    /// 今日が決まらない（暦が作れない）回は nil（`HomeTopCard.cards` が自分で作る）
+    func photoCards(_ key: PhotoCardsKey) -> HomeTopCard.PhotoCards? {
+        photo.value(for: key) {
+            key.today.map { HomeTopCard.photoCards(today: $0, myPhotos: key.myPhotos, openedBookDays: key.openedBookDays,
+                                                   timeZone: key.timeZone) }
+        }
+    }
+
+    /// 投稿した写真の日と位置（現像前の旅の札の材料・`LibraryTrips.postedShots`）。写真が変わったときだけ作る（2026-11-24・札 #594）。
+    /// 写真ごとに日を読み `String(format:)` で整えるので、body のたびに全部の写真で作り直していた
+    func postedShots(_ myPhotos: [Photo]) -> [LibraryTrips.PostedShot] {
+        posted.value(for: myPhotos) { LibraryTrips.postedShots(of: myPhotos) }
+    }
+
     /// 計算した回数（テスト用）
+    var photoCardsComputes: Int { photo.computeCount }
+    var postedShotsComputes: Int { posted.computeCount }
     var poolBuilds: Int { pool.computeCount }
     var friendWishComputes: Int { friendWish.computeCount }
     var shelfComputes: Int { shelf.computeCount }

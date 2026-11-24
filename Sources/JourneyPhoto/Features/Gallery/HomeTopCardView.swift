@@ -224,7 +224,8 @@ struct HomeTopCardView: View {
     private var deviceBooks: [LibraryTrip] {
         let preview = DevelopPreview.trips(now: cardsNow)
         if !preview.isEmpty { return preview }
-        return deviceTrips.books(posted: LibraryTrips.postedShots(of: myPhotos), isMine: auth.userId != nil)
+        // 投稿した写真の日と位置は写真が変わったときだけ作る（`HomeTopCardMemo.postedShots`・2026-11-24 札 #594）
+        return deviceTrips.books(posted: memo.postedShots(myPhotos), isMine: auth.userId != nil)
     }
 
     private func developName(_ trip: LibraryTrip) -> String? {
@@ -299,7 +300,13 @@ struct HomeTopCardView: View {
                               plans: HomeHiddenTrips.visible(plansOwner == auth.userId ? plans : [],
                                                              hidden: removal.hiddenTrips, excluding: removal.removedIds),
                               myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                              wishlist: wishedKeys, quiz: quiz, develop: developChoice, friendWish: friendWishHit),
+                              wishlist: wishedKeys, quiz: quiz,
+                              develop: PerfTimeline.shared.measure("home.topCard.develop") { developChoice },
+                              friendWish: PerfTimeline.shared.measure("home.topCard.friendWish") { friendWishHit },
+                              // 一冊ができた・1年前は写真・開いた印・今日が変わったときだけ（`HomeTopCardMemo.photoCards`・2026-11-24 札 #594）
+                              photoCards: memo.photoCards(.init(myPhotos: myPhotos, openedBookDays: openedBooks,
+                                                                today: HomeTopCard.today(cardsNow, in: .current),
+                                                                timeZone: .current))),
             spots: spots, today: HomeTopCard.today(cardsNow, in: .current),
             pool: memo.coverPool(spots: spots, revision: spotsRevision))
         let audience = HomeTopCard.Audience.of(signedIn: auth.userId != nil,

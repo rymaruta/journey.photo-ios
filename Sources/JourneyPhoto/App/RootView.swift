@@ -1676,6 +1676,8 @@ struct RootView: View {
             NavigationStack {
                 SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
                            messagesUnread: messagesUnread)
+                    // 親が描き直されただけでは描き直さない（ホームと同じ・`SearchView+Equatable`・札 #594 2026-11-24）
+                    .equatable()
                     .perfMark("tab.search.appear")
             }
             .tint(WebTheme.foreground)
@@ -1695,6 +1697,8 @@ struct RootView: View {
                              onOpenNotifications: { openNotificationsFromBell() },
                              messagesUnread: messagesUnread,
                              onPost: { openCreateFlow(.post) })
+                    // 親が描き直されただけでは描き直さない（ホームと同じ・`PhotoMapView+Equatable`・札 #594 2026-11-24）
+                    .equatable()
                     .perfMark("tab.map.appear")
             }
             // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
