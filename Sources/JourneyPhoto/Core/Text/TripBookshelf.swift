@@ -6,8 +6,8 @@ import Foundation
 /// 画面の部品は `TripBookshelfView`。ここには数と決まりだけを置く（Linux のテストで見張る・`TripBookshelfTests`）。
 ///
 /// - 段は年ごと（新しい年が上）。段の中は新しい旅が左
-/// - 背表紙の厚さは写真の枚数（22〜36pt）、高さは日数（141〜161pt）。押せる幅は背の幅＋間
-/// - 背の題は旅でいちばん多い県の短い名（「新潟」「北海道」）。取れなければ旅の題（`spinePrefecture`）
+/// - 背表紙の厚さは写真の枚数（30〜44pt）、高さは日数（200〜220pt）。押せる幅は背の幅＋間
+/// - 背の題は旅でいちばん多い県の短い名（「新潟」「北海道」）、海外なら国名（「スペイン」）。取れなければ旅の題
 /// - 端末の中だけの旅は iPhone の印、自分だけの旅は鍵の印（色だけで言わない）
 enum TripBookshelf {
 
@@ -35,11 +35,13 @@ enum TripBookshelf {
         var name: String? = nil
         /// 旅でいちばん多い県の短い名（「新潟」「北海道」・`spinePrefecture`）。取れなければ nil
         var prefecture: String? = nil
+        /// 県が取れない海外の旅の国の短い名（「スペイン」・`spineCountry`）。取れなければ nil
+        var country: String? = nil
 
-        /// 背に縦に並べる字。県が取れればその短い名、取れなければ旅の題。
+        /// 背に縦に並べる字。県が取れればその短い名、海外なら国名、どちらも取れなければ旅の題。
         /// 2026-11-24 owner「何県かわからないの悲しい」（1.2.0 の実機: 背の題が「新︙」「兼︙」で1〜2字しか出なかった）。
         /// 題の全部は開いた一冊と読み上げ（`spokenLabel`）に残す
-        var spineText: String { prefecture ?? title }
+        var spineText: String { prefecture ?? country ?? title }
 
         var isDevice: Bool {
             if case .device = source { return true }
@@ -65,36 +67,43 @@ enum TripBookshelf {
     }
 
     // MARK: - 寸法（案の頁の「詳しく」）
+    //
+    // 2026-11-24 判断（owner「幅とか縦大きくしてみやすくしていいよ」・1.2.0 の実機で背の題が1〜2字の「︙」で読めなかった）:
+    // 背を一回り大きくした。厚さ 22〜36 → 30〜44、窓 30 → 34、題の明朝 13 → 15pt（1字の箱 18 → 21）、月 12 → 13pt、
+    // 高さ 141〜161 → 200〜220、段 164 → 223。**印が1つ付いたいちばん低い背にも5字**（3字の県名・「イギリス」「フランス」の
+    // 国名）が切れずに入り、印の無い背は旅の題が5〜6字読める。厚さと高さは前と同じく枚数と日数で変わる（日に 5pt）。
+    // 幅 375 の iPhone でも1段に7冊以上（いちばん厚い 44＋間 3 で 343 / 47）並ぶ。案の頁の背よりやや縦長になるが、
+    // 縦書きの字を大きくした分で、背の形（上に窓、縦の題、下に月）は崩さない
 
-    /// 背の厚さ: 写真 0 枚で 22、60 枚以上で 36
-    static let spineMinWidth: Double = 22
-    static let spineMaxWidth: Double = 36
+    /// 背の厚さ: 写真 0 枚で 30、60 枚以上で 44
+    static let spineMinWidth: Double = 30
+    static let spineMaxWidth: Double = 44
     static let spineWidthPhotos = 60
-    /// 背の高さ: 1日で 141、5日以上で 161（136 + 日数 × 5）。
-    /// 2026-11-24 判断（owner「何県かわからないの悲しい」）: 前の 123〜143 では、いちばん低い背に題が2字、
-    /// 印（iPhone・鍵）が付くと1字しか入らなかった。**印が1つ付いたいちばん低い背にも3字（「北海道」「鹿児島」）入る**高さへ、
-    /// 全部の背を同じ 18pt だけ上げた（日数で 5pt ずつ高くなる形・厚さ・窓・月はそのまま。案の頁の形を崩さない）。
-    /// 月の塊を詰める案は、12pt の字の行の高さ（約 14pt）より箱を小さくすることになり、字が重なるので取らなかった。
-    /// 印は1冊に1つまで（端末の旅は自分だけの印を持たない・`book(_:name:)`）
-    static let spineBaseHeight: Double = 136
+    /// 背の高さ: 1日で 200、5日以上で 220（195 + 日数 × 5）。
+    /// 2026-11-24 判断（owner「何県かわからないの悲しい」「幅とか縦大きくしてみやすくしていいよ」）: 前の 123〜143 では、
+    /// いちばん低い背に題が2字、印（iPhone・鍵）が付くと1字しか入らなかった。**印が1つ付いたいちばん低い背にも5字入る**高さにした
+    /// （34 窓 + 17 印 + 6 + 5 × 21 + 38 月 = 200）。月の塊を詰める案は、字の行の高さより箱を小さくすることになり、
+    /// 字が重なるので取らなかった。印は1冊に1つまで（端末の旅は自分だけの印を持たない・`book(_:name:)`）
+    static let spineBaseHeight: Double = 195
     static let spineHeightPerDay: Double = 5
     static let spineMaxDays = 5
-    /// 段の高さ（いちばん高い背 161 ＋ 上の余白）
-    static let rowHeight: Double = 164
-    /// 背の題がいつも入る字の数（印が1つ付いたいちばん低い背でも。3字の県名が切れない）
-    static let spineMinCharacters = 3
+    /// 段の高さ（いちばん高い背 220 ＋ 上の余白）
+    static let rowHeight: Double = 223
+    /// 背の題がいつも入る字の数（印が1つ付いたいちばん低い背でも。3字の県名と「イギリス」のような国名が切れない）
+    static let spineMinCharacters = 5
     /// 背どうしの間と、段どうしの間
     static let spineGap: Double = 3
     static let rowGap: Double = 14
     /// 背の上の表紙の窓
-    static let windowHeight: Double = 30
+    static let windowHeight: Double = 34
     /// 押せる幅は**背の幅＋間**（間の半分ずつを両側に。隣の背との真ん中で区切る・2026-11-23 確かめ役の指摘）。
-    /// 44pt に広げると隣の背の当たりと重なり、細い背の右を押すと隣が開いた。押せる高さは背の高さ（118pt 以上）
+    /// 44pt に広げると隣の背の当たりと重なり、細い背の右を押すと隣が開いた。押せる高さは背の高さ（200pt 以上）
     static func hitWidth(photos: Int) -> Double { spineWidth(photos: photos) + spineGap }
-    /// 背の題（縦書きの明朝・13pt の太）。2026-11-23 owner 判断（札 #714 の案の頁）: `JPFont` の
-    /// 「明朝は 18pt 未満に使わない」の例外。背表紙の縦書きは本の形で読ませる飾りに近く、読み上げは題を丸ごと言う
-    static let titleSize: Double = 13
-    static let monthSize: Double = 12
+    /// 背の題（縦書きの明朝・15pt の太）。2026-11-23 owner 判断（札 #714 の案の頁）: `JPFont` の
+    /// 「明朝は 18pt 未満に使わない」の例外。背表紙の縦書きは本の形で読ませる飾りに近く、読み上げは題を丸ごと言う。
+    /// 2026-11-24 owner「幅とか縦大きくしてみやすくしていいよ」で 13 → 15pt に上げた（例外のまま）
+    static let titleSize: Double = 15
+    static let monthSize: Double = 13
 
     static func spineWidth(photos: Int) -> Double {
         let n = Double(min(max(photos, 0), spineWidthPhotos))
@@ -105,8 +114,9 @@ enum TripBookshelf {
         spineBaseHeight + Double(min(max(days, 1), spineMaxDays)) * spineHeightPerDay
     }
 
-    /// 背の題の1字の箱の高さ（明朝 13pt の行の高さ 17〜19pt に合わせて固定する。字ごとに高さを割らない）
-    static let titleBox: Double = 18
+    /// 背の題の1字の箱の高さ（明朝 15pt の行の高さ 20〜22pt に合わせて固定する。字ごとに高さを割らない。
+    /// 13pt のとき 18 だった比 1.385 のまま）
+    static let titleBox: Double = 21
 
     /// 背に縦に並べる題の字。収まらない分は「…」の縦の形（︙）で切る。縦書きで横を向く字は縦の形にする（`spineGlyph`）
     static func spineTitle(_ title: String, maxCharacters: Int) -> [String] {
@@ -126,10 +136,10 @@ enum TripBookshelf {
         return (char, turned.contains(char))
     }
 
-    /// 印1つの高さ（12pt の絵＋上の 5pt）・題の上の余白・月の塊（数字と「月」の2行＋下の 6pt）
+    /// 印1つの高さ（12pt の絵＋上の 5pt）・題の上の余白・月の塊（13pt の数字と「月」の2行 約 31＋間 1＋下の 6pt）
     static let markHeight: Double = 17
     static let titleTop: Double = 6
-    static let monthBlock: Double = 34
+    static let monthBlock: Double = 38
 
     /// 背の高さに入る題の字の数（窓・印・題の上の余白・月の分を引いた残りを、1字の箱 `titleBox` で割る）
     static func spineTitleCapacity(height: Double, marks: Int) -> Int {
@@ -160,6 +170,24 @@ enum TripBookshelf {
             best = name
         }
         return best.map(PrefectureResolver.shortName)
+    }
+
+    /// 海外の旅の国（「スペイン」「フランス」）。撮影地・地名の文字に書かれた国名だけを読む（`VisitedCountries.country(in:)`・
+    /// 本番の撮影地は「Barcelona (Catalonia, Spain)」の形で国を持つ）。座標から国は引かない（引く表をアプリに持たず、
+    /// 地図に問い合わせると通信が要る）。日本は国名にしない（県が取れない国内の旅は題のまま）。多い方、同じ数なら先に出た国
+    static func spineCountry(_ texts: [String?]) -> String? {
+        var totals: [String: Int] = [:]
+        var order: [String] = []
+        for text in texts {
+            guard let text, let name = VisitedCountries.country(in: text), name != "日本" else { continue }
+            if totals[name] == nil { order.append(name) }
+            totals[name, default: 0] += 1
+        }
+        var best: String?
+        for name in order where best == nil || totals[name, default: 0] > totals[best!, default: 0] {
+            best = name
+        }
+        return best
     }
 
     /// 投稿した旅の県: 写真1枚ずつの県（撮影地の文字 → 座標・`PrefectureResolver.prefecture(of:)`）で多い方
@@ -247,7 +275,8 @@ enum TripBookshelf {
                     photoCount: trip.photos.count, days: trip.days, isPrivate: trip.isPrivate,
                     year: parts.year ?? 0, month: parts.month ?? 1,
                     cloth: clothColor(hex: trip.cover?.dominantColor, seed: trip.id),
-                    prefecture: spinePrefecture(of: trip, resolver: resolver))
+                    prefecture: spinePrefecture(of: trip, resolver: resolver),
+                    country: spineCountry(trip.photos.map(\.location) + [trip.place]))
     }
 
     static func book(_ trip: LibraryTrip, name: String?) -> Book { book(trip, name: name, resolver: spineResolver) }
@@ -260,7 +289,8 @@ enum TripBookshelf {
                     photoCount: trip.shots.count, days: LibraryTrips.calendarDays(trip), isPrivate: false,
                     year: parts.year ?? 0, month: parts.month ?? 1,
                     cloth: clothColor(hex: nil, seed: trip.id), name: name,
-                    prefecture: spinePrefecture(of: trip, name: name, resolver: resolver))
+                    prefecture: spinePrefecture(of: trip, name: name, resolver: resolver),
+                    country: spineCountry([name]))
     }
 
     // MARK: - 背の地の色

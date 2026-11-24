@@ -233,7 +233,7 @@ struct BookSpine: View {
         let height = TripBookshelf.spineHeight(days: book.days)
         let marks = (book.isDevice ? 1 : 0) + (book.isPrivate ? 1 : 0)
         VStack(spacing: 0) {
-            BookCoverImage(book: book, side: 36)
+            BookCoverImage(book: book, side: CGFloat(TripBookshelf.spineMaxWidth))
                 .frame(width: width, height: TripBookshelf.windowHeight)
                 .clipped()
                 .overlay(alignment: .bottom) {
