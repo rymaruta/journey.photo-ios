@@ -44,8 +44,10 @@ struct TripAIAsk: Equatable {
     static func reading(_ text: String, spots: [OfficialSpot]) -> TripAIAsk {
         let match = TripAIDestination.match(text, spots: spots)
         let place = match.map { m in
-            m.cities.count == 1 ? TripAIDestination.cityKeys(m.cities.first ?? "").min(by: { $0.count < $1.count }) ?? (m.prefectures.first ?? "")
-                : TripAIDestination.prefectureShort(m.prefectures.first ?? "")
+            // 2026-11-24 判断: 市の区がいくつか（札幌市中央区と札幌市東区）でも、同じ市なら市の名前（「札幌」。前は「北海道」）
+            let common = m.cities.map(TripAIDestination.cityKeys).reduce(nil as Set<String>?) { acc, keys in acc.map { $0.intersection(keys) } ?? keys } ?? []
+            return common.min(by: { $0.count == $1.count ? $0 < $1 : $0.count < $1.count })
+                ?? TripAIDestination.prefectureShort(m.prefectures.first ?? "")
         } ?? ""
         return TripAIAsk(place: place, prefectures: match?.prefectures ?? [], cities: match?.cities ?? [],
                          days: TripAIDays.parse(text), preference: TripAIPreference.of(text), extra: text)
@@ -218,11 +220,11 @@ enum TripAISwap {
     }
 }
 
-/// 日程の上の、押すだけの組み直し（AI を1回使う・札 #667）。
+/// 日程の上の、押すだけの組み直し（札 #667）。
 ///
-/// 2026-11-20 判断（owner「1のAI使う案いいとおもう」・案のページの案1の模型が正）: チップは「雨なら」「もっとゆっくり」の2つ。
-/// ほかの言い方は「書いて頼む」の欄で打つ。前の「ゆっくり」「雨でも」「朝を早く」（AI で作ったプランの札の中だけ）は、
-/// どのプランにも出るこのチップにまとめた（入口を2つにしない）
+/// 2026-11-20 判断（owner「1のAI使う案いいとおもう」）: チップは「雨なら」「もっとゆっくり」の2つ。ほかの言い方は「書いて頼む」の欄で打つ。
+/// 2026-11-24 判断（owner「『もっとゆっくり』とかのボタンの使い勝手悪すぎる」）: チップは AI を使わず、押したらすぐ組み直す
+/// （`TripQuickReplan`・回数0・待たない・どの iPhone でも同じ）。AI は「書いて頼む」だけ
 enum TripAITweak: String, CaseIterable, Identifiable {
     case rain, slow
     var id: String { rawValue }
@@ -232,11 +234,53 @@ enum TripAITweak: String, CaseIterable, Identifiable {
         case .slow: return L("もっとゆっくり", "Slower pace")
         }
     }
-    /// AI に渡す頼み
-    var request: String {
+    /// 押す前に何が起きるか（読み上げのヒント）
+    var hint: String {
         switch self {
-        case .rain: return "雨の日でも楽しめる屋内の所を優先し、雨に向かない所は外すか別の日へ"
-        case .slow: return "もっとゆっくり回りたい。1日3か所まで。入らない所は別の日へ"
+        case .rain: return L("屋外の所を近くの屋内の観光スポットに替えます。元に戻せます", "Swaps outdoor places for indoor ones nearby. You can undo.")
+        case .slow: return L("1日に回る所を減らします。元に戻せます", "Fewer places each day. You can undo.")
         }
+    }
+}
+
+/// 「自分で頼む」の行き先の札の1つ（2026-11-24 判断）
+struct TripAIPlaceChoice: Equatable {
+    let label: String
+    let prefectures: [String]
+    let cities: Set<String>
+}
+
+/// 行き先の札の並び（2026-11-24 判断・owner「メジャーなところで旅行プラン組みたいのに組めなかった」）。
+///
+/// 前は「行きたい場所の多い県」のあとを「台帳に観光スポットが多い県」で埋めていた。2026-11-24 の本番の台帳では
+/// 島根・熊本・宮崎・山形・京都・東京の順で、行きたい場所が無い人には大阪・北海道・沖縄・福岡などが出ず、行き先の札に打つ欄も無かった。
+/// 今は、手がかりの県（行きたい場所・会話の観光スポット）のあとに、よく行かれる行き先を決まった順で並べる（AI は使わない）。
+/// 台帳で候補が `minSpots` に満たない行き先は出さない（選んでも組めない札を出さない）
+enum TripAIPlaceChoices {
+    /// よく行かれる行き先（読み取りは `TripAIAsk.reading` と同じ。市で読めれば市の周りから選ぶ）
+    static let major = ["東京", "京都", "大阪", "北海道", "沖縄", "福岡", "金沢", "箱根", "広島", "奈良", "日光", "横浜",
+                        "鎌倉", "名古屋", "仙台", "函館", "長崎", "神戸", "伊勢", "別府"]
+    /// 札にする最小の候補の数
+    static let minSpots = 6
+
+    static func make(first prefectures: [String], spots: [OfficialSpot], limit: Int = 16) -> [TripAIPlaceChoice] {
+        var out: [TripAIPlaceChoice] = []
+        var labels = Set<String>()
+        func add(_ c: TripAIPlaceChoice) {
+            guard out.count < limit, !labels.contains(c.label) else { return }
+            guard TripAICandidates.pick(text: c.label, match: .init(prefectures: c.prefectures, cities: c.cities),
+                                        spots: spots, wishlist: [], limit: minSpots).count >= minSpots else { return }
+            labels.insert(c.label)
+            out.append(c)
+        }
+        for p in prefectures where !p.isEmpty {
+            add(TripAIPlaceChoice(label: TripAIDestination.prefectureShort(p), prefectures: [p], cities: []))
+        }
+        for name in major {
+            let read = TripAIAsk.reading(name, spots: spots)
+            guard read.hasPlace else { continue }
+            add(TripAIPlaceChoice(label: name, prefectures: read.prefectures, cities: read.cities))
+        }
+        return out
     }
 }

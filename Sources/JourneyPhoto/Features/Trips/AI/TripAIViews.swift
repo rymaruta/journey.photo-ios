@@ -106,7 +106,7 @@ struct TripAIEntrySection: View {
 /// アプリが決める（`TripAIAutoPlace`・AI は使わない）。変えたいときだけ行き先の札から選ぶ
 struct TripAIAskSheet: View {
     @State var ask: TripAIAsk
-    let placeChoices: [(label: String, prefecture: String)]
+    let placeChoices: [TripAIPlaceChoice]
     let start: (TripAIAsk) -> Void
     let index: [OfficialSpot]
     /// 行きたい場所（おまかせの行き先を決める2番目の手がかり）
@@ -206,8 +206,8 @@ struct TripAIAskSheet: View {
                 editing = ask.days == nil ? .days : nil
             })] + placeChoices.map { c in (c.label, {
                 ask.place = c.label
-                ask.prefectures = [c.prefecture]
-                ask.cities = []
+                ask.prefectures = c.prefectures
+                ask.cities = c.cities
                 ask.mustSpotIds = []
                 editing = ask.days == nil ? .days : nil
             }) }

@@ -873,6 +873,7 @@ struct TripPlanDetailView: View {
                     TripReplanBar(working: replanWorking, proposed: replan?.label, notice: replanNotice,
                                   noticeOpensPro: replanNoticePro, canUndo: !aiHistory.isEmpty && replan == nil,
                                   run: { label, request, typed in runReplan(label: label, request: request, typed: typed) },
+                                  quick: quickReplan,
                                   undo: undoAI,
                                   openPro: { aiShowPro = true })
                 }
@@ -1793,6 +1794,49 @@ struct TripPlanDetailView: View {
     private func discardReplan() {
         replan = nil
         announce(L("今の日程のままにしました", "Kept your current plan"))
+    }
+
+    /// 「雨なら」「もっとゆっくり」（2026-11-24 判断・`TripQuickReplan`）。AI を使わずに**押したらすぐ**組み直す。
+    /// 外した所は日の下の「外しました　戻す」へ、知らせの帯と組み直しの列の「元に戻す」で戻せる。変わらなければ帯で理由を言う
+    private func quickReplan(_ tweak: TripAITweak) {
+        guard replanWorking == nil, replan == nil else { return }
+        replanNotice = nil
+        replanNoticePro = false
+        let note = aiNotes.note(planId)
+        let lookup = Dictionary((index + (note?.candidates ?? [])).map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
+        let result: TripQuickReplan.Result
+        switch tweak {
+        case .slow:
+            result = TripQuickReplan.slower(days) { item in
+                if case .spot(let id, _) = item { return lookup[id]?.coords }
+                return nil
+            }
+        case .rain:
+            result = TripQuickReplan.rain(days, spots: lookup, pool: index + (note?.candidates ?? []))
+        }
+        guard result.changed else {
+            replanNotice = result.line
+            announce(result.line)
+            return
+        }
+        var added: [Int] = []
+        for d in result.dropped {
+            removedSeq += 1
+            removedShelf.append(TripPlanEdit.Removed(id: removedSeq, day: d.day, index: d.index, item: d.item))
+            added.append(removedSeq)
+        }
+        let step = TripReplan.Step(before: days, after: result.days, shelf: added)
+        aiHistory.append(step)
+        apply(result.days, said: result.line)
+        // 帯の「元に戻す」は、この組み直しがまだいちばん新しいときだけ戻す（あとで別の組み直しをしていたら、列の「元に戻す」で順に戻す）
+        toasts.show(result.line, undo: ToastCenter.Undo(
+            title: L("元に戻す", "Undo"),
+            failure: L("このあとに別の組み直しをしたので、日程の上の「元に戻す」から戻してください",
+                       "You've rearranged again since. Use Undo above the plan.")) {
+            guard aiHistory.last == step else { return false }
+            undoAI()
+            return true
+        })
     }
 
     /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）

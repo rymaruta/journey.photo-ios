@@ -60,7 +60,7 @@ final class TripReplanTests: XCTestCase {
     private func replan(_ runner: TripAIRunner, offline: Bool = false,
                         eta: @escaping TripAIRouteCheck.ETA = { _, _ in 10 }) async throws -> TripAIResult? {
         let rows = try rows()
-        return await runner.revise(request: TripReplan.request(condition: TripAITweak.rain.request, start: "2026-12-24", end: "2026-12-25"),
+        return await runner.revise(request: TripReplan.request(condition: "雨の日でも楽しめる屋内の所を優先し、雨に向かない所は外すか別の日へ", start: "2026-12-24", end: "2026-12-25"),
                                    current: current(rows), candidates: [], index: rows, offline: offline,
                                    service: TripAIService(api: Self.api()), title: "冬の金沢", countAfter: true, eta: eta)
     }
