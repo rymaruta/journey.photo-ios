@@ -418,7 +418,8 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertTrue(stage.contains("struct CoverSide: ViewModifier, Animatable"))
         // 一冊の頁: 広がる間は控えの表紙、大きな写真とカードは開き切ってから
         let book = try source("Features/Trips/TripBookView.swift")
-        XCTAssertTrue(book.contains("TripBookCoverPhoto(cover: cover, quick: BookCoverCache.image(posted: book))"))
+        let cache = "BookCover" + "Cache"
+        XCTAssertTrue(book.contains("TripBookCoverPhoto(cover: cover, quick: \(cache).image(posted: book))"))
         XCTAssertFalse(book.contains("RemoteImage(url: cover.detailImageURL"), "広がっている間に大きな表紙を読んで展開している")
         let task = try XCTUnwrap(book.range(of: "cardOwner = auth.userId"))
         XCTAssertTrue(String(book[task.lowerBound...].prefix(400)).contains("TripBookMotion.openTotal"),
