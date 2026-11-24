@@ -247,19 +247,68 @@ final class TripBookshelfTests: XCTestCase {
 
     // MARK: - 地の色・読み上げ
 
-    /// 背の地は写真の色みを残して暗くする。色が無い写真は id で決まる布の色（起動ごとに変わらない）
-    func testClothIsADarkenedPhotoColor() {
-        let cloth = TripBookshelf.clothColor(hex: "#FF8000", seed: "a")
-        XCTAssertEqual(cloth >> 16 & 0xFF, 77, "いちばん明るい色を 30% に")
-        XCTAssertEqual(cloth >> 8 & 0xFF, 38)
-        XCTAssertEqual(cloth & 0xFF, 0)
-        XCTAssertEqual(TripBookshelf.clothColor(hex: "zz", seed: "a"), TripBookshelf.clothColor(hex: nil, seed: "a"))
-        XCTAssertEqual(TripBookshelf.clothColor(hex: nil, seed: "trip-1"), TripBookshelf.clothColor(hex: nil, seed: "trip-1"))
-        XCTAssertTrue(TripBookshelf.cloths.contains(TripBookshelf.clothColor(hex: "#000000", seed: "b")), "黒の写真で真っ黒の背になる")
-        for hex in ["#FFFFFF", "#00FF00", "#C9A66B"] {
-            let c = TripBookshelf.clothColor(hex: hex, seed: "s")
-            XCTAssertLessThanOrEqual(max(c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF), 77, "\(hex) の背が明るすぎて白い字が読めない")
+    /// 背の地は撮った月の伝統色（2026-11-24 owner「Bにして」）。12か月の色が決まっていて、範囲の外の月は回す
+    func testClothIsTheMonthTraditionalColor() {
+        XCTAssertEqual(TripBookshelf.cloths, [0x261E47, 0x6D2E5B, 0x8E354A, 0x71605E, 0x187438, 0x20706E,
+                                              0x0D5661, 0x005CAF, 0x736327, 0x9C4F31, 0xD0104C, 0x77428D])
+        XCTAssertEqual(Set(TripBookshelf.cloths).count, 12, "同じ色の月がある")
+        for month in 1...12 {
+            XCTAssertEqual(TripBookshelf.clothColor(month: month), TripBookshelf.cloths[month - 1])
         }
+        XCTAssertEqual(TripBookshelf.clothColor(month: 13), TripBookshelf.clothColor(month: 1))
+        XCTAssertEqual(TripBookshelf.clothColor(month: 0), TripBookshelf.clothColor(month: 12))
+    }
+
+    /// 隣り合う月（12月と1月も）と、赤茶に寄りやすい 9〜11月のどの組も、並べて見分けられるだけ離れている
+    func testNeighbouringMonthClothsAreDistinct() {
+        let cloths = TripBookshelf.cloths
+        let minimum = 0.075
+        for i in 0..<12 {
+            let j = (i + 1) % 12
+            let d = Self.oklabDistance(cloths[i], cloths[j])
+            XCTAssertGreaterThanOrEqual(d, minimum, "\(i + 1)月と\(j + 1)月の背の色が近すぎる（\(d)）")
+        }
+        for (a, b) in [(9, 10), (10, 11), (9, 11)] {
+            let d = Self.oklabDistance(cloths[a - 1], cloths[b - 1])
+            XCTAssertGreaterThanOrEqual(d, minimum, "\(a)月と\(b)月の背の色が近すぎる（\(d)）")
+        }
+    }
+
+    /// 白い県名とのコントラストは、布のいちばん明るい所（`BookCloth` で白 7% が重なる所）でも 4.5:1 以上
+    func testWhiteTitleIsReadableOnEveryCloth() {
+        for (index, cloth) in TripBookshelf.cloths.enumerated() {
+            let lightest = Self.rgb(cloth).map { $0 * 0.93 + 255 * 0.07 }
+            let ratio = 1.05 / (Self.luminance(lightest) + 0.05)
+            XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(index + 1)月の背で白い字が読みにくい（\(ratio):1）")
+        }
+    }
+
+    private static func rgb(_ c: UInt32) -> [Double] {
+        [Double(c >> 16 & 0xFF), Double(c >> 8 & 0xFF), Double(c & 0xFF)]
+    }
+
+    private static func linear(_ v: Double) -> Double {
+        let x = v / 255
+        return x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4)
+    }
+
+    private static func luminance(_ c: [Double]) -> Double {
+        0.2126 * linear(c[0]) + 0.7152 * linear(c[1]) + 0.0722 * linear(c[2])
+    }
+
+    /// OKLab（人の目に近い色の差）での2色の距離
+    private static func oklabDistance(_ a: UInt32, _ b: UInt32) -> Double {
+        func lab(_ c: UInt32) -> [Double] {
+            let v = rgb(c).map(linear)
+            let l = cbrt(0.4122214708 * v[0] + 0.5363325363 * v[1] + 0.0514459929 * v[2])
+            let m = cbrt(0.2119034982 * v[0] + 0.6806995451 * v[1] + 0.1073969566 * v[2])
+            let s = cbrt(0.0883024619 * v[0] + 0.2817188376 * v[1] + 0.6299787005 * v[2])
+            return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+                    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s]
+        }
+        let x = lab(a), y = lab(b)
+        return sqrt(zip(x, y).map { ($0 - $1) * ($0 - $1) }.reduce(0, +))
     }
 
     /// 読み上げは「旅、題、年月、枚数」と印（色だけで言わない）。中黒で区切らない
@@ -272,10 +321,18 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertFalse(label.contains("・") || label.contains("·"), label)
     }
 
-    /// 写真の代表色が背の地に入る
-    func testPostedBookUsesTheCoverColor() throws {
-        let book = TripBookshelf.book(try trip("c", year: 2026, month: 3, color: "#FF8000"))
-        XCTAssertEqual(book.cloth, TripBookshelf.clothColor(hex: "#FF8000", seed: "c"))
+    /// 背の地は写真の色に左右されず、撮った月の色（灰の写真でも色が付く。投稿した旅も端末の旅も同じ）
+    func testBookClothFollowsTheMonth() throws {
+        let gray = TripBookshelf.book(try trip("c", year: 2026, month: 10, color: "#8E979F"))
+        XCTAssertEqual(gray.cloth, 0x9C4F31)
+        let orange = TripBookshelf.book(try trip("o", year: 2026, month: 10, color: "#FF8000"))
+        XCTAssertEqual(orange.cloth, gray.cloth)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let start = calendar.date(from: DateComponents(year: 2026, month: 3, day: 10))!
+        let device = TripBookshelf.book(LibraryTrip(id: "d", shots: [], start: start, end: start, days: [],
+                                                    center: nil, timeZone: .current), name: nil)
+        XCTAssertEqual(device.cloth, TripBookshelf.clothColor(month: 3))
     }
 
     // MARK: - 本を開く動き
