@@ -98,8 +98,13 @@ final class ImageDownsampleWiringTests: XCTestCase {
         XCTAssertFalse(hero.contains("DownsampledRemoteImage("), "大きな写真を縮めて読む部品に替えている（run 793 で閉じた後のメモリが増えた）")
         let book = try source("Features/Trips/TripBookView.swift")
         let cover = try block("private var cover: some View", until: "\n    private ", in: book)
-        XCTAssertTrue(cover.contains("RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment)"))
+        // 2026-11-24: 表紙は `TripBookCoverPhoto`（広がる間は棚で読んだ表紙、開き切ってから大きな写真を `RemoteImage` で重ねる）
+        XCTAssertTrue(cover.contains("TripBookCoverPhoto(cover: cover,"))
         XCTAssertFalse(cover.contains("DownsampledRemoteImage("))
+        let stage = try source("Features/Trips/TripBookStage.swift")
+        let photo = try block("struct TripBookCoverPhoto: View {", until: "\n}\n", in: stage)
+        XCTAssertTrue(photo.contains("RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment"))
+        XCTAssertFalse(photo.contains("DownsampledRemoteImage("), "大きな表紙を縮めて読む部品に替えている")
     }
 
     // MARK: - リールの面（全画面）は縮めない
