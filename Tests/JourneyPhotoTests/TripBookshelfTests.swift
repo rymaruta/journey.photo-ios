@@ -31,21 +31,28 @@ final class TripBookshelfTests: XCTestCase {
 
     // MARK: - 背表紙の寸法
 
-    /// 厚さは写真の枚数（22〜36）、高さは日数（118 + 日数 × 5、5日まで）
+    /// 厚さは写真の枚数（30〜44）、高さは日数（195 + 日数 × 5、5日まで・2026-11-24 owner「幅とか縦大きくしてみやすくしていいよ」）
     func testSpineSizeFollowsPhotosAndDays() {
-        XCTAssertEqual(TripBookshelf.spineWidth(photos: 0), 22)
-        XCTAssertEqual(TripBookshelf.spineWidth(photos: 2), 22)
-        XCTAssertEqual(TripBookshelf.spineWidth(photos: 30), 29)
-        XCTAssertEqual(TripBookshelf.spineWidth(photos: 60), 36)
-        XCTAssertEqual(TripBookshelf.spineWidth(photos: 400), 36, "厚さに上限が無い")
-        XCTAssertEqual(TripBookshelf.spineHeight(days: 1), 123)
-        XCTAssertEqual(TripBookshelf.spineHeight(days: 3), 133)
-        XCTAssertEqual(TripBookshelf.spineHeight(days: 30), 143, "高さに上限が無い")
+        XCTAssertEqual(TripBookshelf.spineWidth(photos: 0), 30)
+        XCTAssertEqual(TripBookshelf.spineWidth(photos: 2), 30)
+        XCTAssertEqual(TripBookshelf.spineWidth(photos: 30), 37)
+        XCTAssertEqual(TripBookshelf.spineWidth(photos: 60), 44)
+        XCTAssertEqual(TripBookshelf.spineWidth(photos: 400), 44, "厚さに上限が無い")
+        XCTAssertEqual(TripBookshelf.spineHeight(days: 1), 200)
+        XCTAssertEqual(TripBookshelf.spineHeight(days: 3), 210)
+        XCTAssertEqual(TripBookshelf.spineHeight(days: 30), 220, "高さに上限が無い")
+        XCTAssertEqual(TripBookshelf.rowHeight, 223, "段の高さがいちばん高い背＋3pt でない")
+        XCTAssertEqual(TripBookshelf.titleSize, 15)
+        XCTAssertEqual(TripBookshelf.monthSize, 13)
+        // 幅 375 の iPhone（両側 16pt）で、いちばん厚い背でも1段に5冊より多く並ぶ
+        let inner = 375.0 - 32
+        XCTAssertGreaterThanOrEqual(TripBookshelf.rows(widths: Array(repeating: TripBookshelf.spineWidth(photos: 99), count: 10),
+                                                       available: inner)[0].count, 5)
         XCTAssertLessThanOrEqual(TripBookshelf.spineHeight(days: 99), TripBookshelf.rowHeight, "いちばん高い背が段に入らない")
         // 押せる幅は背の幅＋間（隣と重ならない）。押せる高さは 44 を超える
-        XCTAssertEqual(TripBookshelf.hitWidth(photos: 0), 22 + TripBookshelf.spineGap)
+        XCTAssertEqual(TripBookshelf.hitWidth(photos: 0), 30 + TripBookshelf.spineGap)
         XCTAssertGreaterThanOrEqual(TripBookshelf.spineHeight(days: 1), 44)
-        XCTAssertEqual(TripBookshelf.windowHeight, 30)
+        XCTAssertEqual(TripBookshelf.windowHeight, 34)
         XCTAssertGreaterThanOrEqual(TripBookshelf.monthSize, 12, "本文系の最小 12pt")
     }
 
@@ -62,15 +69,131 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(short, 2, "いちばん低い背に2字の地名が入らない")
     }
 
-    /// 🔴 1字の箱は明朝 13pt の行の高さ（17〜19pt）で数える。14pt で数えると字が背からはみ出した
+    /// 🔴 2026-11-24 owner「何県かわからないの悲しい」: 印が1つ付いたいちばん低い背にも3字の県名（「北海道」「鹿児島」）と
+    /// 4〜5字の国名（「イギリス」「ポルトガル」）が「︙」で切れずに入る。前の寸法（123〜143）では印つきの低い背に1字しか入らなかった。
+    /// 印の無い背は題が5字以上読める
+    func testSpineFitsThreeCharacterPrefecture() {
+        XCTAssertEqual(TripBookshelf.spineMinCharacters, 5)
+        XCTAssertGreaterThanOrEqual(TripBookshelf.spineTitleCapacity(height: TripBookshelf.spineHeight(days: 5), marks: 0), 6)
+        for days in 1...5 {
+            for marks in 0...1 {
+                let capacity = TripBookshelf.spineTitleCapacity(height: TripBookshelf.spineHeight(days: days), marks: marks)
+                XCTAssertGreaterThanOrEqual(capacity, TripBookshelf.spineMinCharacters, "\(days)日・印\(marks)の背に3字が入らない")
+                for name in ["北海道", "鹿児島", "神奈川", "和歌山", "新潟", "イギリス", "スペイン", "ポルトガル"] {
+                    XCTAssertEqual(TripBookshelf.spineTitle(name, maxCharacters: capacity).joined(), name,
+                                   "\(days)日・印\(marks)の背で「\(name)」が切れる")
+                }
+            }
+        }
+        // 寸法の部品（印 17・題の上 6・月の塊 38）は背の絵と同じ数
+        XCTAssertEqual(TripBookshelf.markHeight, 17)
+        XCTAssertEqual(TripBookshelf.titleTop, 6)
+        XCTAssertEqual(TripBookshelf.monthBlock, 38)
+    }
+
+    // MARK: - 背の県
+
+    private func located(_ id: String, location: String?, lat: Double? = nil, lng: Double? = nil) throws -> Photo {
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\"", "\"userId\":\"owner\"",
+                      "\"date\":\"2026-09-10\""]
+        if let location { fields.append("\"location\":\"\(location)\"") }
+        if let lat, let lng { fields.append("\"coords\":{\"lat\":\(lat),\"lng\":\(lng)}") }
+        return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    private func postedTrip(_ photos: [Photo], place: String = "兼六園") -> TripBook.Trip {
+        let start = Date(timeIntervalSince1970: 1_789_000_000)
+        return TripBook.Trip(id: "t", place: place, start: start, end: start, photos: photos)
+    }
+
+    /// 市区町村の役所の代わり（試験では同梱の表を読まない）
+    private let resolver = PrefectureResolver(spotPrefectures: [:], anchors: [
+        .init(coords: Photo.Coords(lat: 36.561, lng: 136.656), prefecture: "石川県"),   // 金沢市
+        .init(coords: Photo.Coords(lat: 37.916, lng: 139.036), prefecture: "新潟県"),   // 新潟市
+        .init(coords: Photo.Coords(lat: 43.064, lng: 141.347), prefecture: "北海道"),   // 札幌市
+        .init(coords: Photo.Coords(lat: 31.597, lng: 130.557), prefecture: "鹿児島県"), // 鹿児島市
+    ])
+
+    /// 多い方の県。同じ数なら先に出た県。「県」「府」「都」を外した短い形、北海道はそのまま
+    func testSpinePrefectureIsTheMostCommonShortName() {
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("新潟県", 1), ("石川県", 1), ("石川県", 1)]), "石川")
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("新潟県", 1), ("石川県", 1)]), "新潟", "同じ数で先に出た県にならない")
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("新潟県", 1), ("石川県", 5)]), "石川", "重みを数えていない")
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("北海道", 1)]), "北海道")
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("京都府", 1)]), "京都")
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("東京都", 1)]), "東京")
+        XCTAssertEqual(TripBookshelf.spinePrefecture([("鹿児島県", 1)]), "鹿児島")
+        XCTAssertNil(TripBookshelf.spinePrefecture([(nil, 3), ("", 1)]))
+        XCTAssertNil(TripBookshelf.spinePrefecture([]))
+    }
+
+    /// 投稿した旅: 撮影地の文字に県が無い写真（「兼六園」）は座標から。背は県、読み上げは題のまま
+    func testPostedBookSpineShowsPrefecture() throws {
+        let trip = postedTrip([try located("a", location: "兼六園", lat: 36.562, lng: 136.662),
+                               try located("b", location: "新潟県新潟市", lat: nil, lng: nil),
+                               try located("c", location: "ひがし茶屋街", lat: 36.572, lng: 136.666)])
+        let book = TripBookshelf.book(trip, resolver: resolver)
+        XCTAssertEqual(book.prefecture, "石川")
+        XCTAssertEqual(book.spineText, "石川", "背が県名でない")
+        XCTAssertEqual(book.title, "兼六園", "題を県名で置き換えた（開いた一冊の題が変わる）")
+        XCTAssertTrue(TripBookshelf.spokenLabel(book).contains("兼六園"), "読み上げから題の全部が消えた")
+    }
+
+    /// 海外の旅は撮影地の文字の国名（「スペイン」）。国名も県も無ければ今の題に戻る
+    func testSpineShowsCountryAbroadOrFallsBackToTitle() throws {
+        let barcelona = postedTrip([try located("s", location: "Barcelona (Catalonia, Spain)", lat: 41.403, lng: 2.174),
+                                    try located("s2", location: "サグラダ・ファミリア", lat: 41.403, lng: 2.174)],
+                                   place: "サグラダ・ファミリア")
+        let book = TripBookshelf.book(barcelona, resolver: resolver)
+        XCTAssertNil(book.prefecture)
+        XCTAssertEqual(book.country, "スペイン")
+        XCTAssertEqual(book.spineText, "スペイン", "海外の旅の背が国名でない（実機は「フ︙」だった）")
+        XCTAssertEqual(book.title, "サグラダ・ファミリア", "題を国名で置き換えた")
+        XCTAssertEqual(TripBookshelf.spineCountry(["Paris, France", "London, United Kingdom", "Nice, France"]), "フランス")
+        XCTAssertEqual(TripBookshelf.spineCountry(["イギリス ロンドン", "フランス パリ"]), "イギリス", "同じ数で先の国にならない")
+        XCTAssertNil(TripBookshelf.spineCountry(["日本 東京", nil, "山中湖"]), "日本や国名の無い文字を国にした")
+        // 県が取れれば県が先（国内の撮影地に「日本」が書いてあっても）
+        let kanazawa = postedTrip([try located("k", location: "石川県金沢市, 日本")])
+        XCTAssertEqual(TripBookshelf.book(kanazawa, resolver: resolver).spineText, "石川")
+        // 国名の無い海外の旅は題のまま（座標から国は引かない）
+        let paris = postedTrip([try located("p", location: "パリ", lat: 48.857, lng: 2.352)], place: "パリ")
+        XCTAssertEqual(TripBookshelf.book(paris, resolver: resolver).spineText, "パリ", "国名の無い海外の旅が題に戻らない")
+        let bare = postedTrip([try located("q", location: nil)], place: "")
+        XCTAssertEqual(TripBookshelf.book(bare, resolver: resolver).spineText, TripBookshelf.book(bare, resolver: resolver).title)
+    }
+
+    /// 端末の旅: 日の代表点の県を、その日の枚数で重みづけて多い方。代表点が引けなければ地名の文字
+    func testDeviceBookSpineShowsPrefecture() {
+        func shot(_ id: String, _ lat: Double, _ lng: Double) -> LibraryShot {
+            LibraryShot(id: id, date: Date(timeIntervalSince1970: 1_789_000_000), lat: lat, lng: lng)
+        }
+        let niigata = (0..<2).map { shot("n\($0)", 37.92, 139.04) }
+        let hokkaido = (0..<5).map { shot("h\($0)", 43.06, 141.35) }
+        let days = [LibraryTrip.Day(key: "2026-09-10", number: 1, month: 9, day: 10, shots: niigata,
+                                    center: Photo.Coords(lat: 37.92, lng: 139.04)),
+                    LibraryTrip.Day(key: "2026-09-11", number: 2, month: 9, day: 11, shots: hokkaido,
+                                    center: Photo.Coords(lat: 43.06, lng: 141.35))]
+        let trip = LibraryTrip(id: "d", shots: niigata + hokkaido, start: niigata[0].date, end: hokkaido[0].date,
+                               days: days, center: Photo.Coords(lat: 37.92, lng: 139.04), timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        let book = TripBookshelf.book(trip, name: "新潟市", resolver: resolver)
+        XCTAssertEqual(book.spineText, "北海道", "枚数の多い日の県にならない")
+        XCTAssertEqual(book.title, "新潟市")
+        // 座標の県が引けない旅（手がかりが無い）は地名の文字から、それも無ければ題
+        XCTAssertEqual(TripBookshelf.book(trip, name: "鹿児島県", resolver: .empty).spineText, "鹿児島")
+        XCTAssertEqual(TripBookshelf.book(trip, name: "金沢市", resolver: .empty).spineText, "金沢市")
+        // 海外の端末の旅は、地名の文字に国名があれば国名
+        XCTAssertEqual(TripBookshelf.book(trip, name: "Barcelona, Spain", resolver: .empty).spineText, "スペイン")
+    }
+
+    /// 🔴 1字の箱は明朝の行の高さ（字の大きさの 1.3〜1.5 倍・15pt で 20〜22pt）で数える。字の大きさで数えると字が背からはみ出した
     func testSpineTitleFitsTheRealLineHeight() {
-        XCTAssertGreaterThanOrEqual(TripBookshelf.titleBox, 17)
-        XCTAssertLessThanOrEqual(TripBookshelf.titleBox, 19)
+        XCTAssertGreaterThanOrEqual(TripBookshelf.titleBox, TripBookshelf.titleSize * 1.3)
+        XCTAssertLessThanOrEqual(TripBookshelf.titleBox, TripBookshelf.titleSize * 1.5)
         for days in 1...5 {
             for marks in 0...2 {
                 let height = TripBookshelf.spineHeight(days: days)
                 let capacity = Double(TripBookshelf.spineTitleCapacity(height: height, marks: marks))
-                let used = TripBookshelf.windowHeight + Double(marks) * 17 + 6 + capacity * TripBookshelf.titleBox + 34
+                let used = TripBookshelf.windowHeight + Double(marks) * 17 + 6 + capacity * TripBookshelf.titleBox + 38
                 XCTAssertLessThanOrEqual(used, height, "\(days)日・印\(marks)の背で題がはみ出す")
             }
         }
