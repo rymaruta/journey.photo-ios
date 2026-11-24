@@ -100,6 +100,7 @@ public struct UIKeyboardTypeShim {
 }
 public struct UITextContentTypeShim {
     public static let emailAddress = UITextContentTypeShim()
+    public static let username = UITextContentTypeShim()
     public static let password = UITextContentTypeShim()
     public static let newPassword = UITextContentTypeShim()
     public static let oneTimeCode = UITextContentTypeShim()

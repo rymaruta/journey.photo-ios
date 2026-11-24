@@ -397,7 +397,11 @@ struct SignInView: View {
             authField(L("メールアドレス", "Email"), group: "signin.email.field") {
                 JPTextField(placeholder(L("メールアドレス", "Email"), regular: "you@example.com"), text: $email)
                     .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
+                    // **`.username`（2026-11-24 判断・札 #661）。** iPhone に保存した journey-photo.com のパスワードを
+                    // キーボードの上に候補として出すには、アカウントの欄を `.username` にする（Apple の Password AutoFill の決まり）。
+                    // `.emailAddress` のままだと、出るのは連絡先の自分のメールだけで、保存したアカウントは出ない。
+                    // 登録（`.newPassword` と組む）でも同じ欄なので、作った強いパスワードがこのメールで保存される
+                    .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     // 右下のキーで次の欄へ（2026-11-14 判断・`AuthFieldFlow`）
@@ -1263,7 +1267,8 @@ struct SignInView: View {
             JPField(L("メールアドレス", "Email")) {
                 JPTextField("you@example.com", text: $email)
                     .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
+                    // 保存したアカウントのメールを候補から選べる（ログインの欄と同じ `.username`・札 #661）
+                    .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     // コードを送る前はここだけ。右下のキー（送信）でコードを送る（2026-11-14 判断・`AuthFieldFlow`）
