@@ -6,7 +6,8 @@ import Foundation
 /// 画面の部品は `TripBookshelfView`。ここには数と決まりだけを置く（Linux のテストで見張る・`TripBookshelfTests`）。
 ///
 /// - 段は年ごと（新しい年が上）。段の中は新しい旅が左
-/// - 背表紙の厚さは写真の枚数（22〜36pt）、高さは日数（118〜143pt）。押せる幅は 44pt（細い背は当たりを左右に広げる）
+/// - 背表紙の厚さは写真の枚数（22〜36pt）、高さは日数（141〜161pt）。押せる幅は背の幅＋間
+/// - 背の題は旅でいちばん多い県の短い名（「新潟」「北海道」）。取れなければ旅の題（`spinePrefecture`）
 /// - 端末の中だけの旅は iPhone の印、自分だけの旅は鍵の印（色だけで言わない）
 enum TripBookshelf {
 
@@ -32,6 +33,13 @@ enum TripBookshelf {
         let cloth: UInt32
         /// 端末の旅の地名（開いた一冊に渡す・`DeviceTripBookView`）。投稿した旅は nil
         var name: String? = nil
+        /// 旅でいちばん多い県の短い名（「新潟」「北海道」・`spinePrefecture`）。取れなければ nil
+        var prefecture: String? = nil
+
+        /// 背に縦に並べる字。県が取れればその短い名、取れなければ旅の題。
+        /// 2026-11-24 owner「何県かわからないの悲しい」（1.2.0 の実機: 背の題が「新︙」「兼︙」で1〜2字しか出なかった）。
+        /// 題の全部は開いた一冊と読み上げ（`spokenLabel`）に残す
+        var spineText: String { prefecture ?? title }
 
         var isDevice: Bool {
             if case .device = source { return true }
@@ -62,12 +70,19 @@ enum TripBookshelf {
     static let spineMinWidth: Double = 22
     static let spineMaxWidth: Double = 36
     static let spineWidthPhotos = 60
-    /// 背の高さ: 1日で 123、5日以上で 143（118 + 日数 × 5）
-    static let spineBaseHeight: Double = 118
+    /// 背の高さ: 1日で 141、5日以上で 161（136 + 日数 × 5）。
+    /// 2026-11-24 判断（owner「何県かわからないの悲しい」）: 前の 123〜143 では、いちばん低い背に題が2字、
+    /// 印（iPhone・鍵）が付くと1字しか入らなかった。**印が1つ付いたいちばん低い背にも3字（「北海道」「鹿児島」）入る**高さへ、
+    /// 全部の背を同じ 18pt だけ上げた（日数で 5pt ずつ高くなる形・厚さ・窓・月はそのまま。案の頁の形を崩さない）。
+    /// 月の塊を詰める案は、12pt の字の行の高さ（約 14pt）より箱を小さくすることになり、字が重なるので取らなかった。
+    /// 印は1冊に1つまで（端末の旅は自分だけの印を持たない・`book(_:name:)`）
+    static let spineBaseHeight: Double = 136
     static let spineHeightPerDay: Double = 5
     static let spineMaxDays = 5
-    /// 段の高さ（いちばん高い背 143 ＋ 上の余白）
-    static let rowHeight: Double = 146
+    /// 段の高さ（いちばん高い背 161 ＋ 上の余白）
+    static let rowHeight: Double = 164
+    /// 背の題がいつも入る字の数（印が1つ付いたいちばん低い背でも。3字の県名が切れない）
+    static let spineMinCharacters = 3
     /// 背どうしの間と、段どうしの間
     static let spineGap: Double = 3
     static let rowGap: Double = 14
@@ -111,11 +126,56 @@ enum TripBookshelf {
         return (char, turned.contains(char))
     }
 
-    /// 背の高さに入る題の字の数（窓・印・月の分を引いた残りを、1字の箱 `titleBox` で割る）
+    /// 印1つの高さ（12pt の絵＋上の 5pt）・題の上の余白・月の塊（数字と「月」の2行＋下の 6pt）
+    static let markHeight: Double = 17
+    static let titleTop: Double = 6
+    static let monthBlock: Double = 34
+
+    /// 背の高さに入る題の字の数（窓・印・題の上の余白・月の分を引いた残りを、1字の箱 `titleBox` で割る）
     static func spineTitleCapacity(height: Double, marks: Int) -> Int {
-        let monthBlock = 34.0
-        let free = height - windowHeight - Double(marks) * 17 - monthBlock - 12
+        let free = height - windowHeight - Double(marks) * markHeight - titleTop - monthBlock
         return max(1, Int(free / titleBox))
+    }
+
+    // MARK: - 背の県
+
+    /// 背の県を引く手がかり。県は写真の撮影地の文字、なければ座標からいちばん近い市区町村の役所の県
+    /// （同梱の表 `MunicipalOffices.bundled`・ネットには問い合わせない）。読み方は行った県マップと同じ `PrefectureResolver`
+    static let spineResolver = PrefectureResolver(
+        spotPrefectures: [:],
+        anchors: MunicipalOffices.bundled.map { PrefectureResolver.Anchor(coords: $0.coords, prefecture: $0.prefecture) })
+
+    /// 旅でいちばん多い県の短い名（「新潟県」→「新潟」、「北海道」はそのまま・`PrefectureResolver.shortName`）。
+    /// 県と重みを旅の順に渡す。数が同じなら先に出た県。1つも無ければ nil（背は旅の題に戻る）
+    static func spinePrefecture(_ weighted: [(prefecture: String?, weight: Int)]) -> String? {
+        var totals: [String: Int] = [:]
+        var order: [String] = []
+        for item in weighted {
+            guard let name = item.prefecture, !name.isEmpty, item.weight > 0 else { continue }
+            if totals[name] == nil { order.append(name) }
+            totals[name, default: 0] += item.weight
+        }
+        var best: String?
+        for name in order where best == nil || totals[name, default: 0] > totals[best!, default: 0] {
+            best = name
+        }
+        return best.map(PrefectureResolver.shortName)
+    }
+
+    /// 投稿した旅の県: 写真1枚ずつの県（撮影地の文字 → 座標・`PrefectureResolver.prefecture(of:)`）で多い方
+    static func spinePrefecture(of trip: TripBook.Trip, resolver: PrefectureResolver) -> String? {
+        spinePrefecture(trip.photos.map { (resolver.prefecture(of: $0), 1) })
+    }
+
+    /// 端末の旅の県: 日ごとの代表点の県を、その日の写真の枚数で重みづけて多い方（写真1枚ずつ引くと重い）。
+    /// 代表点が無ければ旅の代表点、それも引けなければ地名の文字（市区町村、無ければ都道府県・`PhotoLibrary.place`）
+    static func spinePrefecture(of trip: LibraryTrip, name: String?, resolver: PrefectureResolver) -> String? {
+        var weighted: [(prefecture: String?, weight: Int)] = trip.days.compactMap { day in
+            day.center.map { (resolver.nearestPrefecture(to: $0), max(1, day.shots.count)) }
+        }
+        if let center = trip.center { weighted.append((resolver.nearestPrefecture(to: center), 1)) }
+        if let found = spinePrefecture(weighted) { return found }
+        return spinePrefecture([(PrefectureResolver.prefecture(inText: name), 1)])
     }
 
     /// 読み上げ（「旅、金沢、2026年9月、24枚、端末の中だけ、自分だけ」）
@@ -179,22 +239,28 @@ enum TripBookshelf {
     }
 
 
-    static func book(_ trip: TripBook.Trip) -> Book {
+    static func book(_ trip: TripBook.Trip) -> Book { book(trip, resolver: spineResolver) }
+
+    static func book(_ trip: TripBook.Trip, resolver: PrefectureResolver) -> Book {
         let parts = TripBook.utcCalendar.dateComponents([.year, .month], from: trip.start)
         return Book(source: .posted(trip), title: TripBook.title(of: trip), start: trip.start,
                     photoCount: trip.photos.count, days: trip.days, isPrivate: trip.isPrivate,
                     year: parts.year ?? 0, month: parts.month ?? 1,
-                    cloth: clothColor(hex: trip.cover?.dominantColor, seed: trip.id))
+                    cloth: clothColor(hex: trip.cover?.dominantColor, seed: trip.id),
+                    prefecture: spinePrefecture(of: trip, resolver: resolver))
     }
 
-    static func book(_ trip: LibraryTrip, name: String?) -> Book {
+    static func book(_ trip: LibraryTrip, name: String?) -> Book { book(trip, name: name, resolver: spineResolver) }
+
+    static func book(_ trip: LibraryTrip, name: String?, resolver: PrefectureResolver) -> Book {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = trip.timeZone
         let parts = calendar.dateComponents([.year, .month], from: trip.start)
         return Book(source: .device(trip), title: DeviceTrips.title(of: trip, name: name), start: trip.start,
                     photoCount: trip.shots.count, days: LibraryTrips.calendarDays(trip), isPrivate: false,
                     year: parts.year ?? 0, month: parts.month ?? 1,
-                    cloth: clothColor(hex: nil, seed: trip.id), name: name)
+                    cloth: clothColor(hex: nil, seed: trip.id), name: name,
+                    prefecture: spinePrefecture(of: trip, name: name, resolver: resolver))
     }
 
     // MARK: - 背の地の色

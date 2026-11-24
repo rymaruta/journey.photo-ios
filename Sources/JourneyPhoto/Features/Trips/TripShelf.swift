@@ -223,7 +223,7 @@ struct BookSpineSlot: View {
     }
 }
 
-/// 背表紙（案の頁「背表紙」）。上 30pt に表紙の写真、地は写真の色を暗くした布、縦書きの明朝で旅の名前、下に月
+/// 背表紙（案の頁「背表紙」）。上 30pt に表紙の写真、地は写真の色を暗くした布、縦書きの明朝で旅でいちばん多い県（取れなければ旅の名前・`Book.spineText`）、下に月
 struct BookSpine: View {
 
     let book: TripBookshelf.Book
@@ -243,7 +243,7 @@ struct BookSpine: View {
             if book.isPrivate { mark("lock.fill") }
             // 1字ずつ同じ高さの箱に入れる（字の行の高さで並びが割れない・`TripBookshelf.titleBox`）
             VStack(spacing: 0) {
-                ForEach(Array(TripBookshelf.spineTitle(book.title,
+                ForEach(Array(TripBookshelf.spineTitle(book.spineText,
                                                        maxCharacters: TripBookshelf.spineTitleCapacity(height: height, marks: marks))
                     .enumerated()), id: \.offset) { _, char in
                     let glyph = TripBookshelf.spineGlyph(char)
@@ -254,7 +254,7 @@ struct BookSpine: View {
                         .frame(width: width, height: TripBookshelf.titleBox)
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, TripBookshelf.titleTop)
             Spacer(minLength: 0)
             VStack(spacing: 1) {
                 Text(verbatim: "\(book.month)")
