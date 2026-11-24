@@ -121,13 +121,13 @@ final class WhatsNewTests: XCTestCase {
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
-        // 1.1.18（2026-10-19）: 写真で作るキャンピングカー・アイコンとカバー（キャンプ場の知らせは #339 で外した）
+        // 1.1.18（2026-10-19）: アイコンとカバー（キャンプ場の知らせは #339 で外した。キャンピングカーの知らせは
+        // 2026-11-23 に機能と一緒に外した・札 #709）
         let camp = try XCTUnwrap(releases.first)
-        XCTAssertEqual(camp.items.map(\.title.ja), ["写真で作るキャンピングカー", "アイコンとカバーを選びやすく"])
-        XCTAssertEqual(camp.items.map(\.symbol), ["bus", "person.crop.circle"])
-        XCTAssertEqual(camp.items.compactMap(\.destination), [.mypage, .mypage])
+        XCTAssertEqual(camp.items.map(\.title.ja), ["アイコンとカバーを選びやすく"])
+        XCTAssertEqual(camp.items.map(\.symbol), ["person.crop.circle"])
+        XCTAssertEqual(camp.items.compactMap(\.destination), [.mypage])
         XCTAssertEqual(camp.date, WhatsNew.Day(year: 2026, month: 10, day: 19))
-        XCTAssertTrue(camp.items[0].detail.ja.contains("とおまわり号"), "キャンピングカーの名前を言っていない")
         // 1.1.16（2026-10-18・札 #305 #306）: トランクの部品の付き方・特別な券面の裏・呼び名「すれちがい乗車券」
         let upcoming = releases[1]
         XCTAssertEqual(upcoming.items.map(\.title.ja), ["トランクの部品がきれいに付く", "特別な券面は裏まで", "すれちがい乗車券"])
@@ -270,7 +270,7 @@ final class WhatsNewTests: XCTestCase {
         // 1.1.72 より前の分だけで見る（1.1.96 は `testVersion1196`、1.1.95 は `testVersion1195`、1.1.94 は `testVersion1194`、1.1.93 は `testVersion1193`、1.1.92 は `testVersion1192`、1.1.91 は `testVersion1191`、1.1.90 は `testVersion1190`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
         let releases = Array(WhatsNew.decode(data).dropFirst(24))
         XCTAssertEqual(releases.first?.version, "1.1.18")
-        XCTAssertEqual(releases.first?.items.count, 2)
+        XCTAssertEqual(releases.first?.items.count, 1)
         XCTAssertEqual(releases[1].items.count, 3)
         XCTAssertEqual(releases[2].items.count, 5)
         // 1.1.17・1.1.16 を見た人: 1.1.18 の分だけ
@@ -296,13 +296,9 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(WhatsNew.pending(releases: bundledIn1117, seen: "1.1.15", current: "1.1.17", usedBefore: true)
             .map(\.version), ["1.1.16"])
 
-        // 版の決め方: project.yml の版より、出した印（testflight/1.1.17）の +1 が新しい（`next-marketing-version.sh`）
-        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
-        let marketing = try XCTUnwrap(project.components(separatedBy: "\n")
-            .first { $0.contains("MARKETING_VERSION:") }?
-            .components(separatedBy: "\"").dropFirst().first)
-        XCTAssertFalse(WhatsNew.isNewer(marketing, than: "1.1.17"),
-                       "project.yml の版（\(marketing)）が 1.1.17 より新しい——次の版が 1.1.18 にならない。項目の版を見直す")
+        // 2026-11-23 判断: ここにあった「project.yml の版が 1.1.17 より新しくない」の確かめは外した。
+        // 1.1.18 を出した頃の版の決め方の確かめで、App Store ごとに真ん中を上げる決まり（1.2.0 から）で
+        // project.yml が 1.1 の系を離れたため。版の決め方の確かめは `Tools/test_version_rule.py`
     }
 
     /// 1.1.99（2026-11-16・札 #621）: AI で旅行プラン。行き先は旅行プランの一覧（ホームに積む・ログインが要る）。
@@ -590,16 +586,16 @@ final class WhatsNewTests: XCTestCase {
                                                  "探すをもう一度押すとすぐ打てる", "探すで前に探した言葉を出す",
                                                  "ストーリーの場所は数文字で候補から選べる", "ログインはキーボードの右下で次へ進める",
                                                  "乗車券は ‹ › でもめくれる",
-                                                 "すれちがい乗車券の言葉をわかりやすく", "とおまわり号の部屋をボタンでも回せる", "ホームの札で、誰の写真かが切れずに見える",
+                                                 "すれちがい乗車券の言葉をわかりやすく", "ホームの札で、誰の写真かが切れずに見える",
                                                  "「行きたい」の印を旗に",
                                                  "旅行プランの会話で通報できる"])
         XCTAssertEqual(Set(v.items.map(\.symbol)).count, v.items.count, "記号が重複している")
-        XCTAssertEqual(v.items.map(\.destination), [nil, nil, nil, nil, nil, nil, nil, nil, nil, .search, .search, nil, nil, nil, nil, nil, .home, nil, nil])
+        XCTAssertEqual(v.items.map(\.destination), [nil, nil, nil, nil, nil, nil, nil, nil, nil, .search, .search, nil, nil, nil, nil, .home, nil, nil])
         // 払うと確かめるのは書きかけがあるときだけ（何も無ければそのまま閉じる・`sheetSwipeGuard`）
         XCTAssertTrue(v.items[5].detail.ja.contains("保存せずに閉じる") && v.items[5].detail.ja.contains("そのまま閉じます"),
                       v.items[5].detail.ja)
         // 旅行プランの会話の通報は長押しから（`TripMessageMenu`・札 #597）
-        XCTAssertTrue(v.items[18].detail.ja.contains("長押し"), v.items[18].detail.ja)
+        XCTAssertTrue(v.items[17].detail.ja.contains("長押し"), v.items[17].detail.ja)
         // 乗車券の項は呼び名の統一に合わせて「カード」「束」と書かない（`PassWordingTests`）
         for item in v.items[13...14] {
             XCTAssertFalse(item.detail.ja.contains("カード") || item.detail.ja.contains("束"), item.detail.ja)
@@ -790,8 +786,9 @@ final class WhatsNewTests: XCTestCase {
         // 1.1.81（2026-11-11・札 #524・とおまわり号を減らす）: 探すから撮影スポットの一覧・とおまわり号の中をすっきり
         let v1181 = try XCTUnwrap(all.dropFirst().first)
         XCTAssertEqual(v1181.version, "1.1.81")
-        XCTAssertEqual(v1181.items.map(\.title.ja), ["探すから撮影スポットの一覧", "とおまわり号の中をすっきり"])
-        XCTAssertEqual(v1181.items.map(\.destination), [.search, nil])
+        // とおまわり号の中をすっきり、は 2026-11-23 に機能と一緒に外した（札 #709）
+        XCTAssertEqual(v1181.items.map(\.title.ja), ["探すから撮影スポットの一覧"])
+        XCTAssertEqual(v1181.items.map(\.destination), [.search])
         for item in v1181.items {
             for text in [item.title.ja, item.detail.ja] {
                 for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "綴じ"] {
@@ -874,7 +871,8 @@ final class WhatsNewTests: XCTestCase {
         let latest = try XCTUnwrap(releases.dropFirst(5).first)
         XCTAssertEqual(latest.version, "1.1.72")
         XCTAssertEqual(latest.date, WhatsNew.Day(year: 2026, month: 11, day: 7))
-        XCTAssertEqual(latest.items.count, 10)
+        // 「とおまわり号の中に入れます」は 2026-11-23 に機能と一緒に外した（札 #709）
+        XCTAssertEqual(latest.items.count, 9)
         XCTAssertEqual(latest.items.map(\.symbol).count, Set(latest.items.map(\.symbol)).count, "記号が重複している")
         XCTAssertEqual(Set(latest.items.map(\.title.ja)).count, latest.items.count)
         for destination in latest.items.compactMap(\.destination) {

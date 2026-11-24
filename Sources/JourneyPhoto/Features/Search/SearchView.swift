@@ -100,6 +100,9 @@ struct SearchView: View {
     var body: some View {
         // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
         let _ = PerfRecorder.shared.searchBody(query: query)
+        // 段ごとの評価回数と、なぜ評価し直したか（UI テストのときだけ・札 #594・地図の `body.map` と同じ形・2026-11-24）
+        let _ = PerfTimeline.shared.count("body.search")
+        let _ = PerfChangeLog.note(Self.self)
         VStack(spacing: 0) {
             // 検索中も探す口と種類の切り替えを画面上部に残す。
             // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。
@@ -538,7 +541,8 @@ struct SearchView: View {
         readingTask = Task { @MainActor in
             // 2026-11-20 判断（札 #652）: 語を並べた文は**言葉の表だけ**で読む。端末の AI で読むと、回数を数えずに AI を使う
             // ことになる（CLAUDE.md「AI の機能には必ず回数の上限を付ける」）。AI に回すのは頼みと質問の形だけ（`AskQuery.form`）
-            let result = SearchSentence.readByTable(sentence)
+            // 写真の検索なので、月（「11月」）は季節の札にするだけでなく字の語にも残す（2026-11-23 判断）
+            let result = SearchSentence.readByTable(sentence, monthAsText: true)
             guard !Task.isCancelled else { return }
             isReadingSentence = false
             guard searched.trimmingCharacters(in: .whitespacesAndNewlines) == sentence, result.changesSearch else { return }

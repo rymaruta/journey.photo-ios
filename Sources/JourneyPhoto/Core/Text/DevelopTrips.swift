@@ -53,8 +53,12 @@ enum DevelopTrips {
 
     /// 札の2行目「金沢の旅、3日、42枚」（地名が無ければ期間）
     static func cardLine(_ trip: LibraryTrip, name: String?) -> String {
+        // 載せたことのある旅は「金沢市の旅、残り9枚」（札 #710 の案2）
+        if trip.postedCount > 0 {
+            return "\(DeviceTrips.tripTitle(of: trip, name: name))、" + remainingLabel(trip.shots.count)
+        }
         // 2026-11-12 確かめ役: 中黒で区切らない（読点で並べる）
-        "\(DeviceTrips.tripTitle(of: trip, name: name))、\(TripBook.daysLabel(LibraryTrips.calendarDays(trip)))"
+        return "\(DeviceTrips.tripTitle(of: trip, name: name))、\(TripBook.daysLabel(LibraryTrips.calendarDays(trip)))"
             + "、" + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 
@@ -166,8 +170,13 @@ enum DevelopTrips {
 
     /// 札の3行目。どこから見つけた旅かを1行で言う（資料「説明なしで分かるアプリ」項目6・1.1.85 束H）。
     /// **一部の写真だけ許可**のときは「選んで許可した写真の中から見つけました」（章「状態」のまま）
-    static func cardDetail(limited: Bool) -> String {
-        limited ? L("選んで許可した写真の中から見つけました", "Found among the photos you allowed")
+    static func cardDetail(limited: Bool, posted: Int = 0) -> String {
+        // 載せたことのある旅（札 #710 の案2）。急がせる言葉は使わない
+        if posted > 0 {
+            return L("\(posted)枚載せました。続きを選べます", posted == 1 ? "You posted 1. Pick the rest when you like."
+                                                                     : "You posted \(posted). Pick the rest when you like.")
+        }
+        return limited ? L("選んで許可した写真の中から見つけました", "Found among the photos you allowed")
                 : L("写真アプリから見つけました", "Found in your Photos app")
     }
 
@@ -179,6 +188,10 @@ enum DevelopTrips {
 
     /// 札の題
     static var cardTitle: String { L("まだ載せていない旅", "Trip you haven't posted") }
+    /// 「残り9枚」（札 #710 の案2）
+    static func remainingLabel(_ count: Int) -> String {
+        L("残り\(count)枚", count == 1 ? "1 left" : "\(count) left")
+    }
     /// 札の眉（英字）と、その読み上げ
     static let cardEyebrow = "WELCOME BACK"
     static var cardEyebrowSpoken: String { L("おかえりなさい", "Welcome back") }

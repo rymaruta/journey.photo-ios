@@ -112,7 +112,7 @@ enum ArrivalFact {
     ///   一覧が読めていない・今投稿した写真が一覧に載っていない（一覧が古いかもしれない）・県が読めない・
     ///   同じ県のほかの写真が 1 枚でも在るときは言わない（取りこぼしは「言わない」方へ倒す）
     /// - ほかの公開の写真に、県が読めないもの（撮影地が空・英語・座標だけ）が1枚でも在るときも言わない
-    /// - 県は撮影地の文字から読む既存の判定（`CamperCounting.prefecture(in:)`）を使い回す
+    /// - 県は撮影地の文字から読む既存の判定（`PrefectureText.prefecture(in:)`）を使い回す
     static func sentence(label: TrunkLabel, photos: [Photo]?) -> String? {
         let name = label.place.name
         if label.kind == .milestone {
@@ -130,12 +130,12 @@ enum ArrivalFact {
         guard let photos else { return nil }
         let published = photos.filter { $0.published != false }
         guard let mine = published.first(where: { $0.id == label.photoId }) else { return nil }
-        guard let prefecture = CamperCounting.prefecture(in: mine.location)
-                ?? CamperCounting.prefecture(in: name) else { return nil }
+        guard let prefecture = PrefectureText.prefecture(in: mine.location)
+                ?? PrefectureText.prefecture(in: name) else { return nil }
         // ほかの公開の写真の県が1枚でも読めないなら言わない（撮影地が空・英語・座標だけの写真が、
         // 実はその県かもしれない。確かめられないときは祝わない）
         var others: [String?] = []
-        for p in published where p.id != label.photoId { others.append(CamperCounting.prefecture(in: p.location)) }
+        for p in published where p.id != label.photoId { others.append(PrefectureText.prefecture(in: p.location)) }
         guard !others.contains(where: { $0 == nil }), !others.contains(where: { $0 == prefecture }) else { return nil }
         return L("\(prefecture)、はじめての1枚です", "\(prefecture) \u{2014} your first photo here")
     }
@@ -170,6 +170,10 @@ struct ArrivalSequence: Equatable {
     static let sentenceAt = 1.25
     /// ラベルが落ち始めてから、貼りついて触覚を鳴らすまで（ばねが落ち切る少し前）
     static let landAfter = 0.28
+    /// スタンプ（札 #712）が落ち始めるまで（開いてからの秒）。**硬貨が札に入ったあと**
+    /// （ラベル 0.55 → 貼りつく +0.28 → 硬貨 +0.25 → 札に入る +0.62 ＝ 1.70）。触覚が重ならないよう 0.3 秒あける。
+    /// ラベル → 硬貨とかけら → スタンプの順（2026-11-23 判断・1.2.0 の統合）
+    static let stampAt = 2.0
 
     /// その段を見せてよいか。動きを減らす設定のときは、待たずに全部を最初から出す（画面が使う）
     static func isShown(_ target: Step, current: Step, reduceMotion: Bool) -> Bool {

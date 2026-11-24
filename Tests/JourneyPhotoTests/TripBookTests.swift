@@ -312,8 +312,6 @@ final class TripBookFactsTests: XCTestCase {
         XCTAssertEqual(TripBook.title(of: trip), "2026.09.12 — 09.14")
         XCTAssertTrue(TripBook.titleIsPeriod(trip))
         XCTAssertEqual(TripStyle.coverDateLine(trip), "3日間", "題の期間を下の1行で繰り返している")
-        XCTAssertFalse(TripStyle.tripLine(trip).contains("2026.09.12"), "題の期間を下の1行で繰り返している")
-        XCTAssertTrue(TripStyle.tripLine(trip).hasPrefix("3日間"))
         // 旅の記録の外は「旅の記録」のまま（期間は隣に別に出る）
         XCTAssertEqual(TripBook.tripTitle(of: trip), "旅の記録")
     }
@@ -325,7 +323,6 @@ final class TripBookFactsTests: XCTestCase {
             try photo("b", date: "2026-09-14", place: "金沢"),
         ]).first)
         XCTAssertEqual(TripStyle.coverDateLine(trip), "2026.09.12 — 09.14\u{2002}3日間")
-        XCTAssertTrue(TripStyle.tripLine(trip).hasPrefix("2026.09.12 — 09.14"))
     }
 
     /// 旅の記録の外（共有シートの題・ホームの札）は文脈が無いので「の旅」の付いた題を使う（2026-11-15）

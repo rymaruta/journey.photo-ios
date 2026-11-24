@@ -164,7 +164,7 @@ struct PlaceSearchField: View {
     /// 撮影地を打つ欄。投稿画面（`boxed`）はタイトル・説明と同じ枠に入れる
     @ViewBuilder
     private var placeField: some View {
-        let field = JPTextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
+        let field = JPTextField(L("撮影地（例：高屋神社、香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
         if boxed {
             field
                 .font(.subheadline)

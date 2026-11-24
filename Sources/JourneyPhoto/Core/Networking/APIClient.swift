@@ -402,7 +402,9 @@ actor APIClient {
     }
 
     /// 失敗の本文の受け取り口。**呼び手が `withValue` で置いたときだけ**、4xx / 5xx の本文をここに残す
-    /// （`APIError.server` は本文の `code` を持たないので。いまは購入の `code` だけ・`PurchaseService`）
+    /// （`APIError.server` は本文の `code` を持たないので）。使い手は、本文の `code` で文や扱いを選ぶ口:
+    /// 購入（`PurchaseService`）・トランク（`TrunkService`）・旅行プランの AI（`TripAIService`）・AI に頼む（`AskService`）・
+    /// メッセージ（`DMService`）・意見（`FeedbackService`）・外のアカウントのログイン（`FederatedSignInUnlinked`・解除済みの断り）
     @TaskLocal static var errorBodySink: APIErrorBody?
 
     /// api-user のエラー本文の `code`（`{ "error": "...", "code": "..." }`・`http.ts` の `jsonError`）。無ければ nil

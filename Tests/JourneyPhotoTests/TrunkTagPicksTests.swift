@@ -372,9 +372,11 @@ final class TrunkTagPicksTests: XCTestCase {
     /// トランクの画面から選ぶ画面へ入れる（対応したサーバーのときだけ）
     func testTagsRowIsWired() throws {
         let main = try source("Features/Trunk/TrunkView.swift")
-        XCTAssertTrue(main.contains("if state.supportsTagPicks {"), "対応していないサーバーでも行を出す")
+        // 2026-11-23（札 #711）: 行から4つのカードの1つへ。対応していないサーバーではカードを出さない
+        XCTAssertTrue(main.contains("showsTags: state.supportsTagPicks"), "対応していないサーバーでも行を出す")
+        XCTAssertFalse(TrunkHome.tiles(for: .stick, showsTags: false).contains(.tags))
         XCTAssertTrue(main.contains("TrunkTagsView(model: model"))
-        XCTAssertTrue(main.contains(#".accessibilityIdentifier("trunk.tags.open")"#))
+        XCTAssertEqual(TrunkHome.identifier(.tags), "trunk.tags.open")
         XCTAssertTrue(main.contains("TrunkTagText.pickResetNotice"), "はがして枠が戻ったことを知らせない")
         let view = try source("Features/Trunk/TrunkTagsView.swift")
         for id in ["trunk.tags.screen", "trunk.tags.sheet", "trunk.tags.done", "trunk.tags.retry", "trunk.tags.discard",

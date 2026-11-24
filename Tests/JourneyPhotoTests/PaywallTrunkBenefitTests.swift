@@ -38,7 +38,8 @@ final class PaywallTrunkBenefitTests: XCTestCase {
 
     /// 旅のトランクの Pro の口（作り直す・特別なトランク・手持ちの上限・届いたラベル）は「トランクから」と渡す
     func testTrunkEntrancesPassTrunkOrigin() throws {
-        for file in ["TrunkView", "LabelArrivedView", "TrunkPocketView", "TrunkModelsView"] {
+        // 届いた画面は Pro の案内を開かない（作り直しは全員・#706・2026-11-23）
+        for file in ["TrunkView", "TrunkPocketView", "TrunkModelsView"] {
             let text = try source("Features/Trunk/\(file).swift")
             XCTAssertTrue(text.contains("PaywallView(origin: .trunk)"), "\(file) がトランクからと渡していない")
             XCTAssertFalse(text.contains("PaywallView()"), "\(file) にふだんの並びの案内が残っている")
@@ -47,14 +48,15 @@ final class PaywallTrunkBenefitTests: XCTestCase {
 
     // MARK: - 中身
 
-    /// 数はサーバーの決まり（`PRO_MODELS` 6・`REROLLS_PER_MONTH` 3・`POCKET_LIMIT_PRO` 150・`POCKET_LIMIT_FREE` 30）
+    /// 数はサーバーの決まり（`PRO_MODELS` 6・`CUSTOM_EVERY_PRO` 2・`POCKET_LIMIT_PRO` 150・`POCKET_LIMIT_FREE` 30）。
+    /// 2026-11-23（札 #706）: Pro の月3回の作り直し（`REROLLS_PER_MONTH`）をやめ、好きなデザインの2投稿ごとに替えた
     func testTrunkBenefitStatesServerNumbers() {
         let trunk = ProBenefit.trunk
         XCTAssertEqual(trunk.icon, .trunk)
         XCTAssertEqual(trunk.title, "旅のトランクをもっと")
-        XCTAssertEqual(trunk.body, "特別なトランク 6 型、ラベルの図柄の作り直し 月 3 回、手持ち 150 枚（無料は 30 枚）")
+        XCTAssertEqual(trunk.body, "特別なトランク 6 型、好きなデザインを 2 投稿ごとに、手持ち 150 枚（無料は 30 枚）")
         XCTAssertEqual(TrunkModel.pro.count, 6)
-        XCTAssertEqual(ProBenefit.trunkRerollsPerMonth, 3)
+        XCTAssertEqual(ProBenefit.trunkCustomEveryPro, 2)
         XCTAssertEqual(TrunkState.proLimit, 150)
         XCTAssertEqual(TrunkState.freeLimit, 30)
     }
@@ -69,7 +71,7 @@ final class PaywallTrunkBenefitTests: XCTestCase {
         }
         let view = try source("Features/Pro/PaywallView.swift")
         let start = try XCTUnwrap(view.range(of: "static var trunk: ProBenefit {"))
-        let end = try XCTUnwrap(view.range(of: "static let trunkRerollsPerMonth"))
+        let end = try XCTUnwrap(view.range(of: "static let trunkCustomEveryPro"))
         let block = view[start.upperBound..<end.lowerBound].lowercased()
         for word in ["捨て", "必ず", "確定", "硬貨", "guarantee", "always", "discard", "throw away", "coin", "capsule"] {
             XCTAssertFalse(block.contains(word), "トランクの利点に「\(word)」")
@@ -85,25 +87,14 @@ final class PaywallTrunkBenefitTests: XCTestCase {
         }
     }
 
-    /// 2026-10-18 判断（見直し）: 「月3回」はトランクの作り直しの画面と断りにも直に書かれている。
-    /// 数の元を1つにするのはトランク担当と合わせて後で行うので、それまでは文に出る回数が案内と同じことを見張る
-    func testRerollCountMatchesTrunkScreens() throws {
-        let n = ProBenefit.trunkRerollsPerMonth
-        let reroll = try source("Features/Trunk/TrunkRerollView.swift")
+    /// 2026-11-23（札 #706）: 案内の「2 投稿ごと」は、アプリが読むサーバーの数（`custom.every`）の Pro の値と同じ。
+    /// 月の回数の言葉（「来月また」「月 N 回」）はどこにも残さない
+    func testCustomEveryMatchesTrunkScreens() throws {
+        let pro = try JSONDecoder.api.decode(TrunkState.self, from: Data(#"{"pocket":[],"isPro":true,"custom":{"n":0,"t":0}}"#.utf8))
+        XCTAssertEqual(pro.custom?.every, ProBenefit.trunkCustomEveryPro, "欄が欠けたときの Pro の既定が案内と違う")
         let text = try source("Core/Text/TrunkText.swift")
-        let checks: [(String, String, String)] = [
-            (reroll, #"毎月 (\d+) 回"#, "TrunkRerollView の「毎月 N 回」"),
-            (reroll, #"\((\d+) a month"#, "TrunkRerollView の「N a month」"),
-            (text, #"来月また(\d+)回"#, "TrunkText の「来月またN回」"),
-        ]
-        for (body, pattern, name) in checks {
-            let regex = try NSRegularExpression(pattern: pattern)
-            let matches = regex.matches(in: body, range: NSRange(body.startIndex..., in: body))
-            XCTAssertFalse(matches.isEmpty, "\(name) が見つからない（文が変わったらこのテストも直す）")
-            for match in matches {
-                let number = try XCTUnwrap(Range(match.range(at: 1), in: body).flatMap { Int(body[$0]) })
-                XCTAssertEqual(number, n, "\(name) が案内の月 \(n) 回と違う")
-            }
+        for word in ["来月また", "今月あと", "毎月 3 回"] {
+            XCTAssertFalse(text.contains(word), "月の回数の言葉が残っている: \(word)")
         }
     }
 

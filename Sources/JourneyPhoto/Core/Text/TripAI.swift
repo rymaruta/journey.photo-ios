@@ -105,7 +105,9 @@ enum TripAIDestination {
     /// 文を助詞で切る（「河口湖で1泊」→「河口湖」）
     static func chunks(_ text: String) -> [String] {
         let separators = ["、", "。", "，", ",", "\u{30FB}", " ", "　", "に", "で", "を", "と", "へ", "の", "が", "は", "も", "や",
-                          "から", "まで", "だけ", "かけて", "見える"]
+                          "から", "まで", "だけ", "かけて", "見える",
+                          // 2026-11-24: 「東京旅行」「京都観光」の後ろの語を切る（前は「東京旅行」が1語になり、市で読めなかった）
+                          "旅行", "観光", "旅"]
         var parts = [text]
         for sep in separators.sorted(by: { $0.count > $1.count }) {
             parts = parts.flatMap { $0.components(separatedBy: sep) }
@@ -129,20 +131,31 @@ enum TripAIDestination {
         }
         var found: [String: Int] = [:]   // "県|市" または "県|" → 点
         let parts = chunks(text)
+        // 2026-11-24 判断: 長い県の名前の中の字（「東京都」の中の「京都」）では当てない（`has`）
+        let shadows = prefectures.flatMap { [$0, prefectureShort($0)] }
+        func has(_ k: String) -> Bool { contains(text, k, outside: shadows) }
+        // 市の名前か観光スポットの名前がそのまま文にある市（強い当たり）。語の一部だけの当たり（「大阪」→ 名前に大阪を含む所の市）より先に使う
+        var strong: Set<String> = []
         for (key, rows) in byCity {
             let city = String(key.split(separator: "|", maxSplits: 1).last ?? "")
             let keys = cityKeys(city)
-            for k in keys where text.contains(k) { found[key, default: 0] += 10 * k.count + rows.count }
+            for k in keys where has(k) {
+                // 県と同じ名前で、旅の中心ではない市（「沖縄」→ 沖縄市）は、市の名前まで書いたときだけ市で読む
+                if k != city, notCenterCities.contains(key) { continue }
+                found[key, default: 0] += 10 * k.count + rows.count
+                strong.insert(key)
+            }
             for s in rows {
-                for n in [s.name] + (s.aliases?.value ?? []) where n.count >= 2 && text.contains(n) {
+                for n in [s.name] + (s.aliases?.value ?? []) where n.count >= 2 && has(n) {
                     found[key, default: 0] += 100 * n.count
+                    strong.insert(key)
                 }
             }
             for ch in parts where keys.contains(where: { $0.contains(ch) }) || rows.contains(where: { $0.name.contains(ch) }) {
                 found[key, default: 0] += 5 * ch.count
             }
         }
-        for p in prefectures where text.contains(p) || text.contains(prefectureShort(p)) {
+        for p in prefectures where has(p) || has(prefectureShort(p)) {
             found["\(p)|", default: 0] += 50
         }
         guard !found.isEmpty else { return nil }
@@ -151,11 +164,29 @@ enum TripAIDestination {
         let best = byPref.values.max() ?? 0
         let kept = byPref.filter { $0.value * 3 >= best }.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map(\.key)
         var cities: Set<String> = []
-        for key in found.keys {
+        // 2026-11-24 判断: 強い当たりの市があれば、それだけにする（前は「大阪」で、名前に「大阪」を含む所のある能勢町や東大阪市も
+        // 行き先の市になり、候補の上に剣尾山などの遠い山が来た）
+        let useStrong = found.keys.contains { strong.contains($0) && kept.contains(String($0.split(separator: "|").first ?? "")) }
+        for key in found.keys where !useStrong || strong.contains(key) {
             let parts = key.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
             if parts.count == 2, !parts[1].isEmpty, kept.contains(parts[0]) { cities.insert(parts[1]) }
         }
         return Match(prefectures: kept, cities: cities)
+    }
+
+    /// 県と同じ名前の市のうち、旅の中心ではない市（「沖縄」と書いた人は沖縄本島の全体を思っている。那覇・美ら海も候補に）
+    static let notCenterCities: Set<String> = ["沖縄県|沖縄市"]
+
+    /// `text` に `key` があるか。ただし `key` を含むもっと長い名前（`outside`・「東京都」）の中にしか無いときは無いとする
+    static func contains(_ text: String, _ key: String, outside: [String]) -> Bool {
+        guard !key.isEmpty, text.contains(key) else { return false }
+        let longer = outside.filter { $0.count > key.count && $0.contains(key) }
+        guard !longer.isEmpty else { return true }
+        var masked = text
+        for l in longer.sorted(by: { $0.count > $1.count }) {
+            masked = masked.replacingOccurrences(of: l, with: String(repeating: "\u{3000}", count: l.count))
+        }
+        return masked.contains(key)
     }
 
     /// 読めなかったときに出す県（行きたい場所の多い県から3つ）
@@ -190,7 +221,10 @@ enum TripAICandidates {
             guard let p = s.region?.prefecture, prefs.contains(p), !s.isDraft else { return false }
             return (s.region?.country ?? "").isEmpty
         }
-        let anchors = pool.filter { match.cities.contains($0.region?.city ?? "") }.compactMap(\.coords)
+        var anchors = pool.filter { match.cities.contains($0.region?.city ?? "") }.compactMap(\.coords)
+        // 2026-11-24 判断: 市で読めなかった（県だけ）ときは、観光スポットがいちばん集まっている所の周りから選ぶ
+        // （前は近さを見ず、「東京旅行」で三宅島、「沖縄 3泊4日」で与那国島や新城島が上に来て、1日に回れない組になった）
+        if anchors.isEmpty, let center = densest(pool.compactMap(\.coords)) { anchors = [center] }
         let season = TripAISeason.of(text)
         func score(_ s: OfficialSpot) -> Double {
             var v = 0.0
@@ -208,6 +242,16 @@ enum TripAICandidates {
             return a.spot.spotId < b.spot.spotId
         }
         return Array(sorted.prefix(limit).map { $0.spot })
+    }
+
+    /// まわり 30km にいちばん多く観光スポットがある所（同じ数なら先の所）
+    static func densest(_ points: [Photo.Coords]) -> Photo.Coords? {
+        var best: (point: Photo.Coords, count: Int)?
+        for p in points {
+            let n = points.filter { km(p, $0) <= 30 }.count
+            if best == nil || n > best!.count { best = (p, n) }
+        }
+        return best?.point
     }
 
     static func km(_ a: Photo.Coords, _ b: Photo.Coords) -> Double {
@@ -262,11 +306,61 @@ struct TripAIPlan: Codable, Equatable {
         return filled.isEmpty ? [[]] : filled
     }
 
+    /// 最初に作る回の見張り（2026-11-23 判断・端末の AI でもサーバーでも同じ）。題と理由を `AskGuard.leaks` に通し、
+    /// 漏れの形が混じった方を空にする（題が空なら呼び手が決まった題を使う）。理由に候補の番号（「3と7は近いので」
+    /// 「候補5」）が混じっていたら理由を空にする——利用者には番号が見えないので、読めない文になる
+    func screenedTitleAndReason() -> TripAIPlan {
+        var out = self
+        if AskGuard.leaks(title) { out.title = "" }
+        if AskGuard.leaks(reason) || Self.mentionsCandidateNumbers(reason) { out.reason = "" }
+        return out
+    }
+
+    /// 候補の番号の言い方（AI に渡した「1. 名前」の番号が答えに漏れた形）
+    static let candidateNumberPatterns: [String] = [
+        // 「候補3」「候補の3」「候補 No.3」
+        "候補\\s*(の|No\\.?|#)?\\s*[0-9]",
+        // 「番号」「3番」「3番目」（「3番線」「1番人気」も混じるが、旅の理由の1文には要らない）
+        "番号",
+        "(?<![0-9])[0-9]{1,2}\\s*番",
+        // 「3と7は」「2、5、8を」「1・4」——数字だけを並べた所（「1日目と2日目」「9時と15時」は数字の後に単位があるので当たらない）
+        "(?<![0-9])[0-9]{1,2}\\s*(と|や|、|,|\\u30FB|及び|および)\\s*[0-9]{1,2}(?![0-9])(?!\\s*(日|時|分|月|年|泊|km|キロ|か所|箇所|ヶ所|件|つ|人|円|%|％|度|m|メートル|時間|番))",
+        // 「(3)」「No.3」「#3」
+        "[(（]\\s*[0-9]{1,2}\\s*[)）]",
+        "(?i)(?<![A-Za-z])no\\.?\\s*[0-9]",
+        "#[0-9]",
+    ]
+
+    static func mentionsCandidateNumbers(_ text: String) -> Bool {
+        let t = text.folding(options: [.widthInsensitive], locale: nil)
+        return candidateNumberPatterns.contains { t.range(of: $0, options: .regularExpression) != nil }
+    }
+
     /// 理由の文に候補の外の県の名前があれば、理由ごと出さない（案「詳しく」）
     func reasonChecked(against candidates: [OfficialSpot]) -> String {
         let areas = candidates.map { "\($0.region?.prefecture ?? "")\($0.region?.city ?? "")\($0.name)" }.joined()
         let outside = TripAIText.prefectures.contains { reason.contains($0) && !areas.contains($0) }
         return outside ? "" : reason
+    }
+}
+
+// MARK: - 日の中の並び（2026-11-23 判断）
+
+/// 最初に作るときの日の中の並び（`TripAIRunner` が AI の並びのあとにかける）
+enum TripAIDayOrder {
+    /// 日ごとに、日の中を近い順と時間帯の順に並べ直す（日をまたいでは動かさない。場所の数も変えない）
+    static func ordered(_ days: [[OfficialSpot]]) -> [[OfficialSpot]] {
+        days.map { day in
+            guard day.count > 1 else { return day }
+            let byId = Dictionary(day.map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
+            let placed = TripDraft.plan(day.map(TripDraft.place(spot:)), dayCount: 1).flatMap { $0 }
+            let out = placed.compactMap { p -> OfficialSpot? in
+                if case .spot(let id, _) = p.item { return byId[id] }
+                return nil
+            }
+            // 並べ直しで数が変わったら（同じ場所が2つ、など）元のまま
+            return out.count == day.count ? out : day
+        }
     }
 }
 
@@ -297,7 +391,8 @@ enum TripAIText {
         "新潟", "富山", "石川", "福井", "山梨", "長野", "岐阜", "静岡", "愛知", "三重", "滋賀", "京都", "大阪", "兵庫", "奈良", "和歌山",
         "鳥取", "島根", "岡山", "広島", "山口", "徳島", "香川", "愛媛", "高知", "福岡", "佐賀", "長崎", "熊本", "大分", "宮崎", "鹿児島", "沖縄"]
 
-    static var placeholder: String { L("ひとこと足す（なくてよい）", "Add a note (optional)") }
+    /// 2026-11-24 判断: 行き先もここに打てると分かる例にする（前の「ひとこと足す（なくてよい）」では、札に無い行き先を打てると分からなかった）
+    static var placeholder: String { L("例：京都 2泊3日 紅葉（行き先も書けます）", "e.g. Kyoto, 3 days, autumn leaves") }
 
     /// 題が無いときの題（「金沢の旅」「石川の日帰り」）
     static func defaultTitle(place: String, days: Int) -> String {

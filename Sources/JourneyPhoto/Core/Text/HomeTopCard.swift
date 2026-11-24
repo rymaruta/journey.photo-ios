@@ -73,6 +73,8 @@ enum HomeTopCard {
         /// 出すかは `arrange` の人ごとの表（`spotSwipe`）が決める（1.1.84 のまとめ・第10章）。
         /// `cover` は左の写真に使う撮影スポット（写真を出せるものが無い回は nil・写真なしの札）
         case swipe(cover: OfficialSpot?)
+        /// 友達が、自分の行きたい場所で撮った写真（札 #710 の案9・`FriendWish`）。1日に1枚まで
+        case friendWish(FriendWish.Hit)
 
         /// 並びの中の目印。**種類ごとに1枚まで**なので種類で足りる（並び順で持つと、
         /// 一冊の札が下がったときに隣の札と取り違える）
@@ -88,6 +90,7 @@ enum HomeTopCard {
             case .theme: return "theme"
             case .quiz: return "quiz"
             case .swipe: return "spotSwipe"
+            case .friendWish: return "friendWish"
             }
         }
     }
@@ -133,10 +136,13 @@ enum HomeTopCard {
         switch audience {
         case .guest:
             return ["spotSwipe", "theme", "wishlistSeason", "inSeason"]
+        // 2026-11-23（札 #710 の案9）: 友達の行きたい場所の札（`friendWish`）は、旅の札のすぐ後ろ（話す・計画するの入口）。
+        // 新しい人は今週のお題と払う入口の後ろ。未ログインには出さない
         case .newcomer:
-            return ["theme", "spotSwipe", "wishlistSeason", "inSeason", "departure", "onTrip", "bookReady", "develop"]
+            return ["theme", "spotSwipe", "friendWish", "wishlistSeason", "inSeason", "departure", "onTrip", "bookReady", "develop"]
         case .regular:
-            return ["departure", "onTrip", "bookReady", "develop", "theme", "oneYearAgo", "wishlistSeason", "inSeason", "spotSwipe"]
+            return ["departure", "onTrip", "bookReady", "develop", "friendWish", "theme", "oneYearAgo", "wishlistSeason", "inSeason",
+                    "spotSwipe"]
         }
     }
 
@@ -146,9 +152,10 @@ enum HomeTopCard {
         case .guest:
             return ["spotSwipe", "theme", "wishlistSeason", "inSeason"]
         case .newcomer:
-            return ["theme", "spotSwipe", "departure", "onTrip", "bookReady", "develop", "wishlistSeason", "inSeason"]
+            return ["theme", "spotSwipe", "friendWish", "departure", "onTrip", "bookReady", "develop", "wishlistSeason", "inSeason"]
         case .regular:
-            return ["departure", "onTrip", "bookReady", "develop", "theme", "wishlistSeason", "inSeason", "spotSwipe", "oneYearAgo"]
+            return ["departure", "onTrip", "bookReady", "develop", "friendWish", "theme", "wishlistSeason", "inSeason", "spotSwipe",
+                    "oneYearAgo"]
         }
     }
 
@@ -204,23 +211,31 @@ enum HomeTopCard {
     ///   - spots: 撮影スポットの索引（取れなかった回は空＝季節の札が出ないだけ）
     ///   - wishlist: 「行きたい」の鍵（`WishlistStore.spotIds`・`SavedSpotKey`）
     ///   - develop: 現像前の旅（①・`DevelopTrips.candidate` が選んだもの）。旅の札（一冊ができた）の後ろに置く
+    ///   - photoCards: 自分の写真から決まる2枚（`photoCards(today:myPhotos:openedBookDays:timeZone:)`）。控えてあれば渡す
+    ///     （2026-11-24 札 #594・`HomeTopCardMemo.photoCards`）。nil ならここで作る
     static func cards(now: Date, plans: [TripPlan], myPhotos: [Photo],
                       openedBookDays: Set<String>, spots: [OfficialSpot] = [],
                       wishlist: Set<String> = [],
                       quiz: DailyQuiz? = nil,
                       develop: Choice? = nil,
+                      friendWish: FriendWish.Hit? = nil,
+                      photoCards: PhotoCards? = nil,
                       timeZone: TimeZone = .current) -> [Choice] {
         // 今日の一問は**今日のテーマの直後**（毎日替わる札どうしを並べる。1年前の振り返りより前）。
         // 取れなかった日は出さない（空き地を作らない）
         let daily: [Choice] = [.theme] + [quiz.map { Choice.quiz($0) }].compactMap { $0 }
         guard let today = today(now, in: timeZone) else { return daily }
+        let mine = photoCards ?? Self.photoCards(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays,
+                                                 timeZone: timeZone)
         let found: [Choice?] = [
             departure(today: today, plans: plans),
             onTrip(today: today, plans: plans),
-            bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
+            mine.bookReady,
             // 2026-11-12 判断（札 #543 ①）: 現像前の旅は**旅の札の並び**（帰ってきた旅の話）。種類を足すだけで、
             // 並べ方は「置き場」の担当が持つ
             develop.flatMap { if case .develop = $0 { return $0 } else { return nil } },
+            // 友達が行きたい場所で撮った（札 #710 の案9）。選ぶ順と並べる順は人ごとの表で決める
+            friendWish.map { Choice.friendWish($0) },
         ]
         // **今日の一問の選択肢（4つ）と同じスポットは、その日は季節の札の候補から外す**——名前つきの札と
         // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）。
@@ -237,8 +252,23 @@ enum HomeTopCard {
             wished,
             inSeason(today: today, spots: spots, excluding: seasonExcluded),
         ]
-        let yearAgo = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone)
-        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [yearAgo].compactMap { $0 }
+        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [mine.yearAgo].compactMap { $0 }
+    }
+
+    /// 自分の写真から決まる2枚（一冊ができた・1年前の今ごろ）。
+    ///
+    /// 2026-11-24 判断（札 #594・owner「アプリ全体的に挙動重い」1.2.1）: Mac run 1779 の `testUsageSurveyProbe` で、札の並び
+    /// （`home.topCard.choices`）が body のたびに 1 回 約 10ms（起動 7 回 127ms・写真の詳細の往復 19 回 217ms）かかっていた。
+    /// そのうち一冊の棚（`TripBook.shelfTrips`・全部の写真を日で束ねて並べる）と1年前（写真ごとに日を読む）は、
+    /// 写真・開いた印・今日が同じなら同じ答えになる。`HomeTopCardMemo.photoCards` がこれを控える
+    struct PhotoCards: Equatable {
+        let bookReady: Choice?
+        let yearAgo: Choice?
+    }
+
+    static func photoCards(today: Date, myPhotos: [Photo], openedBookDays: Set<String>, timeZone: TimeZone) -> PhotoCards {
+        PhotoCards(bookReady: bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
+                   yearAgo: oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone))
     }
 
     /// 札の並びの**1枚目**に、撮影スポットを払う入口を置く（2026-11-11 owner「撮影スポットを払う」の①・

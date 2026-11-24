@@ -13,5 +13,31 @@
 <dict>
     <key>aps-environment</key>
     <string>development</string>
+    <!--
+      「Apple でサインイン」（札 #601・2026-11-23）。
+      owner が App ID com.journeyphoto.JourneyPhoto で「Sign In with Apple」を有効にした（2026-11-23）。
+      staging の App ID は無い（staging の束はシミュレーターだけで、シミュレーターは署名のプロファイルを使わない）。
+      🔴 **この権限は別のコミットに分けてある**（main に入れるときに外せるように）。Mac ではまだ確かめていない
+    -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+    <!--
+      保存したパスワードの候補（webcredentials・2026-11-24・札 #661）。
+      ログインの欄の上に、iPhone に保存した journey-photo.com のパスワードを候補として出すため。
+      サイトの `/.well-known/apple-app-site-association` の `webcredentials.apps` に
+      このアプリ（5T76NZUL2L.com.journeyphoto.JourneyPhoto）が載っていて、はじめて結び付く（本番は 2026-11-20 から載っている）。
+      apex と www の両方で保存されうるので両方書く。`Tools/check-config.py` が Debug と Release で同じ中身か・AASA に載っているかを見張る。
+      🔴 owner が App ID com.journeyphoto.JourneyPhoto で「Associated Domains」を有効にしてから main に入れる
+      （CI の署名は既存のプロファイルを取るだけなので、付く前に入れると TestFlight の Archive が落ちる）。
+      Debug のバンドル ID（staging）は AASA に載せていないので、この構成では結び付かない。
+      同じ中身にしておくのは、シミュレーターで組む Debug の回でもこの権限ごとビルドを確かめるため
+    -->
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>webcredentials:journey-photo.com</string>
+        <string>webcredentials:www.journey-photo.com</string>
+    </array>
 </dict>
 </plist>

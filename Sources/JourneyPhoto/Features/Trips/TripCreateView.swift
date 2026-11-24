@@ -656,7 +656,7 @@ struct TripHolidayChips: View {
     var body: some View {
         if !pairs.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
-                Text(TripCreateDatesStep.holidayHeading)
+                Text(eyebrow: TripCreateDatesStep.holidayHeading)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityAddTraits(.isHeader)
@@ -839,7 +839,7 @@ struct TripCreateDraftStep: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(L("下書き", "Draft"))
+                    Text(eyebrow: L("下書き", "Draft"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     // 題（行き先から案を出す・直せる）
@@ -946,7 +946,7 @@ struct TripCreateDraftStep: View {
     private func row(_ place: TripDraft.Place, number: Int) -> some View {
         HStack(spacing: JPSpace.xs) {
             TripStopLabel(number: number, name: place.name, isSpot: place.isSpot,
-                          timeChip: TripDraft.timeChip(place.times))
+                          timeChips: TripDraft.timeChips(place.times))
             if let photo = spotPhoto(place) {
                 Color.clear
                     .frame(width: 44, height: 44)

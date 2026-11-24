@@ -194,7 +194,7 @@ struct PhotoTile: View {
                 if !category.isEmpty {
                     // 分類は小さく、字間を開けて上に置く（見出しの上の肩書き＝眉ラベル・11pt）。
                     // 写真の上なので色は白のまま（真鍮は黒い地の上だけ）
-                    Text(category)
+                    Text(eyebrow: category)
                         .jpEyebrow()
                         // 小さなタイルで折り返さない（肩書きは1行）
                         .lineLimit(1)

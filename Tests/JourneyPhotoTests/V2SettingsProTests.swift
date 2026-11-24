@@ -64,7 +64,7 @@ final class V2SettingsProTests: XCTestCase {
     func testSettingsGroupsUseBrassEyebrowAndCard() throws {
         let settings = try source("Features/Settings/SettingsView.swift")
         let group = slice(settings, from: "struct SettingsGroup", to: "struct SettingsActionLabel")
-        assertInOrder(["Text(title)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
+        assertInOrder(["Text(eyebrow: title)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
                        ".accessibilityAddTraits(.isHeader)", "JPCard { content }"], in: group, "設定の節")
         XCTAssertTrue(settings.contains("SettingsGroup(title) { content() }"), "設定の節が SettingsGroup を通らない")
         XCTAssertFalse(settings.contains("JPSectionTitle("), "設定に v1 の白い小見出しが残っている")
@@ -346,8 +346,13 @@ final class V2SettingsProTests: XCTestCase {
         XCTAssertEqual(SignInLayout.tileTilt, -4)
         let view = try source("Features/Auth/SignInView.swift")
         XCTAssertFalse(view.contains(".jpPillButton(.accent)"), "ログインの画面に真鍮の主ボタンが残っている")
-        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(SignInLayout.primaryStyle)").count - 1, 4,
-                       "ログイン・登録の完了・コードを送る・パスワードを変える の4つが白でない")
+        // ログインの主ボタンは画面の大きさで高さを替える（`.jpPillButton(SignInLayout.primaryStyle, height:)`・2026-11-23）
+        // 2026-11-23（模型 NL2x の確認コードの画面）: 「登録を完了する」は無くし（6桁で自動で確かめる）、
+        // 確認コードの画面は写真を外したので「パスワードを変える」「新しいコードを送る」は真鍮（`VerificationCodeLayout.primaryStyle`）
+        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(SignInLayout.primaryStyle").count - 1, 2,
+                       "ログイン・コードを送る の2つが白でない")
+        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(VerificationCodeLayout.primaryStyle").count - 1, 2,
+                       "確認コードの画面の主ボタン（パスワードを変える・新しいコードを送る）が真鍮でない")
         let header = slice(view, from: "private var tileHeader", to: "private func tile(")
         assertInOrder(["count: SignInLayout.tileColumns", ".rotationEffect(.degrees(SignInLayout.tileTilt))",
                        ".clipped()", "LinearGradient(stops:"], in: header, "ログインの写真のタイル")

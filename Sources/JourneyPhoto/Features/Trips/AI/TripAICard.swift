@@ -9,9 +9,11 @@ struct TripAINote: Equatable {
     var removed: [TripAIRouteCheck.Removed]
     /// 候補（「替える」の残り）
     var candidates: [OfficialSpot]
+    /// 行き先を選ばずに作り、アプリが決めた行き先（「行き先はおまかせで、○○にしました」・2026-11-23 owner）
+    var autoPlace: String? = nil
 
     static func == (a: TripAINote, b: TripAINote) -> Bool {
-        a.reason == b.reason && a.mode == b.mode && a.removed == b.removed
+        a.reason == b.reason && a.mode == b.mode && a.removed == b.removed && a.autoPlace == b.autoPlace
             && a.candidates.map(\.spotId) == b.candidates.map(\.spotId)
     }
 }

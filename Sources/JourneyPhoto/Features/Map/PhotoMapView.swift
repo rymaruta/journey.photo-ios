@@ -72,6 +72,8 @@ struct PhotoMapView: View {
     /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
     /// Apple の地点と取り合わせず、どれかを押したら他は下げる
     @State private var selectedOfficial: OfficialPins.Pin?
+    /// 地図の札の「最初の1枚を投稿する」で開く投稿（札 #710 の案7）
+    @State private var firstPost: TripStopPostTarget?
     /// 撮影スポットの「経路」の検索。押し直し・札の切り替え・画面を離れたら止める
     @State private var directionsTask: Task<Void, Never>?
     /// 一覧を開くとき（札の「写真を見る →」）
@@ -1520,7 +1522,7 @@ struct PhotoMapView: View {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 眉ラベル（v2 の板 MapPlace「PHOTO SPOT」）。**札はガラス（地図が透ける）なので白**——
                     // 真鍮は黒地の上だけ（CLAUDE.md）。下書きなら「下書き・未確認」
-                    Text(SpotScreen.eyebrow(review: pin.isDraft))
+                    Text(eyebrow: SpotScreen.eyebrow(review: pin.isDraft))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.muted)
                     // 題は明朝（板 MapPlace）
@@ -1556,6 +1558,27 @@ struct PhotoMapView: View {
                 }
                 Spacer()
                 // 2026-11-16 判断（使い勝手の見直し A7）: 右上の × はやめ、地図を押せば閉じる（`MapCardDismiss`）
+            }
+            // 写真の無い観光スポット（札 #710 の案7）: お願いする一言と「最初の1枚を投稿する」。
+            // 押す回数 札 → 観光スポットの頁 → 下まで送る → 投稿（約4）→ 札のボタン → 投稿（2）。
+            // 写真の数を読めていて0のときだけ（`FirstPhoto.announces`）。札はガラスの地なので白（真鍮は黒地の上だけ）
+            if let spot = model.officialSpot(for: pin),
+               FirstPhoto.announces(photosKnown: model.photosKnown,
+                                    count: FirstPhoto.count(spotId: pin.spotId, in: model.photos, links: model.photoLinks)) {
+                Text(FirstPhoto.emptyTitle + "。" + FirstPhoto.emptyMessage)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("map.officialCard.firstNote")
+                Button {
+                    var target = UploadSpotTarget(spot)
+                    target.announcesFirst = true
+                    firstPost = TripStopPostTarget(spot: target)
+                } label: {
+                    cardActionFace(FirstPhoto.postLabel, systemImage: "camera")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("map.officialCard.firstPost")
             }
 
             // 2026-11-16 判断（使い勝手の見直し A7・案の模型）: 下の段は**同じ幅の3つ**「行きたい | 経路 | スポットを見る」。
@@ -1601,6 +1624,11 @@ struct PhotoMapView: View {
             }
         }
         .modifier(MapCardStyle())
+        .sheet(item: $firstPost, onDismiss: { TabRouter.shared.postSheetClosed() }) { target in
+            NavigationStack {
+                UploadView(spot: target.spot, onSaved: { TabRouter.shared.notePosted($0) })
+            }
+        }
         // 札が出ている間、知らせ（「行きたい」に追加しました）を札の上に出す。札の「行きたい」を覆うと、もう一度押しても
         // 知らせを閉じるだけで戻せなかった（run 1604・1608・`ToastCenter.keepClearAbove`）
         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in

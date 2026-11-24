@@ -80,6 +80,8 @@ final class AuthStore: ObservableObject {
     var responseCache: URLCache = .shared
     /// ログアウトした時と道を残す置き場（`ExitTrail.keepSignOut`・札 #617。試験で差し替える）
     var trailDefaults: UserDefaults = .standard
+    /// ログイン画面の Apple・Google のボタンの前回の答え（`ExternalSignInMemory`。ログアウト・退会で消す。試験で差し替える）
+    var externalSignInMemory = ExternalSignInMemory()
 
     /// UI テストの見本の通信（`-JPPreviewLocalBackend`）のときだけ見本の認証（`PreviewBackend.authGateway`・Debug のみ）
     init(gateway: AuthStoreGateway = PreviewBackend.authGateway ?? .live) {
@@ -316,12 +318,7 @@ final class AuthStore: ObservableObject {
                 if case .invalidState = error { throw SignInIncomplete.leftoverSession }
                 throw error
             }
-            let id = try await self.gateway.currentUserId()
-            self.isSignedOutUncertain = false
-            self.signedOutByExpiry = false
-            self.gateway.latch.clear()
-            self.state = .signedIn(userId: id)
-            await refreshAdmin()
+            try await self.completeSignIn()
         }
         // 🔴 **ログインでは「アカウントが無い」と「違います」を同じ文にする**（Web の signIn と
         // 同じ）。分けると、アカウントの有無をログイン画面で確かめられる。種類（`lastFailure`）
@@ -330,6 +327,79 @@ final class AuthStore: ObservableObject {
             errorMessage = AuthMessage.text(for: .notAuthorized)
         }
     }
+
+    /// ログインが通ったあと（メールでも Apple でも同じ）。ログイン中にし、端末の印を外す
+    private func completeSignIn() async throws {
+        let id = try await gateway.currentUserId()
+        isSignedOutUncertain = false
+        signedOutByExpiry = false
+        gateway.latch.clear()
+        state = .signedIn(userId: id)
+        await refreshAdmin()
+    }
+
+    /// 「Apple でサインイン」（札 #601）。Apple の標準シートで受け取った資格情報をサーバーに渡し
+    /// （`start`＝`AppleSignInService.start`）、返ってきた Cognito のユーザー名に CUSTOM_AUTH でログインする
+    /// （答えはサーバーが出した使い捨ての券）。
+    ///
+    /// - Returns: サーバーの答え（新しいアカウントを作ったか）。失敗したら nil（`errorMessage` に理由）
+    @discardableResult
+    func signInWithApple(_ credential: AppleSignInCredential,
+                         start: @escaping @Sendable (AppleSignInCredential) async throws -> FederatedSignInStart)
+        async -> FederatedSignInStart? {
+        await signInFederated(failedMessage: Self.appleSignInFailed) { try await start(credential) }
+    }
+
+    /// 「Google でログイン」（札 #715）。流れは Apple と同じ（`start`＝`GoogleSignInService.start`）
+    @discardableResult
+    func signInWithGoogle(_ credential: GoogleSignInCredential,
+                          start: @escaping @Sendable (GoogleSignInCredential) async throws -> FederatedSignInStart)
+        async -> FederatedSignInStart? {
+        await signInFederated(failedMessage: Self.googleSignInFailed) { try await start(credential) }
+    }
+
+    /// 外のアカウントのログインの共通の流れ。前のログインが残っているときの扱いはメールのログインと同じ（`signIn` の注記）
+    private func signInFederated(failedMessage: String,
+                                 start: @escaping @Sendable () async throws -> FederatedSignInStart) async -> FederatedSignInStart? {
+        var started: FederatedSignInStart?
+        await run {
+            if self.isSignedOutUncertain || self.gateway.latch.isSet {
+                _ = await self.gateway.signOut()
+            }
+            let answer: FederatedSignInStart
+            do {
+                answer = try await start()
+            } catch let unlinked as FederatedSignInUnlinked {
+                // 本人が「サインインの方法」で解除した ID（サーバーの 409・`code`）。サーバーの文をログイン画面に出す
+                throw unlinked
+            } catch where FederatedSignInBusy.matches(error) {
+                // 2つの端末で同時に押した（サーバーの 409）。英語の画面にも出せる文にする
+                throw FederatedSignInBusy()
+            }
+            do {
+                _ = try await self.gateway.signInWithTicket(answer.username, answer.challengeAnswer)
+            } catch let error as AuthError {
+                if case .invalidState = error { throw SignInIncomplete.leftoverSession }
+                throw error
+            }
+            try await self.completeSignIn()
+            started = answer
+        }
+        // 🔴 Cognito の「違います」をそのまま出さない（「メールアドレスかパスワードが違います」は外のアカウントでは意味が通らない）
+        if started == nil, [.notAuthorized, .userNotFound].contains(lastFailure) {
+            errorMessage = failedMessage
+        }
+        return started
+    }
+
+    // 2026-11-23 判断（owner「この辺りの日本語長すぎる」）: 1文で言えることは1文。前置きは削る
+    static let appleSignInFailed = L("サインインできませんでした。もう一度お試しください",
+                                     "Couldn't verify your Apple sign-in. Please try again.")
+    static let googleSignInFailed = L("ログインできませんでした。もう一度お試しください",
+                                      "Couldn't verify your Google sign-in. Please try again.")
+    /// 同じ ID のログインが別の端末で途中（サーバーの 409）
+    static let federatedBusy = L("ほかの端末でログイン中です。少し待ってからお試しください",
+                                 "Sign-in is already in progress on another device. Please wait a moment and try again.")
 
     /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。
     /// **門は押したその場で閉じる**（`Task` の中で閉じると、描き直しの前に2回押せる——
@@ -394,6 +464,13 @@ final class AuthStore: ObservableObject {
         TripAIJobs.shared.signOut()
         // 旅行プランの出発の時刻の覚え（プランの番号と日付）も次の人に残さない（札 #677）
         TripStartStore.shared.forgetAll()
+        // 旅のスタンプ帳の前回の帳面（自分の写真と撮った場所・同じ起動の間だけの覚え）も次の人に残さない（札 #712）
+        StampBookModel.forget()
+        // Google でログインした人の、部品（GoogleSignIn-iOS）の中のログインも外す（札 #715・2026-11-23 確かめ役の3回目）。
+        // 外さないと、次に「Google でログイン」を押したとき、前の人の Google アカウントが選ばれたまま出る
+        gateway.forgetProviderSessions()
+        // ログイン画面の Apple・Google のボタンの前回の答えも消す（2026-11-23 判断。次の人は「覚えが無い」から始める）
+        externalSignInMemory.forget()
         state = .signedOut
         isAdmin = false
         errorMessage = nil
@@ -446,7 +523,7 @@ final class AuthStore: ObservableObject {
     func resendSignUpCode(username: String) async -> Bool {
         var ok = false
         await run {
-            try await AuthGateway.resendSignUpCode(username: username)
+            try await gateway.resendSignUpCode(username)
             ok = true
         }
         return ok
@@ -509,7 +586,7 @@ final class AuthStore: ObservableObject {
     func confirmSignUp(username: String, code: String) async -> Bool {
         var ok = false
         await run {
-            try await AuthGateway.confirmSignUp(username: username, code: code)
+            try await gateway.confirmSignUp(username, code)
             ok = true
         }
         // 🔴 **「もう確認済み」は成功として扱う**（Web の `confirmSignUp` と同じ）。確認は
@@ -574,6 +651,20 @@ struct AuthStoreGateway: Sendable {
     var latch: SignOutLatch = SignOutLatch()
     var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
         try await AuthGateway.signIn(email: email, password: password)
+    }
+    /// 外のアカウントの部品の中のログインを外す（ログアウト・退会のとき・`GoogleSignInClient.signOut`）。試験で差し替える
+    var forgetProviderSessions: @MainActor @Sendable () -> Void = { GoogleSignInClient.signOut() }
+    /// 登録の確認コードを確かめる・送り直す（`AuthGateway.confirmSignUp`・`resendSignUpCode`）。UI テストの見本の認証で差し替える
+    /// （確認コードの画面の6桁で自動で確かめる流れ・2026-11-23）
+    var confirmSignUp: @Sendable (_ username: String, _ code: String) async throws -> Void = { username, code in
+        try await AuthGateway.confirmSignUp(username: username, code: code)
+    }
+    var resendSignUpCode: @Sendable (_ username: String) async throws -> Void = { username in
+        try await AuthGateway.resendSignUpCode(username: username)
+    }
+    /// Apple・Google でのログインの最後の段（`AuthGateway.signInWithTicket`）。試験で差し替える
+    var signInWithTicket: @Sendable (_ username: String, _ challengeAnswer: String) async throws -> Bool = { username, answer in
+        try await AuthGateway.signInWithTicket(username: username, challengeAnswer: answer)
     }
 
     static let live = AuthStoreGateway(
@@ -681,6 +772,11 @@ enum AuthMessage {
     static let passwordRule =
         L("パスワードは8文字以上で、英大文字、小文字、数字、記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
           "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
+
+    /// 確認コードの画面の新しいパスワードの欄の下の短い決まり（模型 NL2x「パスワードの再設定」・2026-11-23）
+    static let passwordRuleShort =
+        L("8文字以上で、英大文字、小文字、数字、記号をそれぞれ1文字以上",
+          "At least 8 characters, with an uppercase letter, a lowercase letter, a number and a symbol")
 
     static func text(for failure: AuthFailure) -> String {
         switch failure {

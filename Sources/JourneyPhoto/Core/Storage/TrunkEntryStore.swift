@@ -289,6 +289,29 @@ enum TrunkEntryText {
         L("硬貨 \(max(0, n))", max(0, n) == 1 ? "1 coin" : "\(max(0, n)) coins")
     }
 
+    /// マイページとメニューの「旅のトランク」の行の説明（2026-11-23・札 #709・案の頁「トランクを見やすく」版3）。
+    /// いま何があるかを言う: 貼っていないラベルがあれば「貼っていないラベルが2枚あります」、無くて硬貨があれば
+    /// 「硬貨が3枚あります。カプセルを回せます」、どちらも 0・数が読めていないときは今までの説明の文（`detail`）
+    static func stock(_ summary: TrunkEntrySummary?) -> String {
+        guard let summary else { return detail }
+        if summary.unstuck > 0 {
+            let n = summary.unstuck
+            return L("貼っていないラベルが\(n)枚あります", n == 1 ? "1 label to stick" : "\(n) labels to stick")
+        }
+        if summary.coins > 0 {
+            let n = summary.coins
+            return L("硬貨が\(n)枚あります。カプセルを回せます",
+                     n == 1 ? "1 coin. Spin the capsule machine" : "\(n) coins. Spin the capsule machine")
+        }
+        return detail
+    }
+
+    /// 行の右の件数バッジ（真鍮・`CountBadge`）の数: 貼っていないラベルの枚数。0・読めていないときは出さない（nil）
+    static func badge(_ summary: TrunkEntrySummary?) -> Int? {
+        guard let n = summary?.unstuck, n > 0 else { return nil }
+        return n
+    }
+
     /// 札の題の下の行（型の名前・例「革の旅行鞄」）。いま描く型（Pro をやめたら最後の無料の型）
     static func modelName(_ state: TrunkState?) -> String? {
         state.map { TrunkText.info($0.effectiveModel).name }

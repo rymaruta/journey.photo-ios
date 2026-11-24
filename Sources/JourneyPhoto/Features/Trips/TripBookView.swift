@@ -14,8 +14,10 @@ struct TripBookView: View {
     /// （必ず開ける `/?photo=` に落ちる）
     var isPublic: (Photo) -> Bool = { _ in false }
     /// 自分の一冊か。人のプロフィールから開いた一冊は偽で、「この一冊を送る」を出さない
-    /// （`TripBook.canShare(_:isMine:)`・2026-10-16 判断）
-    var isMine = true
+    /// （`TripBook.canShare(_:isMine:)`・2026-10-16 判断）。
+    /// **既定の値を置かない**（2026-11-23 判断）: 前は既定が真で、入口が渡し忘れると人の一冊でも画像を送れる形だった。
+    /// 開く側が、自分の写真から作った一冊かを必ず書く（`OthersPhotoExportGuardTests`）
+    var isMine: Bool
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -51,7 +53,11 @@ struct TripBookView: View {
                 pages
             }
             .padding(.bottom, JPSpace.emptyTop)
+            // 横の払いは UIKit のパンで受ける（`TripDayFlipCatcher`）
+            .tripDayFlipCatcher()
         }
+        // 日のページを左右でめくる（札 #714・`TripDayFlip`）。行の id は `TripBook.pageRows` の見出しの id
+        .modifier(TripDayFlip(dayIDs: TripBook.days(of: book).map { TripBookPageFlip.headerID(day: $0.number) }))
         .webScreen()
         // **共有は下端の白い全幅「この一冊を送る」に一本化**（v2 の板 TripBookShare の C-1・2026-10-14）。
         // 右上の印は探しにくく、何を配るのか分からなかった。写真のある画面なので主ボタンは白
@@ -97,6 +103,9 @@ struct TripBookView: View {
         .task(id: "\(book.id)|\(book.cover?.id ?? "")|\(book.photos.count)|\(auth.userId ?? "")") {
             if cardOwner != auth.userId { cardURL = nil }
             cardOwner = auth.userId
+            // **本を開く動きの間は作らない**（大きな表紙を読んでカードを描くのは、開き切ってから・2026-11-24 判断）
+            try? await Task.sleep(nanoseconds: UInt64(TripBookMotion.openTotal * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             // **作れなかったら前の画像を捨てる**（表紙・枚数が替わったのに前の1枚を配っていた・
             // eaf0c48 のレビュー）。取り消されただけ（すぐ次の作り直しが来る）なら触らない
             let made = await makeCard()
@@ -184,7 +193,8 @@ struct TripBookView: View {
                         // 縮めて読む部品には替えない（2026-10-31 判断・札 #429）。表紙（画面の幅 × 3:4）を覆うには
                         // 元の画像とほぼ同じ画素が要り縮まない。同じ大きさの写真の詳細で替えた回は、メモリが減らず
                         // 閉じた後に増えた（`PhotoDetailView.heroImage` の注記）
-                        RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment)
+                        // 頁が広がっている間は棚で読んでおいた表紙を描き、大きな写真は開き切ってから（2026-11-24・`TripBookCoverPhoto`）
+                        TripBookCoverPhoto(cover: cover, quick: BookCoverCache.image(posted: book))
                     }
                     .clipped()
             }
@@ -206,7 +216,7 @@ struct TripBookView: View {
             VStack(alignment: .leading, spacing: 6) {
                 // 眉ラベル。**写真の上なので白**（板は真鍮だが、真鍮は夕日の
                 // 写真の上で読めなくなる・`BrandPalette` の規則）
-                Text(L("TRIP BOOK\u{2002}自動でまとまった旅", "TRIP BOOK\u{2002}Put together for you"))
+                Text(eyebrow: L("TRIP BOOK\u{2002}自動でまとまった旅", "TRIP BOOK\u{2002}Put together for you"))
                     .jpEyebrow()
                     .foregroundStyle(Color.white.opacity(0.88))
                     // 読み上げは「旅の一冊」（「トリップブック」と英語で読ませない）
@@ -399,6 +409,8 @@ struct TripBookView: View {
                          spoken: Self.spokenDayHeader(day.number, monthDay: TripBook.monthDay(day.date)),
                          title: day.place.isEmpty ? nil : LocationMatch.display(day.place))
             .padding(.bottom, JPSpace.s)
+            .tripDayHeader(id: TripBookPageFlip.headerID(day: day.number))
+            .accessibilityIdentifier("trips.day.\(day.number)")
     }
 
     /// ページの写真。**寸法が分かれば、読み込む前に縦横比で枠を取る**（2026-10-02）——

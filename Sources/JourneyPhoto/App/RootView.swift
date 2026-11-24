@@ -17,6 +17,9 @@ struct RootView: View {
     @EnvironmentObject private var messages: DMInboxStore
     /// メッセージの受信箱（見出しの吹き出し・通知から）
     @State private var showMessages = false
+    /// 「サインインの方法」のシート（知らせから・札 #601）
+    @State private var showSigninMethods = false
+    @State private var signinMethodsWait: Task<Void, Never>?
     /// 「AI に頼む」の画面（札 #675）と、開くときに欄に入れる字
     @State private var showAsk = false
     @State private var askPrefill: String?
@@ -709,7 +712,8 @@ struct RootView: View {
                                                  sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
             // 出したら、同じ投稿の知らせ（「投稿しました　カードにする」）だけ下ろす。別の投稿の失敗の知らせは残す
             if ready, auth.userId == userId, !Task.isCancelled, !ModalProbe.isPresenting(), postedSummary.present(summary) {
-                toasts.dismiss(ifShowing: PostedCardHabit.quietText)
+                // 文ではなく印で下ろす（1行目が「行きたい場所に行けました」などに替わっても下りる・2026-11-23）
+                toasts.dismiss(tagged: .posted)
             }
             // 「決めている途中」は出してから下ろす（下ろした瞬間に届いたラベルが、1枚に入らず知らせになるのを防ぐ）
             coverOffers.finishFirstPost(userId: userId, offer: nil, checked: checked)
@@ -987,7 +991,8 @@ struct RootView: View {
         // `-JPPreviewTrunkArrived 3` なら手持ちの見本を足して3枚（「まとめて貼る」の画面写真・2026-11-12）
         let more = TrunkSample.pocket.prefix(max(0, PreviewSession.trunkArrivedCount - 1))
             .map { TrunkArrivals.Arrival(label: $0, photoTitle: "") }
-        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")] + more, coins: 1)
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")] + more, coins: 1,
+                                         stamp: PreviewSession.trunkArrivedStamp)
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。
@@ -1059,7 +1064,7 @@ struct RootView: View {
     /// 「AI に頼む」の画面（札 #675・2026-11-21 判断）。上の帯の「✦ AI に頼む」、探すの結果の上の1行から全画面で開く。
     /// **修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
     private var tabsWithAsk: some View {
-        tabsWithMessages
+        tabsWithSigninMethods
             .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: tabRouter.askRequests) { _, _ in
                 showMenu = false
@@ -1071,6 +1076,47 @@ struct RootView: View {
                 AskScreen(engine: askEngine, prefill: askPrefill, onClose: { showAsk = false })
             }
             .onChange(of: auth.userId) { _, _ in askEngine.reset() }
+    }
+
+    /// 「サインインの方法」（札 #601・2026-11-23 owner）。「Apple でサインインできます」などの知らせを押したら、
+    /// 設定の同じ画面をシートで開く。**修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
+    private var tabsWithSigninMethods: some View {
+        tabsWithMessages
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
+            .onChange(of: router.signinMethodsRequests) { _, _ in takeSigninMethodsRequest() }
+            .onAppear { takeSigninMethodsRequest() }
+            .onChange(of: auth.userId) { _, _ in showSigninMethods = false }
+            .sheet(isPresented: $showSigninMethods) {
+                NavigationStack {
+                    SigninMethodsView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                SheetCloseButton(action: { showSigninMethods = false })
+                                    .accessibilityIdentifier("signinMethods.close")
+                            }
+                        }
+                }
+            }
+    }
+
+    /// 知らせを受け取る。ログインしていなければ開かない（前の人あての知らせを次の人で開かない）。
+    /// ほかの画面が上に出ていれば閉じられるのを待つ（お知らせ・メッセージと同じ待ち方・`activityWaitLimit`）
+    private func takeSigninMethodsRequest() {
+        guard router.takeSigninMethods() else { return }
+        signinMethodsWait?.cancel()
+        signinMethodsWait = Task { @MainActor in
+            let started = Date()
+            while !Task.isCancelled && auth.isResolving {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            let owner = auth.userId
+            while !Task.isCancelled && ModalProbe.isPresenting()
+                    && Date().timeIntervalSince(started) <= Self.activityWaitLimit {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            guard !Task.isCancelled, let owner, auth.userId == owner, !ModalProbe.isPresenting() else { return }
+            showSigninMethods = true
+        }
     }
 
     /// メッセージの受信箱（2026-11-10 札 #505）。**修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
@@ -1630,6 +1676,8 @@ struct RootView: View {
             NavigationStack {
                 SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
                            messagesUnread: messagesUnread)
+                    // 親が描き直されただけでは描き直さない（ホームと同じ・`SearchView+Equatable`・札 #594 2026-11-24）
+                    .equatable()
                     .perfMark("tab.search.appear")
             }
             .tint(WebTheme.foreground)
@@ -1649,6 +1697,8 @@ struct RootView: View {
                              onOpenNotifications: { openNotificationsFromBell() },
                              messagesUnread: messagesUnread,
                              onPost: { openCreateFlow(.post) })
+                    // 親が描き直されただけでは描き直さない（ホームと同じ・`PhotoMapView+Equatable`・札 #594 2026-11-24）
+                    .equatable()
                     .perfMark("tab.map.appear")
             }
             // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
@@ -1832,6 +1882,7 @@ extension RootView {
             ("tabsWithPushPrimer", t { (v: RootView) in v.tabsWithPushPrimer }),
             ("tabsWithReviewPrompt", t { (v: RootView) in v.tabsWithReviewPrompt }),
             ("tabsWithAsk", t { (v: RootView) in v.tabsWithAsk }),
+            ("tabsWithSigninMethods", t { (v: RootView) in v.tabsWithSigninMethods }),
             ("tabsWithMessages", t { (v: RootView) in v.tabsWithMessages }),
             ("tabsWithWhatsNew", t { (v: RootView) in v.tabsWithWhatsNew }),
             ("tabs", t { (v: RootView) in v.tabs }),

@@ -139,10 +139,10 @@ final class UXPlanStageTests: XCTestCase {
     func testTodayHeading() {
         let date = TakenDay.label("2026-12-17") ?? ""
         XCTAssertEqual(TripPlanDetailView.dayHeadingText(1, date: "2026-12-17", today: true),
-                       L("今日\u{2002}2 日目\u{2002}", "Today\u{2002}Day 2\u{2002}") + date)
+                       L("今日\u{2002}2日目\u{2002}", "Today\u{2002}Day 2\u{2002}") + date)
         XCTAssertEqual(TripPlanDetailView.dayHeadingText(1, date: "2026-12-17", today: false),
-                       L("2 日目\u{2002}", "Day 2\u{2002}") + date)
-        XCTAssertEqual(TripPlanDetailView.dayHeadingText(0, date: nil, today: false), L("1 日目", "Day 1"))
+                       L("2日目\u{2002}", "Day 2\u{2002}") + date)
+        XCTAssertEqual(TripPlanDetailView.dayHeadingText(0, date: nil, today: false), L("1日目", "Day 1"))
     }
 
     /// 札を押すとプランを直に開くのは出発の当日と旅の最中。出発の前の日までは一覧

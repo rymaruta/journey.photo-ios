@@ -228,7 +228,7 @@ struct LibraryTripIntroView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text(L("端末の写真から", "From your photos"))
+                Text(eyebrow: L("端末の写真から", "From your photos"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Text(L("撮りためた旅を、まとめて残す", "Keep the trips you've shot, all at once"))

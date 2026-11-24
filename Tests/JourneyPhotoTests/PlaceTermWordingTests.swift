@@ -83,8 +83,7 @@ final class PlaceTermWordingTests: XCTestCase {
     /// 公式の撮影スポットの頁（`OfficialSpotView`）は「撮影スポット」と呼ぶ
     func testOfficialSpotPageSaysSatsueiSpot() throws {
         let official = try japaneseStrings(in: sourcesRoot.appendingPathComponent("Features/Spots/OfficialSpotView.swift"))
-        for text in ["この観光スポットの魅力", "この観光スポットの写真を投稿", "近くの観光スポット",
-                     "この観光スポットから、次の一枚へ"] {
+        for text in ["この観光スポットの魅力", "この観光スポットの写真を投稿", "近くの観光スポット"] {
             XCTAssertTrue(official.contains { $0.text == text }, "公式の頁に「\(text)」が無い")
         }
         XCTAssertTrue(official.contains { $0.text.hasPrefix("この観光スポットの写真（") })

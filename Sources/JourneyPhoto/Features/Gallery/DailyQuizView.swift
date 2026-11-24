@@ -44,7 +44,7 @@ struct DailyQuizView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(eyebrow)
+                Text(eyebrow: eyebrow)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     // 英字の眉は読み上げでは日本語で。**日付まで読む**（上書きで日付を落とさない）
@@ -226,7 +226,7 @@ struct DailyQuizView: View {
         let answer = quiz.answerChoice
         let guideSpot = spots.first { $0.slug == answer.slug && !$0.isDraft }
         return VStack(alignment: .leading, spacing: 4) {
-            Text(correct ? L("正解", "CORRECT") : L("残念", "NOT QUITE"))
+            Text(eyebrow: correct ? L("正解", "CORRECT") : L("残念", "NOT QUITE"))
                 .jpEyebrow()
                 .foregroundStyle(correct ? WebTheme.accent : WebTheme.muted2)
             Text(answer.name)

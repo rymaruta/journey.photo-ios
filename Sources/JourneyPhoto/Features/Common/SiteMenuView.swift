@@ -23,7 +23,8 @@ import SwiftUI
 /// - タブと重なる3行（撮影地マップ＝マップのタブ・マイページ＝タブ・保存＝マイページの保存のタブ）を外した
 /// - 設定の「旅の道具」の節（6行）をここへ移した。設定はオン・オフと決まりだけ（設定の中にしか無い入口を作らない）
 /// - 節は「旅の準備」（旅行プラン・共同アルバム・光と天気の知らせ・保存した旅）と
-///   「旅の楽しみ」（すれちがい乗車券・旅のトランク・とおまわり号）。輪から外れる楽しみは下の段
+///   「旅の楽しみ」（すれちがい乗車券・旅のトランク・旅のスタンプ帳）。輪から外れる楽しみは下の段
+///   （とおまわり号は 2026-11-23 に消し、同じ所に旅のスタンプ帳を置いた・札 #709・#712）
 /// - いいねした写真・設定・ログアウトは「ほか」。眉の節は3つ
 /// - 意見を送る（札 #546）・使い方（札 #517）は、それぞれの札の担当がこの「ほか」に足す
 struct SiteMenuView: View {
@@ -98,7 +99,8 @@ struct SiteMenuView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("menu.pass")
                         trunkRow
-                        camperRow
+                        // 旅のスタンプ帳（2026-11-23・札 #712）。とおまわり号の行があった所。中身と行き先は `StampBookEntry`
+                        StampBookMenuRow()
                     }
                 }
 
@@ -167,7 +169,9 @@ struct SiteMenuView: View {
     }
 
     /// 旅のトランク（2026-11-12 に設定の「旅の道具」から移した）。**口が読めたことのある人だけ**（`TrunkEntryRule.shows`）。
-    /// 右の値は硬貨の枚数（読めていれば）。読み上げは硬貨と貼っていないラベルの有無
+    /// 2026-11-23（札 #709・案の頁 版3）: 説明の行で「いま何があるか」を言い（`TrunkEntryText.stock`）、
+    /// 貼っていないラベルの枚数を真鍮の件数バッジで出す（0 は出さない）。右の「硬貨 N」の値はやめた（説明の行と重なる）。
+    /// 読み上げは硬貨と貼っていないラベルの有無
     @ViewBuilder
     private var trunkRow: some View {
         if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
@@ -178,8 +182,8 @@ struct SiteMenuView: View {
                 .onDisappear { trunkEntry.markStale() }
             } label: {
                 SiteMenuRow(title: TrunkEntryText.title, systemImage: "suitcase",
-                            note: TrunkEntryText.detail,
-                            value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
+                            note: TrunkEntryText.stock(trunkEntry.summary),
+                            badge: TrunkEntryText.badge(trunkEntry.summary))
             }
             .buttonStyle(.plain)
             // 押せる1つのボタンのまま、名前と値を付ける（`.ignore` で包むと VoiceOver の2回叩きで開けない）
@@ -194,22 +198,6 @@ struct SiteMenuView: View {
                 }
             }
         }
-    }
-
-    /// 写真で作るキャンピングカー「とおまわり号」（2026-11-12 に設定から移した）。**メニューは自分の写真を持たない**ので、
-    /// 行き先が自分で読む（`CamperGarageLoader`・読めるまでは車の画面を出さない）
-    private var camperRow: some View {
-        NavigationLink {
-            MyNameLoader { name in
-                CamperGarageLoader(ownerName: name, userId: auth.userId)
-            }
-        } label: {
-            SiteMenuRow(title: CamperText.carName, systemImage: "bus",
-                        note: L("写真で作るキャンピングカー、撮るほど部品が集まる",
-                                "A camper made from your photos, collect parts as you shoot"))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("menu.camper")
     }
 
     /// 規約のリンク（真鍮・黒地の上・外へ出るリンク——CLAUDE.md の owner の好み「出典と規約のリンクは真鍮」）と版
@@ -258,6 +246,10 @@ struct SiteMenuRow: View {
     let note: String
     /// 右の値（入り切り・硬貨の枚数・保存した旅の数。2026-11-12 に設定の行から移したもの）。無ければ出さない
     var value: String? = nil
+    /// 右の件数バッジ（真鍮・`CountBadge`）。無ければ出さない（旅のトランクの貼っていないラベル・2026-11-23）
+    var badge: Int? = nil
+    /// 右の小さな絵（矢印の手前・旅のスタンプ帳の最近の3つ・2026-11-23 札 #712）。無ければ出さない
+    var accessory: AnyView? = nil
 
     /// 行の高さ（板の 72）
     nonisolated static let height: CGFloat = 72
@@ -290,6 +282,10 @@ struct SiteMenuRow: View {
                     .foregroundStyle(WebTheme.text2)
                     .lineLimit(1)
             }
+            if let badge {
+                CountBadge(count: badge, maximum: 99)
+            }
+            if let accessory { accessory }
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(WebTheme.text3)
@@ -333,7 +329,7 @@ struct SiteMenuPlainRow: View {
     }
 }
 
-/// 自分の名前を読んでから中身に渡す（旅のトランク・とおまわり号の画面は持ち主の名前を出す）。
+/// 自分の名前を読んでから中身に渡す（旅のトランクの画面は持ち主の名前を出す）。
 /// 読めるまでは nil で出す（どちらの画面も名前なしの形で描ける）。2026-11-12・メニューから開く口のため
 struct MyNameLoader<Content: View>: View {
     @ViewBuilder let content: (String?) -> Content

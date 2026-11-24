@@ -13,6 +13,8 @@ struct UploadSpotTarget: Equatable {
     let name: String
     /// 公開してよい座標（約1km）。無いスポットは写真の位置のまま
     let coords: Photo.Coords?
+    /// 開いたときに、この観光スポットの写真が0枚と読めていた（札 #710 の案7）。投稿のあと「〇〇の最初の1枚になりました」と言う
+    var announcesFirst = false
 
     init(spotId: String, name: String, coords: Photo.Coords?) {
         self.spotId = spotId
@@ -22,6 +24,13 @@ struct UploadSpotTarget: Equatable {
 
     init(_ spot: OfficialSpot) {
         self.init(spotId: spot.spotId, name: spot.name, coords: spot.coords)
+    }
+
+    /// 「最初の1枚」と言ってよい行き先にする（札 #710 の案7）
+    func announcing(_ first: Bool) -> UploadSpotTarget {
+        var target = self
+        target.announcesFirst = first
+        return target
     }
 
     /// 写真の位置がスポットからこれより離れていたら、そのスポットの写真とみなさない
@@ -627,6 +636,9 @@ final class UploadViewModel: ObservableObject {
     var onSaved: ((Photo) -> Void)?
     /// この送信で保存が通った写真の ID（初めての投稿の「この1枚をカバーに」・`CoverOfferStore.notePosted`・#304）
     private var savedPhotoIds: [String] = []
+    /// この送信で保存が通った写真（保存の応答の行）。投稿の知らせが「行きたい場所に行けました」
+    /// 「最初の1枚になりました」を決めるのに使う（札 #710 の案1・7・`PostUploadCenter.placeNotice`）
+    private(set) var savedPhotos: [Photo] = []
     /// その写真の持ち主（保存の応答の行の `userId`。無ければ下書きの持ち主）
     private var savedPhotoOwner: String?
     /// 送信中。**読み込み中とは分ける**——一緒にすると、写真を選んでいる
@@ -2052,6 +2064,7 @@ final class UploadViewModel: ObservableObject {
         /// 送れなかった写真（「n枚目からもう一度」の番号に使う）
         var failedIds: [UUID] = []
         savedPhotoIds = []
+        savedPhotos = []
         savedPhotoOwner = nil
         var failures: [String] = []
         /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
@@ -2068,8 +2081,8 @@ final class UploadViewModel: ObservableObject {
         var labelNotice: TrunkArrivals.Notice?
         /// 届いた硬貨の数（公開の投稿1件で1枚・2026-10-17 次の版）
         var dealtCoins = 0
-        /// とおまわり号の届いた部品（2026-10-19 第2段）。自分の車の画面を開いたときの「届いた」で見せる
-        var camperAdded: [String] = []
+        /// 上がった写真の観光スポット（旅のスタンプ帳の「押される瞬間」・札 #712）。選んだもの → 自動の候補
+        var stampSpotIds: [String] = []
         let queue = items.map(\.id)
         // 🔴 **送り始める前に、送るものを控えに書く**（2026-10-16 判断）。以前は下書きから開き直した
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
@@ -2123,7 +2136,13 @@ final class UploadViewModel: ObservableObject {
                 if let label = outcome.label { dealtLabels.append((label, outcome.title, outcome.photoURL, outcome.shareable)) }
                 if let notice = TrunkArrivals.Notice(outcome.labelSkipped) { labelNotice = notice }
                 dealtCoins += outcome.coin
-                camperAdded += outcome.camperAdded
+                // 保存で送った観光スポット、無ければ自動の候補（本人が切った写真は外す）。送った値と同じ決まり（`makeDraft`）
+                let explicitSpot = UploadSpotTarget.spotIdToSend(screen: spot, for: item)
+                let autoSpot = explicitSpot == nil ? autoSpotCandidate(for: item) : nil
+                if let spotId = StampMoment.spotId(explicit: explicitSpot, candidate: autoSpot,
+                                                   off: autoSpotOff(for: item, candidate: autoSpot)) {
+                    stampSpotIds.append(spotId)
+                }
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -2162,11 +2181,11 @@ final class UploadViewModel: ObservableObject {
         // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す（`RootView` が待つ）。
         // **全部上がった回に限らない**（2026-10-17 の読み直し）——一部だけ上がった・曲が付かなかった・前の保存が
         // 通っていた回でも、配られたラベルは手持ちに届いている。届かなかった理由が「手持ちがいっぱい」「容量」なら一言
+        // 旅のスタンプ帳（札 #712・2026-11-23 判断）: 初めての観光スポットなら、届いた画面の硬貨のあとに押す（`StampMoment`）
+        let stamp = StampBookModel.shared.pressed(spotIds: stampSpotIds, userId: savedPhotoOwner ?? draftOwner)
         TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title,
                                                               photoURL: $0.photoURL, shareable: $0.shareable) },
-                                     notice: labelNotice, coins: dealtCoins)
-        // とおまわり号（2026-10-19 第2段）: 投稿で届いた部品を本人の控えに入れる（車の画面の「届いた」で見せる）
-        CamperStore.receive(camperAdded, userId: savedPhotoOwner ?? draftOwner)
+                                     notice: labelNotice, coins: dealtCoins, stamp: stamp)
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
@@ -2300,8 +2319,6 @@ final class UploadViewModel: ObservableObject {
         var labelSkipped: TrunkLabelSkip?
         /// 配られた硬貨（0 か 1・2026-10-17 次の版）
         var coin = 0
-        /// とおまわり号の届いた部品（保存の応答の `camper.added`・2026-10-19 第2段）
-        var camperAdded: [String] = []
         /// 送った題（届いた画面の「「…」を投稿したお礼です」）
         var title = ""
         /// 保存の応答の写真の一覧用の画像（届いた画面の写真・2026-11-08）
@@ -2366,7 +2383,6 @@ final class UploadViewModel: ObservableObject {
             outcome.label = saved.label
             outcome.labelSkipped = saved.labelSkipped
             outcome.coin = saved.coin
-            outcome.camperAdded = saved.camperAdded
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }
@@ -2395,6 +2411,7 @@ final class UploadViewModel: ObservableObject {
         stagedEdits[item.id] = nil
         if let photo {
             savedPhotoIds.append(photo.id)
+            savedPhotos.append(photo)
             if savedPhotoOwner == nil { savedPhotoOwner = photo.userId }
             onSaved?(photo)
         }

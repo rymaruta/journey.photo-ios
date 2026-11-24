@@ -87,7 +87,6 @@ final class ScreenStatesTests: XCTestCase {
             ("Features/Trips/TripAddSheet.swift", "ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""),
             ("Features/Trips/TripCreateView.swift", "ErrorBanner(title: L(\"行きたい場所を読み込めませんでした\""),
             ("Features/Trips/TripPlanPickSheet.swift", "ErrorBanner(title: L(\"行きたい場所を読み込めませんでした\""),
-            ("Features/Camper/CamperGarageLoader.swift", "ErrorBanner(title: L(\"写真を読み込めませんでした\""),
         ]
         for (path, call) in expected {
             XCTAssertTrue(try source(path).contains(call), "\(path) の見出しが「\(call)」でない")
@@ -128,7 +127,7 @@ final class ScreenStatesTests: XCTestCase {
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"ブロック中です\""),
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"メッセージを送れません\""),
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"この会話は表示できません\""),
-            ("Features/Trunk/TrunkRerollView.swift", "EmptyState(icon: nil, message: L(\"ラベルが見つかりませんでした。"),
+            ("Features/Trunk/TrunkCustomView.swift", "EmptyState(icon: nil, message: L(\"ラベルが見つかりませんでした。"),
             ("Features/Map/NearbyPhotosSheet.swift", "EmptyState(icon: nil, title: L(\"この範囲には、まだ写真がありません\""),
             ("Features/Trips/TripPlanPickSheet.swift", "EmptyState(icon: nil, title: L(\"行きたい場所はまだありません\""),
             ("Features/Profile/BadgeShelfView.swift", "EmptyState(icon: nil, message: L(\"まだメダルはありません。"),

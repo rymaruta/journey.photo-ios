@@ -139,6 +139,8 @@ struct AskWideSpotCard: View {
 struct AskSpotStack: View {
     let spots: [OfficialSpot]
     let reasons: [String: String]
+    /// その回の季節（`AskSpotCarousel.season` と同じ）
+    var season: ShootingTime.Season? = nil
     let officialSpots: [OfficialSpot]
     let photos: [Photo]
     let photosKnown: Bool
@@ -146,7 +148,7 @@ struct AskSpotStack: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(spots) { spot in
-                AskSpotCard(spot: spot, reason: reasons[spot.spotId] ?? AskLibrary.guide(for: spot, query: .init()),
+                AskSpotCard(spot: spot, reason: reasons[spot.spotId] ?? AskLibrary.guide(for: spot, season: season),
                             officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
             }
         }

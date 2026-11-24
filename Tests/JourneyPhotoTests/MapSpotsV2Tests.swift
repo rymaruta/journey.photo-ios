@@ -188,7 +188,8 @@ final class MapSpotsV2Tests: XCTestCase {
         }
         XCTAssertEqual(count(".jpPillButton(.primary, height: Self.cardButtonHeight)", in: text), 1)
         XCTAssertEqual(count(".jpPillButton(.outline, height: Self.cardButtonHeight)", in: text), 1)
-        XCTAssertEqual(count("cardActionFace(", in: text), 4, "観光スポットの札の3つが同じ顔を通っていない")
+        // 2026-11-23（札 #710 の案7）: 写真の無い観光スポットの「最初の1枚を投稿する」も同じ顔（3つ＋1つ＋定義）
+        XCTAssertEqual(count("cardActionFace(", in: text), 5, "観光スポットの札のボタンが同じ顔を通っていない")
         XCTAssertFalse(text.contains("cornerRadius: 18"), "v1 の角 18 の札が残っている")
         let card = segment(text, from: "struct MapCardStyle: ViewModifier {")
         assertInOrder([".padding(JPSpace.m)", ".jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.xl)"],
@@ -208,7 +209,7 @@ final class MapSpotsV2Tests: XCTestCase {
             XCTAssertFalse(segment(text, from: name).contains("WebTheme.accent)"), "\(name) の中に真鍮がある")
         }
         let officialCard = segment(text, from: "private func officialCard(")
-        assertInOrder(["Text(SpotScreen.eyebrow(review: pin.isDraft))", ".jpEyebrow()",
+        assertInOrder(["Text(eyebrow: SpotScreen.eyebrow(review: pin.isDraft))", ".jpEyebrow()",
                        ".foregroundStyle(WebTheme.muted)", "Text(pin.name)", ".font(JPFont.cardTitle)"],
                       in: officialCard, "観光スポットの札の眉と題")
         let info = segment(text, from: "private func placeInfo(")
@@ -285,7 +286,7 @@ final class MapSpotsV2Tests: XCTestCase {
     func testOfficialSpotMapBottomBar() throws {
         let view = try source("Features/Spots/OfficialSpotMapView.swift")
         let bar = segment(view, from: "private func bottomBar(")
-        assertInOrder(["Text(SpotScreen.eyebrow(review: spot.isDraft))", ".jpEyebrow()",
+        assertInOrder(["Text(eyebrow: SpotScreen.eyebrow(review: spot.isDraft))", ".jpEyebrow()",
                        "spot.isDraft ? WebTheme.muted : WebTheme.accent",
                        ".font(JPFont.cardTitle)", ".foregroundStyle(WebTheme.text2)",
                        "Text(\"↗\")", ".jpPillButton(.main(onPhoto: false))",
@@ -376,11 +377,13 @@ final class MapSpotsV2Tests: XCTestCase {
 
     /// 写真0枚は破線の札（明朝 18 の見出し・13 の text-2・投稿のボタン）。投稿のボタンは1つの口
     func testEmptyPhotosCardIsDashed() throws {
-        XCTAssertEqual(OfficialSpotView.emptyDashOpacity, 0.2)
+        // 2026-11-23（札 #710 の案7）: 破線は真鍮 60%・1.5（黒地の上の合図）
+        XCTAssertEqual(OfficialSpotView.emptyDashOpacity, 0.6)
+        XCTAssertEqual(OfficialSpotView.emptyDashWidth, 1.5)
         let text = try source(official)
         let photos = segment(text, from: "private var spotPhotos: some View {")
         assertInOrder(["if showsEmptyPhotosCard {", ".font(JPFont.rowTitle)", ".foregroundStyle(WebTheme.text2)",
-                       "postButton", "StrokeStyle(lineWidth: JPStroke.hairline, dash: [4, 4])",
+                       "postButton", "StrokeStyle(lineWidth: Self.emptyDashWidth, dash: [4, 4])",
                        "} else {", "PhotoGrid(photos: linked)", "postButton"], in: photos, "この観光スポットの写真")
         XCTAssertEqual(count(".accessibilityIdentifier(\"spot.official.post\")", in: text), 1)
         // 主ボタンの色は共通の決まりのまま（写真があれば白・無ければ真鍮）
@@ -412,7 +415,7 @@ final class MapSpotsV2Tests: XCTestCase {
                    "map.regionSpotRow", "map.list.categoryNote"]),
             (official, ["spot.official", "spot.official.photoCredit", "spot.official.draftNotice",
                         "spot.official.wish", "spot.official.map", "spot.official.directions",
-                        "spot.official.journeyCue", "spot.official.samples", "spot.official.composeGuide",
+                        "spot.official.samples", "spot.official.composeGuide",
                         "spot.official.sampleCard", "spot.official.sampleCredit", "spot.official.light",
                         "spot.official.light.date", "spot.official.light.prev", "spot.official.light.next",
                         "spot.official.light.today", "spot.official.check", "spot.official.post",

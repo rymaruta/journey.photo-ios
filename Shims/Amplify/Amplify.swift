@@ -79,6 +79,14 @@ public enum AuthSignInStep {
     case done
     case confirmSignUp(AdditionalInfo? = nil)
     case resetPassword(AdditionalInfo? = nil)
+    /// CUSTOM_AUTH の問い（Apple でサインイン・札 #601）。答えは `confirmSignIn(challengeResponse:)`
+    case confirmSignInWithCustomChallenge(AdditionalInfo? = nil)
+}
+/// 本物の `AuthSignInRequest.Options`（プラグインごとの指定は `pluginOptions` に入れる）
+public enum AuthSignInRequest {
+    public struct Options {
+        public init(pluginOptions: Any? = nil) {}
+    }
 }
 public struct AuthSignInResult {
     public let isSignedIn: Bool = false
@@ -125,7 +133,12 @@ public enum Amplify {
         public static func resendSignUpCode(for username: String) async throws -> AuthCodeDeliveryDetails {
             fatalError("模型")
         }
-        public static func signIn(username: String?, password: String?) async throws -> AuthSignInResult {
+        public static func signIn(username: String? = nil, password: String? = nil,
+                                  options: AuthSignInRequest.Options? = nil) async throws -> AuthSignInResult {
+            fatalError("模型")
+        }
+        /// 問いに答える（CUSTOM_AUTH・Apple でサインインの identity token）
+        public static func confirmSignIn(challengeResponse: String) async throws -> AuthSignInResult {
             fatalError("模型")
         }
         public static func signOut() async -> any AuthSignOutResult { ShimSignOutResult() }

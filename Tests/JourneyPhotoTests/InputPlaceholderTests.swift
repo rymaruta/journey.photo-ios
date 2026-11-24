@@ -45,7 +45,7 @@ final class InputPlaceholderTests: XCTestCase {
             #"TextField(L("グループの名前", "Group name"), text: $renameText)"#,
         ],
         "Features/Trips/TripPlanDetailView.swift": [
-            #"TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)"#,
+            #"TextField(L("例：朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)"#,
         ],
     ]
 

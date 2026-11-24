@@ -321,7 +321,7 @@ struct VisitedMapScreen: View {
         let names = model.candidates
         if !names.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
-                Text(L("写真の候補 \(names.count) 県", "Suggested from photos: \(names.count)"))
+                Text(eyebrow: L("写真の候補 \(names.count) 県", "Suggested from photos: \(names.count)"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityAddTraits(.isHeader)
@@ -421,7 +421,7 @@ struct VisitedMapScreen: View {
         // 札を開いている間は出さない（札の下に隠れる）。閉じたあとに出る
         if let celebration = model.celebration, model.selected == nil {
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                Text(VisitedMapText.celebrationEyebrow(celebration))
+                Text(eyebrow: VisitedMapText.celebrationEyebrow(celebration))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Text(VisitedMapText.celebrationTitle(celebration))

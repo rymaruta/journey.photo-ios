@@ -108,9 +108,9 @@ final class TripTimesTests: XCTestCase {
         let early = TripTimes.schedule(start: 9 * 60, stops: [stop("浅草寺", times: ["morning"])], moves: [0], light: nil)
         XCTAssertNil(TripTimes.lateMorningLine(early.rows[0]))
         let late = TripTimes.schedule(start: 11 * 60, stops: [stop("浅草寺", times: ["morning"])], moves: [0], light: nil)
-        XCTAssertEqual(TripTimes.lateMorningLine(late.rows[0]), "朝の案内の場所ですが、着くのは11:00ごろ")
+        XCTAssertEqual(TripTimes.lateMorningLine(late.rows[0]), "おすすめは朝。着くのは11:00ごろ")
         let dawn = TripTimes.schedule(start: 11 * 60, stops: [stop("a", times: ["dawn", "morning"])], moves: [0], light: nil)
-        XCTAssertEqual(TripTimes.lateMorningLine(dawn.rows[0]), "夜明けの案内の場所ですが、着くのは11:00ごろ")
+        XCTAssertEqual(TripTimes.lateMorningLine(dawn.rows[0]), "おすすめは夜明け。着くのは11:00ごろ")
         // 10:00 ちょうどは遅れていない
         let ten = TripTimes.schedule(start: 10 * 60, stops: [stop("a", times: ["morning"])], moves: [0], light: nil)
         XCTAssertNil(TripTimes.lateMorningLine(ten.rows[0]))

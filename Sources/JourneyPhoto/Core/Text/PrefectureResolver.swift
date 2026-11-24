@@ -11,7 +11,7 @@ import Foundation
 ///   写真の枚数・投稿数では回数を増やさない（分けて投稿する不正を作らない）
 /// - 数えてよい写真はサーバーの `isCountablePhoto` と同じ（実体があり、公開で、下書きでない）。
 ///   ストーリーは `Photo` に持たない（一覧に来ない）
-/// - ②は「東京都」の中の「京都」を京都府に当てない（`CamperCounting.prefecture(in:)` は短い名の
+/// - ②は「東京都」の中の「京都」を京都府に当てない（`PrefectureText.prefecture(in:)` は短い名の
 ///   順序に頼っていて、この除外が無い）。正式名は `RegionList.prefecture(inText:)`、英語の県名の並びは
 ///   `ShareCardMap.englishPrefectures` を使い回す。英語は長音の記号を落として比べる（"Hyōgo"）——
 ///   サーバーより広く拾うだけで、候補なので害は無い

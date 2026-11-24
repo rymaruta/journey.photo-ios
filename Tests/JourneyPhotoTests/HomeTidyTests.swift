@@ -68,7 +68,7 @@ final class HomeTidyTests: XCTestCase {
         let slot = try source("Features/Pass/PassHomeSlot.swift")
         let card = slice(slot, from: "struct PassHomeCard", to: "private var countTitle")
         assertInOrder(["PassMiniStack(faces: cards.prefix(3).map { $0.face() }, compact: true)",
-                       "Text(L(\"乗車券が届きました\"", ".jpEyebrow()",
+                       "Text(eyebrow: L(\"乗車券が届きました\"", ".jpEyebrow()",
                        "countTitle", ".font(JPFont.rowTitle)",
                        "Text(PassBook.bundleLine(cards.map(\\.card)))", ".font(JPFont.caption)", ".lineLimit(1)",
                        ".frame(maxWidth: .infinity, alignment: .leading)",

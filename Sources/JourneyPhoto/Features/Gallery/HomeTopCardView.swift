@@ -32,6 +32,9 @@ struct HomeTopCardView: View {
     /// ホームの外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（外側が `LazyVStack`）では
     /// 流れ出ると `onDisappear`、戻ると `onAppear` が来ていた——その扱い（見えていない間は差し替えを後回し・戻ったら
     /// 前面の確定を待って `landHomeCards`）を、この値の変わり目で続ける
+    /// 公開の写真の一覧と、フォローしている人（友達が行きたい場所で撮った札・札 #710 の案9・`FriendWish`）
+    var friendPhotos: [Photo] = []
+    var followingIds: Set<String> = []
     var scrolledAway: Bool = false
 
     @EnvironmentObject private var auth: AuthStore
@@ -119,6 +122,12 @@ struct HomeTopCardView: View {
     /// 「仲間全員から削除」の確かめ（他人に影響する操作だけ聞く・`HomeTripCardMenu`）
     @State private var confirmingEveryone: TripPlan?
 
+    /// 友達の行きたい場所の札の印（出した組・今日の1枚・出さない人）を読み直す合図
+    @State private var friendWishRevision = 0
+    /// 友達の行きたい場所の札の「話す」で開くシート
+    @State private var friendTalk: FriendWish.Hit?
+    private let friendWishMemory = FriendWishMemory()
+
     private let opened = OpenedTripBooks()
     private let developStore = DevelopProgressStore()
 
@@ -136,6 +145,10 @@ struct HomeTopCardView: View {
             }
             .fullScreenCover(isPresented: $showSwipe, onDismiss: { swipeStarted = SpotSwipeProgress().started }) {
                 SpotSwipeView()
+            }
+            // 友達の行きたい場所の札の「話す」（札 #710 の案9）
+            .sheet(item: $friendTalk) { hit in
+                FriendWishTalkSheet(photo: hit.photo, place: hit.place, peerId: hit.ownerId)
             }
             .onChange(of: shelfKey(choices), initial: true) { _, _ in
                 seasonShelf = visibleShelf(choices).map { HomeSeasonShelfSlot(shelf: $0, spots: spots) }
@@ -211,7 +224,8 @@ struct HomeTopCardView: View {
     private var deviceBooks: [LibraryTrip] {
         let preview = DevelopPreview.trips(now: cardsNow)
         if !preview.isEmpty { return preview }
-        return deviceTrips.books(posted: LibraryTrips.postedShots(of: myPhotos), isMine: auth.userId != nil)
+        // 投稿した写真の日と位置は写真が変わったときだけ作る（`HomeTopCardMemo.postedShots`・2026-11-24 札 #594）
+        return deviceTrips.books(posted: memo.postedShots(myPhotos), isMine: auth.userId != nil)
     }
 
     private func developName(_ trip: LibraryTrip) -> String? {
@@ -226,6 +240,29 @@ struct HomeTopCardView: View {
         guard let trip = DevelopTrips.candidate(books: deviceBooks, now: cardsNow,
                                                 closed: developStore.closed(for: auth.userId)) else { return nil }
         return .develop(trip: trip, name: developName(trip))
+    }
+
+    /// 友達が行きたい場所で撮った写真の、今日の1枚（札 #710 の案9）。印は描いたあとに付ける（`recordFriendWish`）
+    /// 鍵（写真、フォロー、行きたい場所の鍵、日）が変わったときだけ計算する（`HomeTopCardMemo.friendWishHit`・2026-11-23）
+    private var friendWishHit: FriendWish.Hit? {
+        guard let me = auth.userId else { return nil }
+        let today = cardsDay
+        let key = HomeTopCardMemo.FriendWishKey(photos: friendPhotos, following: followingIds, me: me, keys: wishedKeys,
+                                                day: today, spotsRevision: spotsRevision, revision: friendWishRevision)
+        return memo.friendWishHit(key) {
+            let state = friendWishMemory.state(for: me)
+            let hits = FriendWish.hits(photos: friendPhotos, following: followingIds, me: me, keys: wishedKeys, spots: spots,
+                                       muted: Set(state.muted), now: cardsNow)
+            return FriendWish.pick(hits, state: state, today: today)
+        }
+    }
+
+    /// 出した札に印を付ける（同じ人と同じ場所の組は1回・1日に1枚）
+    private func recordFriendWish(_ hit: FriendWish.Hit) {
+        guard let me = auth.userId else { return }
+        let state = friendWishMemory.state(for: me)
+        let next = FriendWish.record(hit, state: state, today: cardsDay)
+        if next != state { friendWishMemory.save(next, for: me) }
     }
 
     /// 札の2行目。途中で閉じた旅は「続きから 4 / 10、」
@@ -263,7 +300,13 @@ struct HomeTopCardView: View {
                               plans: HomeHiddenTrips.visible(plansOwner == auth.userId ? plans : [],
                                                              hidden: removal.hiddenTrips, excluding: removal.removedIds),
                               myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                              wishlist: wishedKeys, quiz: quiz, develop: developChoice),
+                              wishlist: wishedKeys, quiz: quiz,
+                              develop: PerfTimeline.shared.measure("home.topCard.develop") { developChoice },
+                              friendWish: PerfTimeline.shared.measure("home.topCard.friendWish") { friendWishHit },
+                              // 一冊ができた・1年前は写真・開いた印・今日が変わったときだけ（`HomeTopCardMemo.photoCards`・2026-11-24 札 #594）
+                              photoCards: memo.photoCards(.init(myPhotos: myPhotos, openedBookDays: openedBooks,
+                                                                today: HomeTopCard.today(cardsNow, in: .current),
+                                                                timeZone: .current))),
             spots: spots, today: HomeTopCard.today(cardsNow, in: .current),
             pool: memo.coverPool(spots: spots, revision: spotsRevision))
         let audience = HomeTopCard.Audience.of(signedIn: auth.userId != nil,
@@ -381,7 +424,9 @@ struct HomeTopCardView: View {
             }
         case .bookReady(let trip):
             NavigationLink {
-                TripBookView(trip: trip, isPublic: LikedPhotos.fromPublicFeed(themePhotos))
+                TripBookView(trip: trip, isPublic: LikedPhotos.fromPublicFeed(themePhotos),
+                            // 一冊ができた知らせは自分の写真（`HomeTopCard.bookReady` の `myPhotos`）から作る
+                            isMine: true)
                     // **開いたら札を下げる**（何度も同じ知らせを出さない）。
                     // 🔴 **ここでは印を残すだけ**——いま札を差し替えると、押した元の
                     // リンクが裏で消え、開いたばかりの一冊が勝手に閉じることがある。
@@ -407,7 +452,8 @@ struct HomeTopCardView: View {
                      line: developLine(trip, name: name),
                      // 一部の写真だけ許可: 「選んで許可した写真の中から見つけました」（章「状態」）
                      detail: DevelopTrips.cardDetail(limited: deviceTrips.status == .limited
-                                                     || PreviewSession.developLimited),
+                                                     || PreviewSession.developLimited,
+                                                     posted: trip.postedCount),
                      backdrop: nil, film: Array(DevelopTrips.frames(of: trip).prefix(3)), inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -455,6 +501,27 @@ struct HomeTopCardView: View {
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+        case .friendWish(let hit):
+            // 友達が行きたい場所で撮った（札 #710 の案9）。札は写真の詳細へ、右下の「話す」はメッセージへ、⋯ で出さない
+            NavigationLink {
+                PhotoDetailView(photo: hit.photo, fromPublicFeed: LikedPhotos.fromPublicFeed(themePhotos)(hit.photo),
+                                context: [hit.photo])
+            } label: {
+                card(eyebrow: "WISH LIST", eyebrowLabel: FriendWish.eyebrowLabel,
+                     title: hit.place,
+                     line: FriendWish.takenBy(hit.photo.displayName ?? ""),
+                     detail: FriendWish.yourPlace,
+                     backdrop: hit.photo, trailingSymbol: nil, reservesMenu: true, inCarousel: inCarousel)
+            }
+            .buttonStyle(.plain)
+            .friendWishActions(inCarousel: inCarousel, talk: { friendTalk = hit }) {
+                if let me = auth.userId {
+                    friendWishMemory.save(FriendWish.mute(hit.ownerId, state: friendWishMemory.state(for: me)), for: me)
+                }
+                friendWishRevision += 1
+            }
+            .onAppear { recordFriendWish(hit) }
+            .accessibilityIdentifier("home.friendWish")
         case .swipe(let cover):
             // 押すと全画面の払う画面。**札の上で払う操作は置かない**（札の並びは横にめくるので、指を取り合う）。
             // 未ログインでも開ける（払った「行きたい」は端末に入り、ログインで引き継ぐ）

@@ -214,7 +214,7 @@ struct OfflineTripContent: View {
 
     /// 日の眉（「1 日目 · 12月24日」）
     nonisolated static func dayHeading(_ day: OfflineTripManifest.Day) -> String {
-        var head = L("\(day.number) 日目", "Day \(day.number)")
+        var head = L("\(day.number)日目", "Day \(day.number)")
         if let label = TakenDay.label(day.date) { head += "\u{2002}\(label)" }
         return head
     }
@@ -376,7 +376,7 @@ struct OfflineSpotView: View {
 
     /// 「光の時刻 · 1 日目 12月24日」
     private var lightHeading: String {
-        var head = L("光の時刻\u{2002}\(day.number) 日目", "Light\u{2002}Day \(day.number)")
+        var head = L("光の時刻\u{2002}\(day.number)日目", "Light\u{2002}Day \(day.number)")
         if let date = OfflineTripText.shortDate(ymd: day.date) { head += " \(date)" }
         return head
     }

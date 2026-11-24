@@ -68,8 +68,7 @@ enum PhotoLift {
     /// 2026-11-12 判断（確かめ役）: 他人の写真を作者名なしで自分のストーリーに出せてしまうので、owner の判断が出るまで
     /// 他人の写真では上の帯を出さず、上へ弾いても何もしない
     static func allowsStory(ownerId: String?, me: String?) -> Bool {
-        guard let ownerId, let me, !ownerId.isEmpty else { return false }
-        return ownerId == me
+        PhotoOwnership.isMine(ownerId: ownerId, me: me)
     }
 
     /// 指の位置の行き先（無ければ nil・外で離すと元へ戻る）。`allowsStory` が偽なら上の帯は無い

@@ -181,7 +181,7 @@ struct AvatarCropView: View {
     private var library: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(L("あなたの写真", "Your photos"))
+                Text(eyebrow: L("あなたの写真", "Your photos"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Spacer()

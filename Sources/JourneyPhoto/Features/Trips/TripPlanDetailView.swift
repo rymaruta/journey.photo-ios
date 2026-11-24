@@ -150,9 +150,20 @@ struct TripPlanDetailView: View {
     /// 保存を送った回数（「保存して戻る」の失敗の知らせを、その後に別の保存が
     /// 走っていたら出さないための目印）
     @State private var saveAttempt = 0
-    /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
+    /// 名前を引く材料（取れなくても画面は出る——観光スポットは「読み込めませんでした」、撮影地は鍵のままになるだけ）
     @State private var photos: [Photo] = []
-    @State private var index: [OfficialSpot] = []
+    /// 自分の写真（プランの場所に、その日に撮った1枚を並べる・札 #710 の案3・`TripPlanPhotos`）。取れなければ空のまま
+    @State private var myPhotos: [Photo] = []
+    /// 点線の枠から開く投稿（観光スポットを撮影地に入れて開く）
+    @State private var stopPost: TripStopPostTarget?
+    @State private var loadedIndex: [OfficialSpot] = []
+    /// 名前と座標を引く索引。読み込む前は、AI で作ったときの候補で引く（2026-11-23 判断・作り終えた直後に `sp_…` が見えていた）
+    private var index: [OfficialSpot] {
+        get { TripPlanText.nameIndex(loaded: loadedIndex, candidates: aiNotes.note(planId)?.candidates ?? []) }
+        nonmutating set { loadedIndex = newValue }
+    }
+    /// 索引を一度でも聞き終えたか（成否を問わない）。聞き終えるまでは、名前を引けない観光スポットの行を骨組みにする
+    @State private var indexTried = false
     /// 候補の材料（写真の一覧・スポットの索引）を**取れなかった**か。
     /// 「聞けなかった」を「まだ保存していない」と言わないために持つ
     @State private var sourcesFailed = false
@@ -329,7 +340,7 @@ struct TripPlanDetailView: View {
         .alert(L("ひとこと", "Note"),
                isPresented: Binding(get: { noteTarget != nil },
                                     set: { if !$0 { noteTarget = nil } })) {
-            TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
+            TextField(L("例：朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
             Button(Labels.Common.save) {
                 let target = noteTarget
                 noteTarget = nil
@@ -399,6 +410,22 @@ struct TripPlanDetailView: View {
                             pick: { swapAI(target, to: $0) })
         }
         .fullScreenCover(isPresented: $aiShowPro) { PaywallView(origin: .tripAI) }
+        // 点線の枠から開く投稿（札 #710 の案3）。閉じたら自分の写真を読み直して、枠を写真に替える
+        .sheet(item: $stopPost, onDismiss: {
+            TabRouter.shared.postSheetClosed()
+            Task {
+                let mine = try? await environment.photos.myPhotos()
+                // 持ち主の確かめは `PhotoOwnership` に集める（他人の写真を行に入れない・2026-11-23）
+                if let mine { myPhotos = PhotoOwnership.mine(mine, me: auth.userId) }
+            }
+        }) { target in
+            NavigationStack {
+                UploadView(spot: target.spot, onSaved: { photo in
+                    TabRouter.shared.notePosted(photo)
+                    myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: [photo], owner: auth.userId)
+                })
+            }
+        }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
                                     set: { if !$0 { deleteError = nil } })) {
@@ -410,10 +437,19 @@ struct TripPlanDetailView: View {
         // 項目のスポットを開いて戻るたびに走る。圏外で戻ると、読めていた場所の名前と
         // リンクが消えて鍵（sp_…）だけになり、候補も「読み込めませんでした」になっていた
         .task {
-            let fetchedPhotos = try? await environment.gallery.fetchPhotos()
-            let fetchedIndex = try? await environment.spots.fetchIndex()
-            if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
+            // 2026-11-23 判断: 写真の一覧と索引を同時に聞く（前は写真の一覧を待ってから索引を聞き、その間 `sp_…` が見えていた）
+            async let photosCall = try? await environment.gallery.fetchPhotos()
+            async let indexCall = try? await environment.spots.fetchIndex()
+            let fetchedIndex = await indexCall
             if let fetchedIndex { index = fetchedIndex; gotIndex = true }
+            indexTried = true
+            let fetchedPhotos = await photosCall
+            if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
+            // 自分の写真（札 #710 の案3）。ログインしている人の分だけ。取れなかった回は前の分を残す
+            var mine: [Photo]?
+            if auth.userId != nil { mine = try? await environment.photos.myPhotos() }
+            // 自分の写真だけ（`PhotoOwnership`・持ち主の分からない行も入れない）
+            if let mine { myPhotos = PhotoOwnership.mine(mine, me: auth.userId) }
             // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
             let fetchedAliases = await environment.spots.fetchAliases()
             if !fetchedAliases.isEmpty { aliases = fetchedAliases }
@@ -479,9 +515,10 @@ struct TripPlanDetailView: View {
             requestTravel(travelLayout().all)
         }
         // 季節の一文・時刻帯のために、日程にある撮影スポットの詳細を重ねる（索引だけの行だけ）
-        .task(id: SpotDetailNeeds.key(planSpotsNeedingDetails)) {
+        // 索引を読む前（AI の候補で名前を引いている間）は重ねない。読んだ索引で置き換わるので、読んでから重ねる
+        .task(id: SpotDetailNeeds.key(planSpotsNeedingDetails) + (gotIndex ? "" : "#waiting")) {
             let needs = planSpotsNeedingDetails
-            guard !needs.isEmpty else { return }
+            guard gotIndex, !needs.isEmpty else { return }
             index = await environment.spots.withDetails(index, for: needs)
         }
         // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
@@ -506,7 +543,7 @@ struct TripPlanDetailView: View {
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
         .sheet(item: $mapDay) { target in
             NavigationStack {
-                TripDayMapView(title: L("\(target.day + 1) 日目の地図", "Day \(target.day + 1) map"),
+                TripDayMapView(title: L("\(target.day + 1)日目の地図", "Day \(target.day + 1) map"),
                                stops: target.stops)
             }
         }
@@ -819,6 +856,10 @@ struct TripPlanDetailView: View {
                 // AI の札は1行に畳んで出す（2026-11-16 判断・A6・`TripAICard.open`）。
                 // 2026-11-20 判断（札 #667）: 「元に戻す」は下の組み直しの列に1つだけ置く（札の中には出さない）。
                 // 組み直しの帯を出している間・組んでいる間は札の帯を出さない（帯を2本重ねない）
+                // 行き先を選ばずに作った: アプリが決めた行き先を1行（2026-11-23 owner・`TripAIAutoPlace`）
+                if let place = aiNotes.note(planId)?.autoPlace {
+                    TripAIAutoPlaceLine(place: place)
+                }
                 if let note = aiNotes.note(planId), TripAICard.hasContent(note) {
                     TripAICard(note: note, usage: aiRunner.usage, working: replanWorking != nil,
                                online: !connectivity.isOffline,
@@ -831,16 +872,10 @@ struct TripPlanDetailView: View {
                 if hasReplanSpots || replan != nil || !aiHistory.isEmpty {
                     TripReplanBar(working: replanWorking, proposed: replan?.label, notice: replanNotice,
                                   noticeOpensPro: replanNoticePro, canUndo: !aiHistory.isEmpty && replan == nil,
-                                  serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: aiRunner.onDevice,
-                                                                      tier: aiRunner.usage?.tier, profilePro: nil, admin: auth.isAdmin),
                                   run: { label, request, typed in runReplan(label: label, request: request, typed: typed) },
+                                  quick: quickReplan,
                                   undo: undoAI,
                                   openPro: { aiShowPro = true })
-                    // 送る前の知らせを Pro かどうかで出し分けるため、端末の AI が無い iPhone だけ回数を先に読む（無料の人に出さない）
-                    .task(id: auth.userId) {
-                        guard !aiRunner.onDevice, auth.userId != nil, aiRunner.usage == nil else { return }
-                        await aiRunner.loadUsage(service: environment.tripAI)
-                    }
                 }
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
@@ -869,7 +904,7 @@ struct TripPlanDetailView: View {
                 if let proposal = replan {
                     TripReplanPreview(proposal: proposal, showingAfter: $replanShowingAfter,
                                       heading: { di, day in dayHeading(di, day) },
-                                      resolve: { TripDraft.place(for: $0, index: index, places: places) })
+                                      resolve: { TripDraft.place(for: $0, index: index, places: places, loading: !indexTried) })
                 } else {
                     // 通し番号（1日目 1・2、2日目 3 …・板 TripPlanDays）。圏外の画面・地図の画像の点と同じ数え方
                     let numbers = TripStyle.stopNumbers(days.map(\.items.count))
@@ -1034,7 +1069,7 @@ struct TripPlanDetailView: View {
 
     /// 見出しの字。今日の日は頭に「今日」（2026-11-16 判断・A2: 「今日　2 日目　12月17日」・模型 A2 の眉）
     nonisolated static func dayHeadingText(_ di: Int, date: String?, today: Bool) -> String {
-        var head = L("\(di + 1) 日目", "Day \(di + 1)")
+        var head = L("\(di + 1)日目", "Day \(di + 1)")
         if today { head = L("今日\u{2002}", "Today\u{2002}") + head }
         if let label = TakenDay.label(date) {
             head += "\u{2002}\(label)"
@@ -1181,7 +1216,8 @@ struct TripPlanDetailView: View {
                     }
                     itemRow(di, ii, item, number: number,
                             season: spotFor(item).flatMap { TripDraft.seasonLine($0, ymd: ymd) },
-                            chip: resolved.indices.contains(ii) ? TripDraft.timeChip(resolved[ii].times) : nil,
+                            chips: resolved.indices.contains(ii)
+                                ? TripDraft.timeChips(resolved[ii].times, arrive: showsTimes ? timeRow.arrive : nil) : [],
                             time: showsTimes ? timeRow : nil)
                     if showsTimes, ii == day.items.count - 1, let end = times.end {
                         TripTimeMinorRow(time: end, text: L("ごろ 終わり", "done"), spoken: TripTimes.endLine(end),
@@ -1358,7 +1394,7 @@ struct TripPlanDetailView: View {
 
     /// 日を消す前の札（プランの削除の札と同じ形・v2 の板 OfflineSaveStates 5 の確かめと同じ部品）
     private func removeDayConfirm(_ di: Int) -> some View {
-        JPDeleteConfirm(question: L("\(di + 1) 日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"),
+        JPDeleteConfirm(question: L("\(di + 1)日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"),
                         confirmTitle: L("削除する", "Remove"), identifier: "trip.day.remove") {
             guard let target = removingDay else { return }
             removeDay(di, confirmedOn: target.days)
@@ -1373,8 +1409,11 @@ struct TripPlanDetailView: View {
     }
 
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int,
-                         season: String?, chip: String?, time: TripTimes.Row? = nil) -> some View {
-        let name = TripPlanText.label(for: item, index: index, places: places)
+                         season: String?, chips: [TripDraft.TimeChip], time: TripTimes.Row? = nil) -> some View {
+        let pending = TripPlanText.isPending(item, index: index, loading: !indexTried)
+        // 2026-11-23 判断（確かめ役の指摘）: 骨組みの間は名前を「読み込み中」にし、「…」と ≡ と「替える」は出さない
+        // （前は骨組みの横の「…」の読み上げと ≡ に「観光スポット（読み込めませんでした）」が出ていた）
+        let name = TripPlanText.displayName(for: item, index: index, places: places, loading: !indexTried)
         // 右の印は「…」と ≡ の2つ（2026-11-12 判断・1.1.85・札 #570・資料「みんなで埋める旅行プラン」の場面7）。
         // - 2026-11-11 は「…」1つにして、並べ替えは行を押さえて運ぶ形だった。**どこを掴めば動くかが見えなかった**ので、
         //   行の右端に ≡ の持ち手を常に出す（owner「ドラッグアンドドロップで入れ替えたり…簡単に操作できるように」）
@@ -1383,18 +1422,39 @@ struct TripPlanDetailView: View {
         // - 読み上げの人は ≡ を上下にスワイプで上へ・下へ、操作で「N日目へ」「外す」（`TripPlanEdit.accessibilityMoves`）
         // 右の印は今どおり「…」と ≡ の2つ。AI で作ったプランの「替える」は名前の下（番号の丸の右・36）に置く
         // （2026-11-15 確かめ役の指摘「右に3つが混み合う」。押す回数は替える1回のまま）
+        // 自分の写真で埋まる（札 #710 の案3）: その日に撮った自分の1枚。今日のまだの観光スポットは点線の「＋」
+        let ymd = days.indices.contains(di) ? TripPlanText.dayDate(index: di, day: days[di], start: start, end: end) : nil
+        let mine = TripPlanPhotos.mine(for: item, on: ymd, mine: myPhotos)
+        let invites = TripPlanPhotos.invites(item, on: ymd, today: TripPlanText.ymd(pickedIn: .current, Date()),
+                                             hasPhoto: mine != nil)
+        let thumb = TripPlanPhotos.thumb(mine: mine, spot: spotFor(item))
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                itemLink(item, name: name, number: number, season: season, chip: chip, time: time)
-                itemMenu(di, ii, item, name: name)
-                dragHandle(di, ii, item, name: name)
+                if pending {
+                    TripStopSkeleton(number: number)
+                } else {
+                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time, thumb: thumb)
+                    TripStopPhotoSlot(invites: invites, name: name) { invitePost(item) }
+                    itemMenu(di, ii, item, name: name)
+                    dragHandle(di, ii, item, name: name)
+                }
             }
-            aiSwapButton(di, ii, item, name: name)
+            if !pending {
+                TripStopPhotoLine(photo: mine, invites: invites)
+                    .padding(.leading, thumb == nil ? 36 : 36 + TripStopThumbView.side + JPSpace.s)
+                aiSwapButton(di, ii, item, name: name)
+            }
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
             drop(items.first, toDay: di, toItem: ii)
         } isTargeted: { setDropTarget($0, DropSpot(day: di, item: ii)) }
+    }
+
+    /// 点線の枠: その観光スポットを撮影地に入れて投稿の画面を開く（札 #710 の案3）。押す回数 枠 → 写真 → 投稿 = 3
+    private func invitePost(_ item: TripItem) {
+        guard case .spot(let spotId, _) = item, let spot = index.first(where: { $0.spotId == spotId }) else { return }
+        stopPost = TripStopPostTarget(spot: UploadSpotTarget(spot))
     }
 
     /// 持ち手 ≡（行の右端・当たり 44pt・2026-11-12 札 #570）。押さえて運ぶ（同じ日の中も、別の日へも）。
@@ -1463,13 +1523,19 @@ struct TripPlanDetailView: View {
 
     /// 外した場所の行（日の下・点線の枠・打ち消した名前と「戻す」）。押す回数は 1（以前は戻す道が無く、足し直していた）
     private func removedRow(_ removed: TripPlanEdit.Removed) -> some View {
-        let name = TripPlanText.label(for: removed.item, index: index, places: places)
+        let name = TripPlanText.displayName(for: removed.item, index: index, places: places, loading: !indexTried)
+        let pending = TripPlanText.isPending(removed.item, index: index, loading: !indexTried)
         return HStack(spacing: JPSpace.xs) {
-            Text(name)
-                .strikethrough(true, color: WebTheme.text3)
-                .font(JPFont.footnote)
-                .foregroundStyle(WebTheme.text3)
-                .fixedSize(horizontal: false, vertical: true)
+            if pending {
+                TripStopSkeleton.bone(width: 120, height: 13)
+                    .accessibilityLabel(L("読み込み中", "Loading"))
+            } else {
+                Text(name)
+                    .strikethrough(true, color: WebTheme.text3)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(L("外しました", "Removed"))
                 .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.text2)
@@ -1555,7 +1621,7 @@ struct TripPlanDetailView: View {
             } else if !targets.isEmpty {
                 Menu {
                     ForEach(targets, id: \.self) { to in
-                        Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
+                        Button(L("\(to + 1)日目", "Day \(to + 1)")) {
                             perform(.toDay(to), di, ii, item, name: name)
                         }
                     }
@@ -1720,7 +1786,7 @@ struct TripPlanDetailView: View {
         toasts.show(L("プランを入れ替えました", "Plan replaced"))
         if let note = aiNotes.note(planId) {
             aiNotes.set(planId, TripAINote(reason: proposal.reason.isEmpty ? note.reason : proposal.reason, mode: .ai,
-                                           removed: [], candidates: note.candidates))
+                                           removed: [], candidates: note.candidates, autoPlace: note.autoPlace))
         }
     }
 
@@ -1728,6 +1794,49 @@ struct TripPlanDetailView: View {
     private func discardReplan() {
         replan = nil
         announce(L("今の日程のままにしました", "Kept your current plan"))
+    }
+
+    /// 「雨なら」「もっとゆっくり」（2026-11-24 判断・`TripQuickReplan`）。AI を使わずに**押したらすぐ**組み直す。
+    /// 外した所は日の下の「外しました　戻す」へ、知らせの帯と組み直しの列の「元に戻す」で戻せる。変わらなければ帯で理由を言う
+    private func quickReplan(_ tweak: TripAITweak) {
+        guard replanWorking == nil, replan == nil else { return }
+        replanNotice = nil
+        replanNoticePro = false
+        let note = aiNotes.note(planId)
+        let lookup = Dictionary((index + (note?.candidates ?? [])).map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
+        let result: TripQuickReplan.Result
+        switch tweak {
+        case .slow:
+            result = TripQuickReplan.slower(days) { item in
+                if case .spot(let id, _) = item { return lookup[id]?.coords }
+                return nil
+            }
+        case .rain:
+            result = TripQuickReplan.rain(days, spots: lookup, pool: index + (note?.candidates ?? []))
+        }
+        guard result.changed else {
+            replanNotice = result.line
+            announce(result.line)
+            return
+        }
+        var added: [Int] = []
+        for d in result.dropped {
+            removedSeq += 1
+            removedShelf.append(TripPlanEdit.Removed(id: removedSeq, day: d.day, index: d.index, item: d.item))
+            added.append(removedSeq)
+        }
+        let step = TripReplan.Step(before: days, after: result.days, shelf: added)
+        aiHistory.append(step)
+        apply(result.days, said: result.line)
+        // 帯の「元に戻す」は、この組み直しがまだいちばん新しいときだけ戻す（あとで別の組み直しをしていたら、列の「元に戻す」で順に戻す）
+        toasts.show(result.line, undo: ToastCenter.Undo(
+            title: L("元に戻す", "Undo"),
+            failure: L("このあとに別の組み直しをしたので、日程の上の「元に戻す」から戻してください",
+                       "You've rearranged again since. Use Undo above the plan.")) {
+            guard aiHistory.last == step else { return false }
+            undoAI()
+            return true
+        })
     }
 
     /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
@@ -1766,46 +1875,55 @@ struct TripPlanDetailView: View {
 
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
-    private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chip: String?,
-                          time: TripTimes.Row? = nil) -> some View {
+    private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chips: [TripDraft.TimeChip],
+                          time: TripTimes.Row? = nil, thumb: TripStopThumb? = nil) -> some View {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time,
+                              thumb: thumb)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time,
+                          thumb: thumb)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time,
+                              thumb: thumb)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time,
+                          thumb: thumb)
             }
         }
     }
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chip: String?, by: String? = nil, time: TripTimes.Row? = nil) -> some View {
+                           season: String?, chips: [TripDraft.TimeChip], by: TripShareText.AddedBy? = nil, time: TripTimes.Row? = nil,
+                           thumb: TripStopThumb? = nil) -> some View {
         let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
         return VStack(alignment: .leading, spacing: 2) {
-            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note,
-                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine))
-            // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
+            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChips: chips, note: note,
+                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine),
+                          thumb: thumb)
+            // 共有したプランで、ほかの仲間が足した場所（「あおが足しました」）。名前は太く明るく、続きは細く暗く
+            // ——空白で区切らない（2026-11-23 判断）
             if let by {
-                Text(by)
+                (Text(by.lead).foregroundStyle(WebTheme.text3)
+                    + Text(by.name).fontWeight(.semibold).foregroundStyle(WebTheme.text2)
+                    + Text(by.tail).foregroundStyle(WebTheme.text3))
                     .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityLabel(by.text)
                     .padding(.leading, byLeading)
                     .accessibilityIdentifier("tripPlan.addedBy")
             }
@@ -1817,7 +1935,7 @@ struct TripPlanDetailView: View {
         typeSize.isAccessibilitySize ? 0 : timeWidth + TripTimeStyle.columnGap
     }
 
-    private func addedByText(_ item: TripItem) -> String? {
+    private func addedByText(_ item: TripItem) -> TripShareText.AddedBy? {
         guard let plan else { return nil }
         return TripShareText.addedBy(plan, item, members: members, me: auth.userId)
     }
@@ -1880,7 +1998,7 @@ struct TripPlanDetailView: View {
                 .padding(.horizontal, JPSpace.gutter)
             shareStrip(plan).padding(.horizontal, JPSpace.gutter)
             TripChatPane(planId: planId, plan: plan, members: members,
-                         resolveName: { TripPlanText.label(for: $0, index: index, places: places) })
+                         resolveName: { TripPlanText.displayName(for: $0, index: index, places: places, loading: !indexTried) })
         }
         .padding(.top, JPSpace.xs)
         .onAppear { chatUnread = false }
@@ -2130,4 +2248,41 @@ struct TripAISwapTarget: Identifiable {
     let item: Int
     let spot: OfficialSpot
     var id: String { "\(day)-\(item)-\(spot.spotId)" }
+}
+
+/// 名前をまだ引けていない観光スポットの行の骨組み（2026-11-23 判断・索引を読み込む間に `sp_…` を見せない）。
+/// 番号の丸は本物と同じ（日程の番号は先に分かる）、名前と季節の一文は灰の棒（`AskLoadingSkeleton` の流れの骨組みと同じ surface-4）
+struct TripStopSkeleton: View {
+    let number: Int
+    /// 行の写真の欄の寸法（44pt・角10）。行の写真（`TripStopThumbView`）と同じ値を使う（2026-11-23 判断・統合で写しを1つにした）
+    static let photoSide: CGFloat = TripStopThumbView.side
+    static let photoCorner: CGFloat = JPRadius.s
+
+    var body: some View {
+        HStack(alignment: .top, spacing: JPSpace.s) {
+            TripStopNumber(number: number)
+                .padding(.top, 2)
+            // 写真の欄と同じ枠（44pt・角10）。行に写真の欄が入っても、読み込み終わりで名前が横にずれない（2026-11-23 判断）
+            RoundedRectangle(cornerRadius: Self.photoCorner)
+                .fill(WebTheme.surface4)
+                .frame(width: Self.photoSide, height: Self.photoSide)
+            VStack(alignment: .leading, spacing: 6) {
+                Self.bone(width: 150, height: 16)
+                Self.bone(width: 80, height: 12)
+            }
+            .padding(.top, 4)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, JPSpace.s)
+        .frame(minHeight: JPHeight.tallRow)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(number)、読み込み中", "\(number), loading"))
+        .accessibilityIdentifier("tripPlan.stopSkeleton")
+    }
+
+    static func bone(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(WebTheme.surface4)
+            .frame(width: width, height: height)
+    }
 }

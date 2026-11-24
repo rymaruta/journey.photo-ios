@@ -219,6 +219,8 @@ struct AskSpotCarousel: View {
     let spots: [OfficialSpot]
     /// AI の理由（`spotId` → 1行）。無い所は台帳の案内の文
     let reasons: [String: String]
+    /// その回の季節（AI の理由が無い札は、この季節の案内を出す・2026-11-23 判断）
+    var season: ShootingTime.Season? = nil
     let showsMap: Bool
     /// 並べ直しが終わったか（案内の文の詳細を読み終えた）。終わってから1枚目の位置を1回だけそろえる
     var settled = true
@@ -279,7 +281,7 @@ struct AskSpotCarousel: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: Self.gap) {
                         ForEach(spots) { spot in
-                            AskSpotCard(spot: spot, reason: reasons[spot.spotId] ?? AskLibrary.guide(for: spot, query: .init()),
+                            AskSpotCard(spot: spot, reason: reasons[spot.spotId] ?? AskLibrary.guide(for: spot, season: season),
                                         officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
                                 // 大きな字では札の幅を画面の 86% に広げる（模型の「確かめていないこと」の想定）
                                 .frame(width: cardWidth)

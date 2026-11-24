@@ -4,6 +4,11 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+// 見本の登録の確認で Cognito と同じ失敗を返す（`AuthError`、`AWSCognitoAuthError.codeMismatch`）。Debug の見本だけが使う
+#if DEBUG
+import Amplify
+import AWSCognitoAuthPlugin
+#endif
 
 /// **端末の中だけで答える見本の通信**（UI テストだけ・Debug のみ・2026-10-22）。`-JPPreviewLocalBackend YES`。
 ///
@@ -32,6 +37,9 @@ enum PreviewBackend {
     /// 見本の認証で通るメールアドレスとパスワード（資格情報ではない・端末の中だけ）
     static let email = "preview@journey-photo.test"
     static let password = "Preview-1234"
+    /// 見本の登録の確認（`-JPPreviewVerificationCode YES`）で通る確認コードと、控えの登録の ID（資格情報ではない・端末の中だけ）
+    static let verificationCode = "482913"
+    static let signUpUsername = "preview-signup"
 
     static var isOn: Bool { PreviewSession.localBackend }
 
@@ -87,7 +95,14 @@ enum PreviewBackend {
                 guard email.trimmingCharacters(in: .whitespacesAndNewlines) == PreviewBackend.email,
                       password == PreviewBackend.password else { throw WrongCredentials() }
                 return true
-            }
+            },
+            // 登録の確認（2026-11-23）: 見本のコードだけ通し、ほかは Cognito と同じ「コードが違う」で断る
+            confirmSignUp: { username, code in
+                guard username == PreviewBackend.signUpUsername, code == PreviewBackend.verificationCode else {
+                    throw AuthError.service("", "", AWSCognitoAuthError.codeMismatch)
+                }
+            },
+            resendSignUpCode: { _ in }
         )
     }
 
@@ -213,6 +228,7 @@ enum PreviewBackend {
                       stories: Bool = false,
                       dm: Bool = false,
                       groups: Bool = false,
+                      signinMethods: String? = nil,
                       followNone: Bool = false,
                       commentNotice: Bool = false,
                       publicFeed: () async -> [[String: Any]] = { [] },
@@ -262,7 +278,19 @@ enum PreviewBackend {
             }
         }
 
+        // 「サインインの方法」（`-JPPreviewSigninMethods` のときだけ・札 #601）
+        if let shape = signinMethods, parts.count >= 2, parts[0] == "user", parts[1] == "signin-methods",
+           let answer = signinMethodsReply(method: method, parts: parts, shape: shape) {
+            return answer
+        }
+
         switch (method, parts) {
+        // Apple でサインイン（札 #601）。見本では使えない（ボタンを出さない）
+        case ("GET", let p) where p == ["auth", "apple", "status"]:
+            return .json(["available": false])
+        // Google でログイン（札 #715）。見本では使えない（ボタンを出さない）
+        case ("GET", let p) where p == ["auth", "google", "status"]:
+            return .json(["available": false])
         // いいね（押す前の公開の数に、押していれば 1 を足す）
         case (_, let p) where (method == "POST" || method == "DELETE") && p.count == 3 && p[0] == "photos" && p[2] == "like":
             let id = p[1]
@@ -452,6 +480,7 @@ enum PreviewBackend {
             stories: PreviewSession.stories,
             dm: PreviewSession.dm,
             groups: PreviewSession.groups,
+            signinMethods: PreviewSession.signinMethods,
             followNone: PreviewSession.followNone,
             commentNotice: PreviewSession.commentNotice,
             publicFeed: { demo ? StoreDemo.feed() : await readPublicFeed() },
@@ -459,6 +488,38 @@ enum PreviewBackend {
                 if demo { return StoreDemo.photos.first { StoreDemo.photoId($0.asset) == id }?.likes ?? 0 }
                 return await readPublicLikes(id)
             })
+    }
+
+    /// 「サインインの方法」の見本の答え（サーバーの `signinMethods.ts` と同じ形）。
+    /// `linked`: メールで作った人が Apple とつないでいる（Apple は解除できる）。`last`: Apple で作った人（Apple は最後の1つ）。
+    /// 解除は覚えない（解除した後の一覧を返すだけ）
+    static func signinMethodsReply(method: String, parts: [String], shape: String) -> Reply? {
+        let last = shape == "last"
+        func rows(appleLinked: Bool) -> [[String: Any]] {
+            var apple: [String: Any] = ["id": "apple", "linked": appleLinked, "removable": appleLinked && !last]
+            if appleLinked && last {
+                apple["blockedReason"] = "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます"
+            }
+            return [
+                ["id": "email", "linked": !last, "removable": false, "email": "preview@example.com"],
+                apple,
+                ["id": "google", "linked": false, "removable": false],
+            ]
+        }
+        switch (method, parts.count) {
+        case ("GET", 2):
+            return .json(["methods": rows(appleLinked: true)])
+        case ("DELETE", 3) where parts[2] == "apple":
+            if last {
+                return .json(["error": "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます",
+                              "code": "last_signin_method"], status: 409)
+            }
+            return .json(["methods": rows(appleLinked: false)])
+        case ("DELETE", 3):
+            return .json(["error": "連携していません", "code": "not_linked"], status: 404)
+        default:
+            return nil
+        }
     }
 
     /// 見本の QR の合図（32 字の base64url の形・世代ごとに替わる）

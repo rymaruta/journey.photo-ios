@@ -942,9 +942,6 @@ final class ScreenshotTests: JPUITestCase {
             toSpot.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "60-撮影スポット")
-            if app.descendants(matching: .any).matching(identifier: "spot.official.journeyCue").firstMatch.exists {
-                shoot(app, "60b-撮影スポット（撮影までの流れ）")
-            }
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "61-撮影スポット（下）")
@@ -1327,6 +1324,41 @@ final class ScreenshotTests: JPUITestCase {
         // 写真のいいね・コメントの数を読む間を置く
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "20m-写真にしたストーリーの消す確認")
+    }
+
+    /// **写真の色の日本の色の名前と「この色の写真」**（札 #710 の案10）。マイページの写真を開き、色の名前の行が出たら撮って押す。
+    /// 出なければ撮らずに抜ける
+    func testCapturesJapaneseColorName() {
+        let app = XCUIApplication.jp()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let photos = app.buttons.matching(identifier: "mypage.photo")
+        guard photos.firstMatch.waitForExistence(timeout: 15), photos.firstMatch.isHittable else { return }
+        photos.firstMatch.tap()
+        let line = app.descendants(matching: .any).matching(identifier: "photo.japaneseColor").firstMatch
+        var pushes = 0
+        while !(line.exists && line.isHittable), pushes < 5 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard line.exists, line.isHittable else { return }
+        shoot(app, "20k-写真の詳細（日本の色の名前）")
+        line.tap()
+        guard app.descendants(matching: .any).matching(identifier: "japaneseColor.photos").firstMatch
+            .waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "20l-この色の写真")
     }
 
     /// **写真を撮影スポットに自動で結ぶ（写真の詳細）**（2026-10-31・journey.photo-ios#425）。
@@ -4362,21 +4394,51 @@ final class ScreenshotTests: JPUITestCase {
 
     // MARK: - 旅行プランを組み直す（札 #667・案のページの案1）
 
-    /// 見本のプランを開き、「雨なら」を押して組み直した案が出るまで進める。案が出たら true。
-    /// 見本の AI（`-JPTripAIFixture`・サーバーへは送らない）は必ず変わる案を返す（日を入れ替え、候補を1つ足す）
+    /// 見本のプランを開き、「書いて頼む」に条件を打って組み直した案が出るまで進める。案が出たら true。
+    /// 見本の AI（`-JPTripAIFixture`・サーバーへは送らない）は必ず変わる案を返す（日を入れ替え、候補を1つ足す）。
+    /// 2026-11-24 判断: 「雨なら」「もっとゆっくり」のチップは AI を使わずにすぐ組み直すので、AI の案は「書いて頼む」で出す
     private func openTripReplanProposal(_ app: XCUIApplication) -> Bool {
         guard openFixturePlan(app) else { return false }
         // 観光スポットの名前（台帳）が読めてから押す（読めないと組み直す場所が無い）
         guard app.staticTexts["ひがし茶屋街"].firstMatch.waitForExistence(timeout: 30) else { return false }
-        let rain = app.buttons["tripReplan.chip.rain"].firstMatch
-        guard rain.waitForExistence(timeout: 10), rain.isHittable else { return false }
-        rain.tap()
+        let write = app.buttons["tripReplan.write"].firstMatch
+        guard write.waitForExistence(timeout: 10), write.isHittable else { return false }
+        write.tap()
+        let field = app.textFields["tripReplan.field"].firstMatch
+        guard field.waitForExistence(timeout: 5) else { return false }
+        field.tap()
+        field.typeText("雨の日向けに")
+        let send = app.buttons["tripReplan.send"].firstMatch
+        guard send.waitForExistence(timeout: 5), send.isHittable else { return false }
+        send.tap()
         return app.descendants(matching: .any)["tripReplan.preview"].firstMatch.waitForExistence(timeout: 30)
     }
 
-    /// **プランを開く →「雨なら」→ 案を見る →「この案にする」**（札 #667）。押す回数はチップと「この案にする」の 2 回。
+    /// **プランを開く →「もっとゆっくり」**（2026-11-24 判断・`TripQuickReplan`）。押す回数は 1 回で、すぐ日程が変わる（AI を使わない）。
+    /// 見本のプランは1日目3か所・2日目2か所なので、1日2か所になり、遠回りの千里浜が日の下の「外しました　戻す」へ行く。
+    /// 「元に戻す」で戻る
+    func testTripReplanSlowAppliesAtOnce() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES"])
+        guard openFixturePlan(app), app.staticTexts["ひがし茶屋街"].firstMatch.waitForExistence(timeout: 30) else {
+            return unreached(app, "旅行プランの見本", probes: ["tripReplan.bar"])
+        }
+        let slow = app.buttons["tripReplan.chip.slow"].firstMatch
+        XCTAssertTrue(slow.waitForExistence(timeout: 10) && slow.isHittable, "「もっとゆっくり」が押せない")
+        slow.tap()
+        // 案の見比べを出さずに、すぐ置き換わる（「元に戻す」が出る）
+        let undo = app.buttons["tripReplan.undoApplied"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "押してもすぐ変わらない")
+        XCTAssertFalse(app.descendants(matching: .any)["tripReplan.preview"].firstMatch.exists, "見比べの案が出ている")
+        XCTAssertFalse(app.descendants(matching: .any)["tripReplan.working"].firstMatch.exists, "AI を待っている")
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "65q-旅行プランをもっとゆっくりにした")
+        undo.tap()
+        XCTAssertTrue(waitGone(undo, timeout: 5), "元に戻したのに「元に戻す」が残っている")
+    }
+
+    /// **プランを開く →「書いて頼む」→ 案を見る →「この案にする」**（札 #667）。押す回数は送ると「この案にする」の 2 回。
     /// 案を見ている間は日程が変わらない（「今」に戻すと元の並び）。置き換えたら「元に戻す」で戻る
-    func testTripReplanRainThenAccept() {
+    func testTripReplanWrittenThenAccept() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1"])
         guard openTripReplanProposal(app) else { return unreached(app, "組み直した案", probes: ["tripReplan.bar", "tripReplan.notice"]) }
         XCTAssertTrue(app.descendants(matching: .any)["tripReplan.changedRow"].firstMatch.exists, "入れ替えた行に印が無い")
@@ -4402,7 +4464,7 @@ final class ScreenshotTests: JPUITestCase {
         let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1"])
         guard openTripReplanProposal(app) else { return unreached(app, "組み直した案", probes: ["tripReplan.bar", "tripReplan.notice"]) }
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "65p-旅行プランを組み直した案（雨なら）")
+        shoot(app, "65p-旅行プランを組み直した案（書いて頼む）")
     }
 
     private func waitGone(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
@@ -4582,6 +4644,114 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertEqual(app.alerts.count, 0, "2回目に確かめの窓を挟んだ")
     }
 
+    /// **ログインと新規登録の画面の置き方**（2026-11-23・模型 NL2x の直しと owner「スクロールしないといけないのが嫌だ」・`SignInLayout`）。
+    /// 未ログインで Apple・Google のボタンを「使える」として描き（`-JPPreviewExternalSignIn YES`・通信しない）、いいねから
+    /// 登録の側を開いて撮る。標準の字と大きい字（アクセシビリティ XL）で。値で見ること:
+    /// - 標準の字: キーボードの出ていない1画面に、送らずに全部（欄、主ボタン、Apple と Google、下の切り替え）が入る
+    /// - 大きい字: 主ボタンが1画面に入る
+    /// - 並び（模型 NL2x の案）: Apple がいちばん上、Google と同じ幅と高さ、その下に欄、主ボタン、切り替えの一行
+    /// - キーボードが出たとき（標準の字）: 打っている欄と主ボタンがキーボードの上に見える
+    /// CI に 375×667 の機種は無いので、その寸法は単体テスト（`SignInLayoutTests`）の見積もりで見る。寸法はログに出す（`[signin-layout]`）
+    func testCapturesSignInLayout() {
+        for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
+            let app = launchSignedOutHome(["-JPPreviewExternalSignIn", "YES"] + extra)
+            guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ\(tag)") }
+            let form = app.descendants(matching: .any)["signin.form"].firstMatch
+            guard tapHomeLike(app, opens: form, tag) else { return unreached(app, "ログイン画面\(tag)") }
+
+            for signUp in [true, false] {
+                let name = (signUp ? "70-ログインの画面（登録の側・Apple と Google" : "70b-ログインの画面（ログインの側・Apple と Google") + tag + "）"
+                assertSignInSide(app, signUp: signUp, name)
+                let submit = app.buttons["signin.submit"].firstMatch
+                let apple = app.buttons["signin.apple"].firstMatch
+                let google = app.buttons["signin.google"].firstMatch
+                let toggle = app.buttons["signin.switch"].firstMatch
+                XCTAssertTrue(apple.waitForExistence(timeout: 5), "Apple のボタンが無い（\(name)）")
+                XCTAssertTrue(google.waitForExistence(timeout: 5), "Google のボタンが無い（\(name)）")
+                Thread.sleep(forTimeInterval: 1)
+                let window = app.windows.firstMatch.frame
+                let email = app.textFields["signin.email"].firstMatch
+                let line = "[signin-layout] \(name) window=\(window) email=\(email.frame) submit=\(submit.frame) apple=\(apple.frame) google=\(google.frame) toggle=\(toggle.frame)"
+                print(line)
+                XCTContext.runActivity(named: line) { _ in }
+                shoot(app, name)
+                // キーボードの出ていない状態で、主ボタンが送らずに見える
+                XCTAssertTrue(submit.isHittable, "主ボタンが1画面に入らない（\(name)・\(submit.frame)）")
+                XCTAssertLessThanOrEqual(submit.frame.maxY, window.maxY, "主ボタンが下端より下（\(name)）")
+                if tag.isEmpty {
+                    // 標準の字では全部が送らずに入る（owner「スクロールしないといけないのが嫌だ」）
+                    for (element, what) in [(email, "メールの欄"), (apple, "Apple"), (google, "Google"), (toggle, "下の切り替え")] {
+                        XCTAssertTrue(element.isHittable, "\(what)が1画面に入らない（\(name)・\(element.frame)）")
+                        XCTAssertLessThanOrEqual(element.frame.maxY, window.maxY, "\(what)が下端より下（\(name)）")
+                    }
+                }
+                // 並び: Apple がいちばん上 → Google → 欄 → 主ボタン → 切り替え。Apple と Google は同じ幅と高さ
+                XCTAssertLessThanOrEqual(apple.frame.maxY, google.frame.minY, "Apple が Google より上にない（\(name)）")
+                XCTAssertLessThan(google.frame.maxY, email.frame.minY, "Google が欄より上にない（\(name)）")
+                XCTAssertLessThan(email.frame.maxY, submit.frame.minY, "欄が主ボタンより上にない（\(name)）")
+                XCTAssertLessThanOrEqual(submit.frame.maxY, toggle.frame.minY + 1, "切り替えが主ボタンの下にない（\(name)）")
+                XCTAssertEqual(google.frame.height, apple.frame.height, accuracy: 1, "Google と Apple の高さが違う（\(name)）")
+                XCTAssertEqual(google.frame.width, apple.frame.width, accuracy: 1, "Google と Apple の幅が違う（\(name)）")
+                XCTAssertGreaterThanOrEqual(apple.frame.height, 44, "Apple のボタンが 44pt 未満（\(name)）")
+                XCTAssertGreaterThanOrEqual(toggle.frame.height, 44, "切り替えの一行の当たりが 44pt 未満（\(name)）")
+                if !signUp && tag.isEmpty {
+                    // キーボードが出たとき: 打っている欄と主ボタンがキーボードの上に見える
+                    let password = app.secureTextFields["signin.password"].firstMatch
+                    password.tap()
+                    let keyboard = app.keyboards.firstMatch
+                    if keyboard.waitForExistence(timeout: 5) {
+                        Thread.sleep(forTimeInterval: 1)
+                        let top = keyboard.frame.minY
+                        print("[signin-layout] キーボード keyboard=\(keyboard.frame) password=\(password.frame) submit=\(submit.frame)")
+                        shoot(app, "70c-ログインの画面（キーボードが出たとき）")
+                        XCTAssertLessThanOrEqual(password.frame.maxY, top + 1, "打っている欄がキーボードに隠れる")
+                        XCTAssertLessThanOrEqual(submit.frame.maxY, top + 1, "主ボタンがキーボードに隠れる")
+                        XCTAssertGreaterThanOrEqual(password.frame.minY, window.minY, "打っている欄が画面の上へ出た")
+                    }
+                }
+                if signUp {
+                    // 見えていなければ（大きい字）送って押す
+                    var pushes = 0
+                    while toggle.exists && !toggle.isHittable && pushes < 3 { app.swipeUp(velocity: .slow); pushes += 1 }
+                    guard toggle.isHittable else { return unreached(app, "ログインに戻る\(tag)") }
+                    // シートを下へ払うと閉じるので、戻すための払いはしない（ログインの側は短いので頭へ戻る）
+                    toggle.tap()
+                }
+            }
+            app.terminate()
+        }
+    }
+
+    /// **確認コードの画面**（2026-11-23・模型 NL2x「登録の確認コード」）。未ログインで、登録の確認コードの画面から開く
+    /// （`-JPPreviewVerificationCode YES`・本物の Cognito には送らない）。いいねからログインの板を開き、開いた姿（キーボードが出て
+    /// 箱が見える）と3桁打った姿を撮る。6桁は打たない（見本の認証が無いので確かめが本物へ行く）。出なければ撮らずに抜ける。値で見ること:
+    /// - キーボードが出ても、6桁の箱がキーボードより上にある（375×667 の寸法は単体テストの寸法と模型で見る）
+    /// - 「登録を完了する」のボタンが無い。戻る（ガラスの丸）と「メールアドレスを変える」の当たりが 44pt 以上
+    func testCapturesVerificationCode() {
+        let app = launchSignedOutHome(["-JPPreviewVerificationCode", "YES"])
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ") }
+        let field = app.textFields["signin.code"].firstMatch
+        guard tapHomeLike(app, opens: field, "") else { return unreached(app, "確認コードの画面") }
+        let keyboard = app.keyboards.firstMatch
+        if !keyboard.waitForExistence(timeout: 5) { field.tap() }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "70d-確認コードの画面")
+        XCTAssertFalse(app.buttons["登録を完了する"].exists, "「登録を完了する」のボタンが残っている")
+        let back = app.buttons["signin.code.back"].firstMatch
+        let change = app.buttons["signin.code.changeEmail"].firstMatch
+        XCTAssertTrue(back.exists, "左上の戻るが無い")
+        XCTAssertGreaterThanOrEqual(back.frame.height, 44, "戻るの当たりが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(change.frame.height, 44, "「メールアドレスを変える」の当たりが 44pt 未満")
+        if keyboard.exists {
+            print("[signin-code] keyboard=\(keyboard.frame) field=\(field.frame)")
+            XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY + 1, "6桁の箱がキーボードに隠れる")
+        }
+        field.typeText("482")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "70e-確認コードの画面（入力中）")
+        app.terminate()
+    }
+
     /// 並びを指で `dy` だけ動かす（正なら下へ引く）。1回で動かすのは画面の 40% まで
     private func dragFeed(_ app: XCUIApplication, by dy: CGFloat) {
         let window = app.windows.firstMatch
@@ -4593,6 +4763,37 @@ final class ScreenshotTests: JPUITestCase {
     }
 
     /// 未ログインでホームを開く（一巡と同じ本番の写真・日本語）。`-JPPreviewUserId` を渡さない
+    /// 未ログインでホームの写真のいいねを押し、`target`（ログイン画面など）が出るまで。出たら true。
+    ///
+    /// 2026-11-23（1.2.0 の統合・Mac run 1769 `testCapturesSignInLayout` の大きい文字）: いいねを押したのに写真の詳細
+    /// （蔵王キツネ村の1枚）が開き、ログイン画面に届かなかった。本物の公開一覧を読むホームは、上の段が後から読み込まれて
+    /// 札が下へずれる。大きい文字では読み込みが遅く、いいねの位置を読んでから押すまでの約1秒の間にずれて、下の札の写真を押していた。
+    /// **いいねの位置が 0.5 秒止まってから押す**。それでも詳細が開いたら、位置を記録して戻り、もう1回だけ押す
+    private func tapHomeLike(_ app: XCUIApplication, opens target: XCUIElement, _ tag: String) -> Bool {
+        let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
+        for attempt in 1...2 {
+            guard like.waitForExistence(timeout: 30) else { return false }
+            var frame = like.frame
+            for _ in 0..<12 {
+                Thread.sleep(forTimeInterval: 0.5)
+                let now = like.frame
+                if now == frame { break }
+                frame = now
+            }
+            guard like.isHittable else { return false }
+            like.tap()
+            if target.waitForExistence(timeout: 10) { return true }
+            let detail = app.buttons["photo.menu"].firstMatch.exists
+            let text = "[home-like]\(tag) \(attempt) 回目: いいね=\(frame) 押した後のいいね=\(like.exists ? "\(like.frame)" : "無し") 詳細が開いた=\(detail)"
+            print(text)
+            XCTContext.runActivity(named: text) { _ in }
+            guard detail, attempt == 1 else { return false }
+            app.navigationBars.buttons.firstMatch.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
+    }
+
     private func launchSignedOutHome(_ extra: [String]) -> XCUIApplication {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -4693,6 +4894,19 @@ final class ScreenshotTests: JPUITestCase {
             let height = card.components(separatedBy: "height=").last.flatMap { Double($0) } ?? 0
             XCTAssertEqual(height, 116, accuracy: 0.5, "札の背が 116 から変わった: \(card)")
         }
+    }
+
+    /// **旅行プランの行の写真**（札 #710 の案3・owner 2026-11-23「AIでプラン作った時に画像出てこないぞ」）。
+    /// 番号の丸の右に観光スポットの写真（自分の写真があればそれ）。出なければ撮らずに抜ける
+    func testCapturesTripPlanStopPhotos() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openFixturePlan(app) else { return }
+        // 行の写真は飾り（読み上げから外している）。写真のある行は、行の識別子が写真の種類になる（`TripStopLabel.identifier`）
+        let thumb = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@", ["tripPlan.stopSpotPhoto", "tripPlan.stopPhoto"])).firstMatch
+        guard thumb.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "65p-旅行プランの行の写真（観光スポットの写真・自分の写真）")
     }
 
     /// 65t 旅行プランの日程の時刻（札 #677・案A）: 場所の左に着く時刻、日の見出しの右「出発 9:00」を押して時刻を選ぶ。
@@ -5510,6 +5724,91 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
+    // MARK: - 旅のスタンプ帳（2026-11-23・札 #712）
+
+    /// 旅のスタンプ帳。マイページの「旅の記録」の行（`trips.stampBook`）から入り、空・少し・たくさんの3つを撮る。
+    /// たくさんの回は県のページと、1つのスタンプの札も撮る。
+    /// `-JPPreviewStampBook empty|few|many`（Debug のみ・`PreviewSession.stampBookSample`）で見本の帳面を入れる
+    /// （見本の利用者は自分の写真の口を叩けないため）。**出なければ撮らずに抜ける**。サーバーには何も送らない
+    func testCapturesStampBook() {
+        for (kind, tag) in [("empty", "87a-スタンプ帳（空）"), ("few", "87b-スタンプ帳（少し）"), ("many", "87c-スタンプ帳（たくさん）")] {
+            let app = XCUIApplication.jp()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            app.launchArguments += ["-JPPreviewStampBook", kind]
+            app.launch()
+            defer { app.terminate() }
+
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+            tabBar.buttons.element(boundBy: 4).tap()
+            let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+            guard tripsTab.waitForExistence(timeout: 20) else { return }
+            tripsTab.tap()
+            let entry = app.buttons["trips.stampBook"].firstMatch
+            // 入口が出ないのは不具合（黙って抜けない・確かめ役の指摘）。メニューの行は `testCapturesSiteMenuTools` が見る
+            guard entry.waitForExistence(timeout: 20) else { return XCTFail("マイページの旅の記録の荷札の列に「スタンプ帳」が無い") }
+            // 入口はタブの頭の、横に送る荷札の列（札 #714）。下に隠れていれば上へ、右の外なら列を左へ払う。
+            // **画面の外の要素に `isHittable` を聞かない**（横の列の外の札に聞くと XCTest が落ちる・Mac run 1222）
+            let bottom = app.windows.firstMatch.frame.maxY - 100
+            func onScreen() -> Bool { entry.exists && !entry.frame.isEmpty && app.frame.contains(entry.frame) }
+            var swipes = 0
+            while entry.exists, entry.frame.maxY > bottom || !onScreen() || !entry.isHittable, swipes < 6 {
+                if entry.frame.maxY > bottom {
+                    app.swipeUp()
+                } else {
+                    // 札の列の高さで、画面の横幅の半分ほどを払う（小さな札の上の `swipeLeft` だと距離が足りないことがある）
+                    let origin = app.coordinate(withNormalizedOffset: .zero)
+                    let y = entry.frame.midY
+                    let width = app.frame.width
+                    origin.withOffset(CGVector(dx: width * 0.8, dy: y))
+                        .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: width * 0.2, dy: y)))
+                }
+                Thread.sleep(forTimeInterval: 1)
+                swipes += 1
+            }
+            guard onScreen(), entry.isHittable else { return XCTFail("荷札の列の「スタンプ帳」を押せる所まで送れない") }
+            if kind == "empty" { shoot(app, "87-マイページの荷札「スタンプ帳」") }
+            entry.tap()
+
+            let screen = app.descendants(matching: .any)[kind == "empty" ? "stampBook.empty" : "stampBook.map"].firstMatch
+            guard screen.waitForExistence(timeout: 15) else { return }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, tag)
+            guard kind == "many" else { continue }
+
+            // 県のページ（京都府）と、1つのスタンプの札
+            let kyoto = app.buttons["stampBook.row.京都府"].firstMatch
+            guard kyoto.waitForExistence(timeout: 5) else { return }
+            var pushes = 0
+            while !kyoto.isHittable, pushes < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            guard kyoto.isHittable else { return }
+            shoot(app, "87d-スタンプ帳（県の行）")
+            kyoto.tap()
+            let page = app.descendants(matching: .any)["stampBook.page"].firstMatch
+            guard page.waitForExistence(timeout: 10) else { return }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "87e-スタンプ帳（京都府のページ）")
+            let stamp = app.buttons["stampBook.stamp.sp_31047ba6ec8d"].firstMatch
+            guard stamp.waitForExistence(timeout: 5), stamp.isHittable else { return }
+            stamp.tap()
+            let detail = app.descendants(matching: .any)["stampBook.detail"].firstMatch
+            guard detail.waitForExistence(timeout: 10) else { return }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "87f-スタンプ帳（1つのスタンプ）")
+        }
+    }
+
     // MARK: - 行った県マップ（2026-11-08・札 #503）
 
     /// 行った県マップ。マイページの「旅の記録」の下の札から入り、地図・一覧・県の札を撮る。
@@ -5678,7 +5977,7 @@ final class ScreenshotTests: JPUITestCase {
 
     /// 規約の同意を押し、**同意の画面が消えるまで**確かめる（2026-10-22 run 686: 部屋の試験で、落ちた時の画面の木が
     /// 同意の画面のままだった。30 秒で出なかった・押しても消えなかった、のどちらでも黙って先へ進み、20 秒後に
-    /// 「キャンピングカーの画面が開かない」と別の所で落ちていた）。何秒で出て何回押したかを注記に残す
+    /// 「キャンピングカーの画面が開かない」と別の所で落ちていた・とおまわり号は 2026-11-23 に消した）。何秒で出て何回押したかを注記に残す
     private func agreeToTerms(_ app: XCUIApplication, since launched: Date = Date(), timeout: TimeInterval = 60) {
         let agree = app.buttons["legal.agree"]
         guard agree.waitForExistence(timeout: timeout) else {
@@ -5763,13 +6062,108 @@ final class ScreenshotTests: JPUITestCase {
         return false
     }
 
-    // MARK: - 写真で作るキャンピングカー（2026-10-18・札 #307）
+    // MARK: - 旅の記録の本棚（札 #714）
 
-    /// マイページ → 旅の記録のタブ → 「写真で作るキャンピングカー」の行。開けたら true
-    private func openCamper(_ app: XCUIApplication) -> Bool {
-        guard openTripsRow(app, "trips.camper") else { return false }
-        return app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15)
+    /// **旅が無いとき**（`-JPPreviewTripShelf empty`）: 頭の荷札の列と、旅が無いときの1行だけ
+    func testCapturesTripShelfEmpty() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "empty"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let start = app.buttons["trips.emptyStart"].firstMatch
+        guard start.waitForExistence(timeout: 15) else { return XCTFail("旅が無いのに「まだ旅はありません」の次の一手が無い") }
+        XCTAssertFalse(app.descendants(matching: .any)["trips.book"].firstMatch.exists, "旅が無いのに背表紙がある")
+        XCTAssertTrue(app.staticTexts["同じ旅で撮った写真を2枚載せると、旅の記録が一冊できます"].firstMatch.exists,
+                      "旅が無いときの1行が無い")
+        assertToolTags(app)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "34a-旅の記録（旅が無いとき）")
     }
+
+    /// **旅が増えたとき**（`-JPPreviewTripShelf many`・3年で14冊）: 年ごとの段と背表紙。説明の文は出さない
+    func testCapturesTripShelfMany() {
+        // `-JPPreviewLayoutProbe`: 日めくりの指の記録を `trips.flip.probe` に出す（2回外した後の事実取り・`DayFlipProbeLog`）
+        let app = launchTrunk(["-JPPreviewTripShelf", "many", "-JPPreviewLayoutProbe", "YES"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let spine = app.descendants(matching: .any)["trips.book"].firstMatch
+        guard spine.waitForExistence(timeout: 20) else { return XCTFail("旅が増えたのに背表紙が無い") }
+        XCTAssertFalse(app.staticTexts["同じ旅で撮った写真を2枚載せると、旅の記録が一冊できます"].firstMatch.exists,
+                       "旅があるのに説明の1行が出ている")
+        assertToolTags(app)
+        // 背表紙の当たり: 高さは 44pt 以上、幅は背の幅＋間で、隣の背の当たりと重ならない（細い背の右を押して隣が開かない）
+        XCTAssertGreaterThanOrEqual(spine.frame.height, 44, "背表紙の押せる高さが 44pt 未満")
+        let spines = app.descendants(matching: .any).matching(identifier: "trips.book")
+        if spines.count > 1 {
+            let first = spines.element(boundBy: 0).frame, second = spines.element(boundBy: 1).frame
+            if abs(first.maxY - second.maxY) < 1 {
+                XCTAssertLessThanOrEqual(first.maxX, second.minX + 0.5, "隣の背表紙の当たりが重なっている（\(first) と \(second)）")
+            }
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "34b-旅の記録（旅が増えたとき）")
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "34c-旅の記録（下の年の段）")
+    }
+
+    /// **背表紙を押して本が開いたとき**: 開き切った一冊。左へ払って次の日へめくる。「戻る」で棚へ閉じる
+    func testCapturesTripBookOpened() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let spine = app.descendants(matching: .any)["trips.book"].firstMatch
+        guard spine.waitForExistence(timeout: 20) else { return XCTFail("背表紙が無い") }
+        var pushes = 0
+        while !spine.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard spine.isHittable else { return XCTFail("背表紙を押せない") }
+        spine.tap()
+        // 開く動きは約 0.55 秒。開き切ってから撮る
+        let share = app.buttons["trips.share"].firstMatch
+        guard share.waitForExistence(timeout: 15) else { return XCTFail("背表紙を押しても一冊が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "34d-旅の一冊（本が開いた）")
+        // 表紙を読んでいる所で左へ払うと、1日目の見出しが画面の上へ来る（日がめくれた）
+        let day1 = app.descendants(matching: .any)["trips.day.1"].firstMatch
+        let before = day1.exists ? day1.frame.minY : nil
+        app.swipeLeft()
+        Thread.sleep(forTimeInterval: 2)
+        // 落ちたときの値: 日めくりの記録（指の始まり・離したとき・めくった先）と、画面にある日の見出し（id と上端）
+        func facts() -> String {
+            let probe = app.descendants(matching: .any)["trips.flip.probe"].firstMatch
+            let heads = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'trips.day.'")).allElementsBoundByIndex
+                .map { "\($0.identifier)@\(Int($0.frame.minY))" }
+            return "probe=[\(probe.exists ? (probe.value as? String ?? "") : "無し")] 見出し=\(heads)"
+        }
+        guard day1.waitForExistence(timeout: 5) else { return XCTFail("左へ払っても1日目の見出しが出ない（日がめくれない）\(facts())") }
+        let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : 100
+        XCTAssertLessThan(day1.frame.minY, top + 120,
+                          "左へ払っても1日目の見出しが上へ来ない（前 \(before.map { "\($0)" } ?? "無し")、後 \(day1.frame.minY)）\(facts())")
+        shoot(app, "34e-旅の一冊（次の日へめくった）")
+        let back = app.navigationBars.buttons.firstMatch
+        guard back.waitForExistence(timeout: 5) else { return XCTFail("一冊に戻るボタンが無い") }
+        back.tap()
+        XCTAssertTrue(spine.waitForExistence(timeout: 10), "「戻る」で棚へ戻らない")
+    }
+
+    /// 旅の記録のタブを選ぶ（マイページ → 旅の記録）
+    private func openTripShelf(_ app: XCUIApplication) -> Bool {
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        return selectTripsTab(app)
+    }
+
+    /// 頭の荷札の列（旅行プランと共同アルバムは必ず在る・高さ 44pt）
+    private func assertToolTags(_ app: XCUIApplication) {
+        for id in ["trips.plans", "trips.albums"] {
+            let tag = app.buttons[id].firstMatch
+            guard tag.waitForExistence(timeout: 10) else { XCTFail("荷札 \(id) が無い"); continue }
+            XCTAssertGreaterThanOrEqual(tag.frame.height, 44, "荷札 \(id) が 44pt 未満")
+        }
+    }
+
+    // MARK: - 旅の記録の行を開く・送る（2026-11-23 にとおまわり号の試験を消したときに残した道具・札 #709）
 
     /// マイページ → 旅の記録のタブ → 行 `id` を押す。押せたら true
     private func openTripsRow(_ app: XCUIApplication, _ id: String) -> Bool {
@@ -5839,114 +6233,6 @@ final class ScreenshotTests: JPUITestCase {
         return true
     }
 
-    /// 立体の車を組み終えるまで待つ（読み上げの値に「camper-ready 段 時刻」が出る・見本の起動のときだけ）
-    @discardableResult
-    private func waitCamper(_ app: XCUIApplication, _ marker: String, scene id: String = "camper.scene") -> Bool {
-        let scene = app.descendants(matching: .any)[id].firstMatch
-        let ready = NSPredicate(format: "value CONTAINS %@", marker)
-        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40) == .completed
-        // 組んだ形が次のコマで描かれ、向きの動き（0.6 秒）が止まるまで
-        Thread.sleep(forTimeInterval: 2)
-        return done
-    }
-
-    /// **写真で作るキャンピングカー**: 昼・夜・扉を開けた室内・3 段（バン・キャンピングカー・トレーラーつき）。
-    /// 出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
-    func testCapturesCamper() {
-        let app = launchTrunk([])
-        guard openCamper(app) else { return }
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        shoot(app, "95-写真で作るキャンピングカー（昼）")
-        for id in ["camper.door", "camper.reset", "camper.mood.night", "camper.stage.van"] {
-            let b = app.buttons[id].firstMatch
-            XCTAssertTrue(b.exists, "\(id) が無い")
-            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
-        }
-        // 扉を開けた室内
-        app.buttons["camper.door"].firstMatch.tap()
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "95a-写真で作るキャンピングカー（扉を開けた室内）")
-        app.buttons["camper.door"].firstMatch.tap()
-        // 夜
-        app.buttons["camper.mood.night"].firstMatch.tap()
-        waitCamper(app, "night")
-        // 夜の光の切り替えが絵に出るまで（95a と同じく少し待つ。合図は値が替わった時で、描き直しの後ではない）
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "95b-写真で作るキャンピングカー（夜）")
-        // 夜に扉を開けた所（室内の灯りと、扉の口から地面へこぼれる灯り）
-        app.buttons["camper.door"].firstMatch.tap()
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "95f-写真で作るキャンピングカー（夜・扉を開けた）")
-        app.buttons["camper.door"].firstMatch.tap()
-        app.buttons["camper.mood.day"].firstMatch.tap()
-        waitCamper(app, "day")
-        // 3 段
-        for (id, name) in [("van", "95c-キャンピングカー（バン）"), ("camper", "95d-キャンピングカー（キャンピングカー）"),
-                           ("trailer", "95e-キャンピングカー（トレーラーつき）")] {
-            let b = app.buttons["camper.stage.\(id)"].firstMatch
-            guard b.exists else { continue }
-            if !b.isHittable { scrollTo(b, in: app) }
-            b.tap()
-            waitCamper(app, "camper-ready \(id)")
-            shoot(app, name)
-        }
-    }
-
-    /// **とおまわり号の第2段**（2026-10-19・`-JPPreviewCamper`。サーバーには何も送らない見本）: 要サーバーの部品が
-    /// 届いた画面（一度に 3 個まで・贈り物の名前）と、分母 131 の車の画面。開けなければ撮らずに抜ける。
-    /// **届いた画面が出たのに押せる所が 44pt 未満なら落とす**。車の画面で分母が 131 でなければ落とす
-    func testCapturesCamperServer() {
-        let app = launchTrunk(["-JPPreviewCamper", "YES", "-JPPreviewCamperArrival", "YES"])
-        guard openCamper(app) else { return }
-        // 届いた画面は「いま車に付ける」のボタンで見分ける（画面の親に識別子を付けると子のボタンの識別子を覆う）
-        let arrival = app.buttons["camper.arrival.equip"].firstMatch
-        if arrival.waitForExistence(timeout: 15) {
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "95g-キャンピングカー（部品が届いた）")
-            for id in ["camper.arrival.equip", "camper.arrival.close"] {
-                let b = app.buttons[id].firstMatch
-                XCTAssertTrue(b.exists, "\(id) が無い")
-                if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
-            }
-            let others = app.buttons.matching(identifier: "camper.arrival.part")
-            for i in 0..<others.count {
-                XCTAssertGreaterThanOrEqual(others.element(boundBy: i).frame.height, 44, "一緒に届いた部品の札が 44pt 未満")
-            }
-            app.buttons["camper.arrival.close"].firstMatch.tap()
-        }
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        let count = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "/ 131")).firstMatch
-        XCTAssertTrue(count.waitForExistence(timeout: 10), "サーバーが読めたのに分母が 131 でない")
-        shoot(app, "95h-キャンピングカー（要サーバーの部品）")
-    }
-
-    /// **友達の車を訪ねる**（2026-10-19・板 CamperVisit）: 見本（`-JPPreviewCamperVisit`・Debug のみ。サーバーには何も送らない）の
-    /// マイページの行から見本の友達の車へ直接入り、95i・95j を**必ず撮る**（出なければ落とす）。本物の入口（人のプロフィールの
-    /// 「とおまわり号を訪ねる」・フォローしている人の頁だけ）はホームの写真の並びとフォローの関係次第なので、ここでは通らない。
-    /// 押せる所は 44pt 以上
-    func testCapturesCamperVisit() {
-        let app = launchTrunk(["-JPPreviewCamperVisit", "YES"])
-        XCTAssertTrue(openTripsRow(app, "trips.camperVisitSample"), "マイページに見本の友達の車の行が無い")
-
-        let gift = app.buttons["camper.visit.gift"].firstMatch
-        guard gift.waitForExistence(timeout: 15) else { return XCTFail("友達の車の画面が開かない") }
-        // 描き終わり（読み上げの値に「camper-ready」）まで待ってから撮る（自分の車の `waitCamper` と同じ）
-        guard waitCamper(app, "camper-ready", scene: "camper.visit.scene") else { return XCTFail("友達の車を組み終えない") }
-        XCTAssertTrue(app.descendants(matching: .any)["camper.visit.counted"].firstMatch.exists, "訪ねた記録の一行が無い")
-        shoot(app, "95i-友達の車を訪ねる")
-        for id in ["camper.visit.gift", "camper.visit.firewood"] {
-            let b = app.buttons[id].firstMatch
-            XCTAssertTrue(b.exists, "\(id) が無い")
-            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
-        }
-        scrollTo(gift, in: app)
-        gift.tap()
-        let message = app.descendants(matching: .any)["camper.visit.message"].firstMatch
-        XCTAssertTrue(message.waitForExistence(timeout: 10), "贈った結果の一行が出ない")
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "95j-友達の車（部品を贈った）")
-    }
-
     /// 押したい行が画面に収まるまで送る
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
         let bottom = app.windows.firstMatch.frame.maxY - 60
@@ -5958,193 +6244,15 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
-    /// **とおまわり号の灯り**（2026-10-19 owner「テールランプとかの灯りが不自然すぎる」）: 夜の後ろ斜め（尾灯が見える・
-    /// 分類「横・後ろ」の寄り）と、夜の前の寄り（分類「前照灯」の寄り）、昼の後ろ斜め。**必ず撮る**（開けなければ落とす）
-    func testCapturesCamperLamps() {
-        let app = launchTrunk([])
-        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        // 分類のボタンを押すと、その部品へ寄る（`CamperFraming.focus`）。下の欄を送ってから押すので、寄りは押した後に決まる
-        // 分類の行は横に並び、画面の外に隠れる（Mac run 563: 前照灯が右の外にあり押せなかった）。縦に送ってから、
-        // 行のうち見えているボタンの上で左へ少しずつ引いて探す
-        func aim(_ ids: [String]) -> Bool {
-            for id in ids {
-                let b = app.buttons[id].firstMatch
-                guard b.waitForExistence(timeout: 5) else { return false }
-                scrollTo(b, in: app)
-                var drags = 0
-                while !b.isHittable, drags < 8 {
-                    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'camper.category.'"))
-                    guard let visible = (0..<row.count).map({ row.element(boundBy: $0) }).first(where: { $0.isHittable }) else { break }
-                    let start = visible.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                    start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
-                    Thread.sleep(forTimeInterval: 1)
-                    drags += 1
-                }
-                guard b.isHittable else { return false }
-                b.tap()
+    /// 枠どうしが重ならない（片方がもう片方を丸ごと含むのは、札の中の印なので除く）
+    private func assertNoOverlap(_ boxes: [(String, CGRect)], _ label: String) {
+        for i in boxes.indices {
+            for j in boxes.indices where j > i {
+                let a = boxes[i].1, b = boxes[j].1
+                let x = a.intersection(b)
+                guard !x.isNull, x.width > 1, x.height > 1, !a.contains(b), !b.contains(a) else { continue }
+                XCTFail("\(label): \(boxes[i].0) と \(boxes[j].0) が重なる（\(a) / \(b)）")
             }
-            Thread.sleep(forTimeInterval: 2)
-            return true
-        }
-        let night = app.buttons["camper.mood.night"].firstMatch
-        guard night.waitForExistence(timeout: 5) else { return XCTFail("夜のボタンが無い") }
-        night.tap()
-        waitCamper(app, "night")
-        guard aim(["camper.group.side"]) else { return XCTFail("横・後ろの分類が押せない") }
-        shoot(app, "95k-キャンピングカー（夜・後ろ斜め・尾灯）")
-        guard aim(["camper.group.ext", "camper.category.headlight"]) else { return XCTFail("前照灯の分類が押せない") }
-        shoot(app, "95l-キャンピングカー（夜・前の寄り）")
-        // 下の欄を上へ戻す（車の絵の上で引くと向きが回るので、画面の下の方で引く）
-        let day = app.buttons["camper.mood.day"].firstMatch
-        var pulls = 0
-        while !(day.exists && day.isHittable), pulls < 6 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
-            Thread.sleep(forTimeInterval: 1)
-            pulls += 1
-        }
-        guard day.isHittable else { return XCTFail("昼のボタンに戻れない") }
-        day.tap()
-        waitCamper(app, "day")
-        guard aim(["camper.group.side"]) else { return XCTFail("横・後ろの分類が押せない（昼）") }
-        shoot(app, "95m-キャンピングカー（昼・後ろ斜め・尾灯）")
-        // バン（段 1）とトレーラーつきの夜（2026-10-21: 前照灯を消したので、外の置き物が無いと車体が沈まないかを見る）。
-        // 段のボタンは見本の段で、押すと初めの向きへ戻る
-        pulls = 0
-        while !(night.exists && night.isHittable), pulls < 6 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
-            Thread.sleep(forTimeInterval: 1)
-            pulls += 1
-        }
-        guard night.isHittable else { return XCTFail("夜のボタンに戻れない") }
-        night.tap()
-        waitCamper(app, "night")
-        for (id, name) in [("van", "95n-キャンピングカー（バン・夜）"), ("trailer", "95o-キャンピングカー（トレーラーつき・夜）")] {
-            let b = app.buttons["camper.stage.\(id)"].firstMatch
-            guard b.waitForExistence(timeout: 5) else { return XCTFail("\(id) の段のボタンが無い") }
-            scrollTo(b, in: app)
-            guard b.isHittable else { return XCTFail("\(id) の段のボタンが押せない") }
-            b.tap()
-            guard waitCamper(app, "camper-ready \(id) night") else { return XCTFail("\(id) の夜を組み終えない") }
-            shoot(app, name)
-        }
-        // 雪（2026-10-21: 夜の作り直しで共に使う部品を変えたので、雪の見た目が変わっていないかを見る）
-        let snow = app.buttons["camper.mood.snow"].firstMatch
-        pulls = 0
-        while !(snow.exists && snow.isHittable), pulls < 6 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
-            Thread.sleep(forTimeInterval: 1)
-            pulls += 1
-        }
-        guard snow.isHittable else { return XCTFail("雪のボタンに戻れない") }
-        snow.tap()
-        waitCamper(app, "snow")
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "95r-キャンピングカー（トレーラーつき・雪）")
-    }
-
-    /// 画面写真の縦の帯（0〜1）の平均の明るさ（0〜255・16×16 に縮めて測る）。暗い画面を見分ける
-    static func meanBrightness(_ image: UIImage, band: ClosedRange<Double>) -> Double {
-        guard let cg = image.cgImage else { return 0 }
-        let h = Double(cg.height)
-        let rect = CGRect(x: 0, y: h * band.lowerBound, width: Double(cg.width), height: h * (band.upperBound - band.lowerBound))
-        guard let part = cg.cropping(to: rect) else { return 0 }
-        let side = 16
-        var px = [UInt8](repeating: 0, count: side * side * 4)
-        guard let ctx = CGContext(data: &px, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
-                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
-        ctx.draw(part, in: CGRect(x: 0, y: 0, width: side, height: side))
-        var sum = 0.0
-        for i in stride(from: 0, to: px.count, by: 4) {
-            sum += 0.2126 * Double(px[i]) + 0.7152 * Double(px[i + 1]) + 0.0722 * Double(px[i + 2])
-        }
-        return sum / Double(side * side)
-    }
-
-    /// **外から中に入るときの光**（2026-10-21 owner「中に入るボタン押した時に扉開くけど中の光で眩しすぎてほんとにダメ」
-    /// 「外から中に入る時の光もほんとにダメ」）: 夜と昼に「中に入る」を押し、扉が開く途中・開いた所・口へ寄っている途中・
-    /// 部屋に切り替わる直前と直後を**必ず撮る**（開けない・入れないなら落とす）。動きは見本の起動で 6 倍ゆっくり
-    /// （`-JPPreviewCamperEnterSlow 6`: 扉 3.6 秒・寄り 2.7 秒から 3.6 秒・切り替え 6.3 秒）
-    func testCapturesCamperEntering() {
-        executionTimeAllowance = 600
-        let app = launchTrunk(["-JPPreviewCamperEnterSlow", "6", "-JPPreviewCamperRoomReset", "YES"])
-        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        for (mood, label) in [("night", "夜"), ("day", "昼")] {
-            let moodButton = app.buttons["camper.mood.\(mood)"].firstMatch
-            guard moodButton.waitForExistence(timeout: 5) else { return XCTFail("\(label)のボタンが無い") }
-            if !moodButton.isHittable { scrollTo(moodButton, in: app) }
-            moodButton.tap()
-            waitCamper(app, mood)
-            Thread.sleep(forTimeInterval: 1)
-            let enter = app.buttons["camper.room.enter"].firstMatch
-            guard enter.waitForExistence(timeout: 5), enter.isHittable else { return XCTFail("「中に入る」が押せない（\(label)）") }
-            let start = Date()
-            enter.tap()
-            // 押してからの秒で撮る（撮るのに 0.3〜0.6 秒かかるので、少し前に合わせる）
-            func shoot(at seconds: Double, _ name: String) {
-                let wait = seconds - Date().timeIntervalSince(start)
-                if wait > 0 { Thread.sleep(forTimeInterval: wait) }
-                self.shoot(app, name)
-            }
-            let n = mood == "night" ? "p" : "q"
-            shoot(at: 0.9, "95\(n)1-キャンピングカー（\(label)・中に入る・扉が開く途中）")
-            shoot(at: 2.5, "95\(n)2-キャンピングカー（\(label)・中に入る・扉が開いた）")
-            shoot(at: 4.3, "95\(n)3-キャンピングカー（\(label)・中に入る・口へ寄る途中）")
-            shoot(at: 5.8, "95\(n)4-キャンピングカー（\(label)・中に入る・切り替わる直前）")
-            let room = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-            guard room.waitForExistence(timeout: 15) else { return XCTFail("部屋に切り替わらない（\(label)）") }
-            // 切り替わった直後: 部屋が組み上がるまで、寄った口の絵が覆う（暗い画面にしない・確かめ役 2026-10-21）
-            let cover = app.descendants(matching: .any)["camper.room.entryCover"].firstMatch
-            let covered = cover.exists
-            // SwiftUI が部屋の画面をアクセシビリティ階層へ公開した直後は、最初のフレームが
-            // まだ合成されておらず、遷移中の黒い一枚を取得することがある。覆いの表示を
-            // 最大 2 秒だけ待ってから撮る（長い待ちで本物の暗転を隠さない）。
-            var first = app.screenshot()
-            let coverDeadline = Date().addingTimeInterval(2)
-            while Self.meanBrightness(first.image, band: 0.2...0.55) <= 20, Date() < coverDeadline {
-                Thread.sleep(forTimeInterval: 0.2)
-                first = app.screenshot()
-            }
-            self.shoot(app, "95\(n)5-キャンピングカー（\(label)・中に入る・部屋に切り替わった直後）")
-            XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20,
-                                 "部屋に切り替わった直後が暗い画面（\(label)・寄った口の絵の覆い: \(covered ? "あり" : "無し")・2 秒待機後）")
-            XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない（\(label)）")
-            // 組み上がった合図は SceneKit に載せた時点で、描くのはその後（`CamperRoomSceneView.onDrawn`）。
-            // 部屋が描かれて明るくなるまで最長 30 秒待って撮る。2026-10-22 PR #369 の検証（run 39773377293）: 込んだ Mac で、部屋の
-            // 画面が出るまで 11 秒・アプリの応答が 16 秒止まり、覆いの 20 秒の待ちが切れた直後の、まだ描かれていない暗い地を
-            // 合図の直後に撮っていた（部屋の家具の網は main と同じ・`CamperRoomScenePlan.make` の三角形 82,130 で同じ）
-            var settled = app.screenshot()
-            let drawnBy = Date().addingTimeInterval(30)
-            while Self.meanBrightness(settled.image, band: 0.2...0.55) <= 20, Date() < drawnBy {
-                Thread.sleep(forTimeInterval: 1)
-                settled = app.screenshot()
-            }
-            self.shoot(app, "95\(n)6-キャンピングカー（\(label)・中に入る・部屋が組み上がった）")
-            XCTAssertGreaterThan(Self.meanBrightness(settled.image, band: 0.2...0.55), 20, "部屋が組み上がっても暗い画面（\(label)）")
-            // 外へ戻り、扉を閉じて（初めの向きへ戻る）次の時刻へ
-            let back = app.buttons["camper.room.back"].firstMatch
-            guard back.waitForExistence(timeout: 10) else { return XCTFail("部屋から外へ戻れない") }
-            back.tap()
-            let door = app.buttons["camper.door"].firstMatch
-            // main の run（39739874666）で 10 秒待っても外の車に戻らなかった。押しが届かなかった時は 1 回だけ押し直し、
-            // それでも戻らなければ画面の木を残して落とす
-            if !door.waitForExistence(timeout: 10), back.exists {
-                note(app, "外へ戻る", "「外へ」を押して 10 秒たっても外の車に戻らない。押し直す")
-                back.tap()
-            }
-            guard door.waitForExistence(timeout: 10) else {
-                note(app, "外へ戻る", "外の車に戻らない")
-                return XCTFail("外の車に戻らない")
-            }
-            // 戻ったら口の真正面の寄りではなく、扉の口を斜めに見る向き（確かめ役 2026-10-21）
-            Thread.sleep(forTimeInterval: 4)
-            self.shoot(app, "95\(n)7-キャンピングカー（\(label)・部屋から戻った）")
-            door.tap()
-            Thread.sleep(forTimeInterval: 4)
         }
     }
 
@@ -6181,7 +6289,7 @@ final class ScreenshotTests: JPUITestCase {
 
     /// **≡ メニューの置き場**（2026-11-12・デザインの案 第10章「どこに何を置くか」）: 旅の準備・旅の楽しみ・ほか。
     /// タブと重なる行（撮影地マップ・マイページ・保存）は無い。見本（`-JPPreviewTrunk`）ではトランクの行が必ず出るので、
-    /// 出なければ落とす。とおまわり号の行を押すと車の画面が開く
+    /// 出なければ落とす。とおまわり号の行は 2026-11-23 に消した（札 #709）ので、無いことも見る
     func testCapturesSiteMenuTools() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3", "-JPPreviewPass", "YES"])
         let menu = app.buttons["header.menu"].firstMatch
@@ -6194,20 +6302,71 @@ final class ScreenshotTests: JPUITestCase {
         }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "102m-メニュー（旅の準備）")
-        let camper = app.buttons["menu.camper"].firstMatch
-        guard camper.waitForExistence(timeout: 10) else { return XCTFail("メニューにとおまわり号の行が無い") }
-        scrollTo(camper, in: app)
-        for id in ["menu.tripPlans", "menu.albums", "menu.lightForecast", "menu.pass", "menu.trunk", "menu.camper"] {
+        let trunk = app.buttons["menu.trunk"].firstMatch
+        guard trunk.waitForExistence(timeout: 10) else { return XCTFail("メニューに旅のトランクの行が無い") }
+        scrollTo(trunk, in: app)
+        XCTAssertFalse(app.buttons["menu.camper"].firstMatch.exists, "消したとおまわり号の行が残っている")
+        // 旅のスタンプ帳の行（2026-11-23・札 #712）。とおまわり号の行があった所（トランクの下）
+        for id in ["menu.tripPlans", "menu.albums", "menu.lightForecast", "menu.pass", "menu.trunk", "menu.stampBook"] {
             let row = app.buttons[id].firstMatch
             XCTAssertTrue(row.exists, "メニューに \(id) が無い")
             if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満") }
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "102n-メニュー（旅の楽しみ）")
-        if camper.isHittable {
-            camper.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15),
-                          "メニューのとおまわり号の行を押しても車の画面が開かない")
+    }
+
+    /// 「サインインの方法」（札 #601・2026-11-23 owner）。設定の「アカウント」の行 → 画面 → 「解除」→ 確かめ → 解除した後。
+    /// もう1つの形（Apple で作った人）は、最後の1つなので「解除」が無く、理由が出る。見本の通信（`-JPPreviewSigninMethods`）
+    func testCapturesSigninMethods() {
+        for shape in ["linked", "last"] {
+            // 見本の答えは見本の通信の中だけ（`PreviewSession.signinMethods` は `localBackend` のときだけ値を返す）。
+            // 2026-11-23（Mac run 1769）: `-JPPreviewLocalBackend` を渡さず、本物のサーバーに聞いて行が出なかった
+            let app = launchTrunk(["-JPPreviewLocalBackend", "YES", "-JPPreviewSigninMethods", shape])
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+            tabBar.buttons.element(boundBy: 4).tap()
+            let gear = app.buttons["設定"].firstMatch
+            guard gear.waitForExistence(timeout: 15) else { return XCTFail("設定の丸が無い") }
+            scrollTo(gear, in: app)
+            gear.tap()
+            let row = app.buttons["settings.signinMethods"].firstMatch
+            guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に「サインインの方法」の行が無い（\(shape)）") }
+            scrollTo(row, in: app)
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44, "「サインインの方法」の行が 44pt 未満")
+            if shape == "linked" {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "102h-設定（アカウントとサインインの方法）")
+            }
+            row.tap()
+            let apple = app.descendants(matching: .any)["signinMethods.row.apple"].firstMatch
+            guard apple.waitForExistence(timeout: 10) else { return XCTFail("サインインの方法が開かない（\(shape)）") }
+            Thread.sleep(forTimeInterval: 1)
+            let remove = app.buttons["signinMethods.remove.apple"].firstMatch
+            if shape == "last" {
+                XCTAssertFalse(remove.exists, "最後の1つなのに「解除」が出ている")
+                XCTAssertTrue(app.descendants(matching: .any)["signinMethods.blocked.apple"].firstMatch.exists,
+                              "解除できない理由が出ていない")
+                shoot(app, "102j-サインインの方法（解除できない）")
+                app.terminate()
+                continue
+            }
+            shoot(app, "102i-サインインの方法")
+            guard remove.exists else { return XCTFail("Apple の「解除」が無い") }
+            XCTAssertGreaterThanOrEqual(remove.frame.height, 44, "「解除」が 44pt 未満")
+            remove.tap()
+            let confirm = app.buttons["解除する"].firstMatch
+            guard confirm.waitForExistence(timeout: 5) else { return XCTFail("確かめのダイアログが出ない") }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102i2-サインインの方法（確かめ）")
+            confirm.tap()
+            // `waitForExpectations` は、起動の道具が `waitGone` で待ち終えた見張り（legal.agree）も
+            // もう一度待とうとして落ちる（run 1772・API violation）。待つのはこの1つだけにする
+            XCTAssertTrue(waitGone(app.buttons["signinMethods.remove.apple"].firstMatch, timeout: 10),
+                          "解除したのに Apple の「解除」が残っている")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102i3-サインインの方法（解除した後）")
+            app.terminate()
         }
     }
 
@@ -6422,7 +6581,7 @@ final class ScreenshotTests: JPUITestCase {
         let pocketRow = app.buttons["trunk.pocket"].firstMatch
         scrollTo(pocketRow, in: app)
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "90a-旅のトランク（下・最近貼ったラベルと札）")
+        shoot(app, "90a-旅のトランク（下・カードと札）")
         guard pocketRow.isHittable else { return }
         XCTAssertGreaterThanOrEqual(pocketRow.frame.height, 44, "手持ちの行が 44pt 未満")
         pocketRow.tap()
@@ -6433,39 +6592,23 @@ final class ScreenshotTests: JPUITestCase {
         cell.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "92a-手持ちのラベル（選んでいる）")
-        for id in ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"] {
+        // 2026-11-23（札 #706）: Pro の月3回の作り直しはやめた。手持ちの帯は貼る・削除（作れる回数があれば「好きなデザインで作る」）
+        for id in ["trunk.pocket.stick", "trunk.pocket.delete"] {
             let button = app.buttons[id].firstMatch
             XCTAssertTrue(button.exists, "\(id) が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
         }
-        let reroll = app.buttons["trunk.pocket.reroll"].firstMatch
-        if reroll.isHittable {
-            reroll.tap()
-            let close = app.buttons["trunk.reroll.close"].firstMatch
-            if close.waitForExistence(timeout: 10) {
-                Thread.sleep(forTimeInterval: 2)
-                shoot(app, "93-図柄を作り直す（押す前）")
-                // 押す前は「この図柄にする」を出さない（開いただけでは回数を使わない・2026-10-17）
-                XCTAssertFalse(app.buttons["trunk.reroll.choose"].firstMatch.exists, "押す前なのに「この図柄にする」が出ている")
-                let start = app.buttons["trunk.reroll.start"].firstMatch
-                if start.exists, start.isHittable {
-                    XCTAssertGreaterThanOrEqual(start.frame.height, 44, "「作り直す」が 44pt 未満")
-                    start.tap()
-                    let options = app.buttons.matching(identifier: "trunk.reroll.option")
-                    _ = options.firstMatch.waitForExistence(timeout: 10)
-                    Thread.sleep(forTimeInterval: 1)
-                    shoot(app, "93a-図柄を作り直す（候補）")
-                    if options.count > 2 {
-                        options.element(boundBy: 2).tap()
-                        Thread.sleep(forTimeInterval: 1)
-                        shoot(app, "93b-図柄を作り直す（案2を選んだ）")
-                    }
-                    XCTAssertGreaterThanOrEqual(app.buttons["trunk.reroll.choose"].firstMatch.frame.height, 44)
-                }
-                close.tap()
-                Thread.sleep(forTimeInterval: 1)
-            }
+        // 回数が残っているラベルは手持ちからも作り直せる（届いた画面と同じ部品・確かめ役の指摘 2026-11-23）
+        let pocketReroll = app.buttons["trunk.pocket.reroll"].firstMatch
+        XCTAssertTrue(pocketReroll.exists, "手持ちで作り直せない")
+        XCTAssertGreaterThanOrEqual(pocketReroll.frame.height, 44, "手持ちの「作り直す」が 44pt 未満")
+        if pocketReroll.isHittable {
+            pocketReroll.tap()
+            Thread.sleep(forTimeInterval: 1)
+            XCTAssertEqual(app.buttons.matching(identifier: "trunk.pocket.candidate").count, 2, "手持ちで作り直して候補が増えない")
+            shoot(app, "92d-手持ちのラベル（作り直した）")
         }
+        XCTAssertFalse(app.buttons["trunk.pocket.custom"].firstMatch.exists, "作れる回数が無いのに「好きなデザインで作る」が出ている")
         goBack(app)
         Thread.sleep(forTimeInterval: 1)
 
@@ -6525,6 +6668,51 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
+    /// **旅のトランクの最初の画面の状態**（札 #711・案「トランクを見やすく」版3）: 大きいボタンが状態で替わる
+    /// （ラベルあり →「ラベルを貼る」、ラベル0で硬貨あり →「カプセルを回す」、どちらも0・初めて →「写真を投稿」）、
+    /// 読み込み中、圏外（前に読んだトランクを薄く出してお知らせ）。出なければ撮らずに抜ける。
+    /// **出たのに大きいボタン・「回して見る」が 44pt 未満なら落とす**
+    func testCapturesTrunkHomeStates() {
+        let cases: [(home: String?, primary: String?, name: String)] = [
+            (nil, "trunk.stick.open", "90e-旅のトランク（ラベルあり）"),
+            ("coins", "trunk.gacha.open", "90f-旅のトランク（ラベル0、硬貨あり）"),
+            ("none", "trunk.emptyPost", "90g-旅のトランク（どちらも0）"),
+            ("first", "trunk.emptyPost", "90h-旅のトランク（初めて開いた）"),
+            ("loading", nil, "90i-旅のトランク（読み込み中）"),
+            ("offline", "trunk.stick.open", "90j-旅のトランク（圏外、前に見たトランク）"),
+        ]
+        for c in cases {
+            var args = ["-JPPreviewTrunk", "YES"]
+            if let home = c.home { args += ["-JPPreviewTrunkHome", home] }
+            let app = launchTrunk(args)
+            // 読み込み中はトランクの絵（`trunk.spin`）が出ないので、開けたかは骨格（`trunk.loading`）で見る
+            let opened = openTrunk(app)
+            guard opened || c.home == "loading" else { app.terminate(); continue }
+            if let id = c.primary {
+                let primary = app.buttons[id].firstMatch
+                guard primary.waitForExistence(timeout: 10) else { app.terminate(); continue }
+                XCTAssertGreaterThanOrEqual(primary.frame.height, 44, "\(c.name) の大きいボタンが 44pt 未満")
+                let chip = app.buttons["trunk.spin.chip"].firstMatch
+                if chip.exists { XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "「回して見る」が 44pt 未満") }
+                if c.home == "offline" {
+                    XCTAssertTrue(app.descendants(matching: .any)["trunk.offlineSaved"].firstMatch.exists, "圏外のお知らせが無い")
+                }
+            } else {
+                guard app.descendants(matching: .any)["trunk.loading"].firstMatch.waitForExistence(timeout: 10) else {
+                    app.terminate(); continue
+                }
+            }
+            // 初めて開いた: 揺れの途中と、光り終えたあと
+            if c.home == "first" {
+                Thread.sleep(forTimeInterval: 0.6)
+                shoot(app, c.name + "（揺れ）")
+            }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, c.name)
+            app.terminate()
+        }
+    }
+
     /// **トランクから開いた Pro の案内**（2026-10-18 判断）: Pro でない見本（`-JPPreviewTrunk empty`）の手持ち →
     /// 「Pro なら 150 枚まで持てます」→ 案内。トランクの利点がいちばん上に来ていなければ落とす。**何も買わない**。
     /// 2026-10-18 判断（見直し）: 見本の起動なので、途中で進めなければ黙って抜けずに落とす
@@ -6571,10 +6759,15 @@ final class ScreenshotTests: JPUITestCase {
         let keep = app.buttons["trunk.arrived.keep"].firstMatch
         let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
         let close = app.buttons["trunk.arrived.close"].firstMatch
-        for (button, name) in [(stick, "トランクに貼る"), (keep, "あとで貼る（手持ちへ）"), (reroll, "図柄を作り直す"), (close, "閉じる")] {
+        for (button, name) in [(stick, "トランクに貼る"), (keep, "あとで貼る（手持ちへ）"), (reroll, "作り直す"), (close, "閉じる")] {
             XCTAssertTrue(button.exists, "「\(name)」が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
         }
+        // 進み具合の2行（#706）
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.arrived.progress"].firstMatch.exists, "進み具合が出ていない")
+        // 作り直す前は「最初」の1枚と空いた枠3つ、下に「作り直すと、ここに候補が並びます」
+        XCTAssertEqual(app.buttons.matching(identifier: "trunk.arrived.candidate").count, 1, "作り直す前の候補が「最初」の1枚でない")
+        XCTAssertTrue(app.staticTexts["trunk.arrived.candidatesHint"].firstMatch.exists, "候補の列の下の一行が無い")
         guard keep.isHittable else { return XCTFail("「あとで貼る（手持ちへ）」を押せない") }
         keep.tap()
         let gone = NSPredicate(format: "exists == false")
@@ -6583,6 +6776,103 @@ final class ScreenshotTests: JPUITestCase {
         // 閉じたあとに、また出てこない（見本は起動から1回だけ・`TrunkArrivals.claimPreviewOffer`・2026-10-21）
         Thread.sleep(forTimeInterval: 4)
         XCTAssertFalse(stick.exists, "「あとで貼る（手持ちへ）」で閉じたあと、届いた画面がまた出た")
+    }
+
+    /// **届いた画面の中で、スタンプが押される**（札 #712・1.2.0 の統合・`-JPPreviewTrunkArrivedStamp`）。
+    /// ラベル → 硬貨とかけら → スタンプの順で同じ画面に出る。「旅のスタンプ帳を見る」が 44pt で押せて、帳面が開く
+    func testCapturesTrunkArrivedStamp() {
+        let app = launchTrunk(["-JPPreviewTrunkArrived", "YES", "-JPPreviewTrunkArrivedStamp", "YES"])
+        let stick = app.buttons["trunk.arrived.stick"].firstMatch
+        guard stick.waitForExistence(timeout: 30) else { return }
+        let stamp = app.descendants(matching: .any)["stampBook.pressed"].firstMatch
+        XCTAssertTrue(stamp.waitForExistence(timeout: 8), "届いた画面にスタンプが出ない")
+        let open = app.buttons["stampBook.pressed.open"].firstMatch
+        var swipes = 0
+        while open.exists, !open.isHittable, swipes < 4 {
+            app.scrollViews.firstMatch.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "96s-ラベルが届いた（スタンプ）")
+        guard open.exists, open.isHittable else { return XCTFail("「旅のスタンプ帳を見る」を押せない") }
+        XCTAssertGreaterThanOrEqual(open.frame.height, 44, "「旅のスタンプ帳を見る」が 44pt 未満")
+        open.tap()
+        let book = app.descendants(matching: .any)["stampBook.screen"].firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 15), "「旅のスタンプ帳を見る」で帳面が開かない")
+        shoot(app, "96t-ラベルが届いた（スタンプから帳面へ）")
+    }
+
+    /// **届いた画面のまま作り直す**（札 #706・`-JPPreviewTrunkArrived`）: 「作り直す」を押すたびに候補が横に増え、3回で
+    /// 「作り直しは3回まで」に替わる。候補を押すと大きい絵が替わる。出なければ撮らずに抜けるが、出たのに候補が増えない・
+    /// 3回のあとも押せる・44pt 未満なら落とす
+    func testCapturesTrunkArrivedReroll() {
+        let app = launchTrunk(["-JPPreviewTrunkArrived", "YES"])
+        let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
+        guard reroll.waitForExistence(timeout: 30) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertTrue(reroll.label.contains("3"), "「作り直す」に残りの回数が無い: \(reroll.label)")
+        guard reroll.isHittable else { return XCTFail("「作り直す」を押せない") }
+        reroll.tap()
+        let candidates = app.buttons.matching(identifier: "trunk.arrived.candidate")
+        _ = candidates.firstMatch.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(candidates.count, 2, "1回作り直して、候補が最初と1回目の2つになっていない")
+        shoot(app, "96g-ラベルが届いた（1回作り直した）")
+        for _ in 0..<2 where reroll.exists && reroll.isHittable {
+            reroll.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertEqual(candidates.count, 4, "3回作り直して、候補が4つになっていない")
+        XCTAssertFalse(app.buttons["trunk.arrived.reroll"].firstMatch.exists, "3回のあとも「作り直す」が出ている")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.arrived.redoUsedUp"].firstMatch.exists, "使い切った一言が無い")
+        shoot(app, "96h-ラベルが届いた（3回作り直した）")
+        let first = candidates.element(boundBy: 0)
+        XCTAssertGreaterThanOrEqual(first.frame.height, 44, "候補の札が 44pt 未満")
+        first.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(first.isSelected, "最初の図柄を押したのに選ばれていない")
+        shoot(app, "96i-ラベルが届いた（最初の図柄に戻した）")
+    }
+
+    /// **好きなデザインで作る**（札 #706・`-JPPreviewTrunkArrived` ＋ `-JPPreviewTrunkCustomReady`）: 作れるようになった投稿では
+    /// 主ボタンが「好きなデザインで作る」。押すと作る画面（形・色・絵）、「このデザインで貼る」で貼って閉じる。
+    /// 出なければ撮らずに抜けるが、出たのに主ボタンが替わらない・タブが無い・44pt 未満・貼って閉じないなら落とす
+    func testCapturesTrunkArrivedCustom() {
+        let app = launchTrunk(["-JPPreviewTrunkArrived", "YES", "-JPPreviewTrunkCustomReady", "YES"])
+        let custom = app.buttons["trunk.arrived.custom"].firstMatch
+        guard custom.waitForExistence(timeout: 30) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "96j-ラベルが届いた（好きなデザインで作れる）")
+        XCTAssertGreaterThanOrEqual(custom.frame.height, 44)
+        XCTAssertTrue(app.buttons["trunk.arrived.stick"].firstMatch.exists, "「このまま貼る」が無い")
+        XCTAssertFalse(app.buttons["trunk.arrived.reroll"].firstMatch.exists, "作れる投稿に作り直しのボタンも並んでいる")
+        guard custom.isHittable else { return XCTFail("「好きなデザインで作る」を押せない") }
+        custom.tap()
+        let done = app.buttons["trunk.custom.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("好きなデザインで作る画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96k-好きなデザインで作る（形）")
+        for tab in ["trunk.custom.tab.shape", "trunk.custom.tab.palette", "trunk.custom.tab.art"] {
+            XCTAssertTrue(app.buttons[tab].firstMatch.exists, "\(tab) が無い")
+            XCTAssertGreaterThanOrEqual(app.buttons[tab].firstMatch.frame.height, 44, "\(tab) が 44pt 未満")
+        }
+        let options = app.buttons.matching(identifier: "trunk.custom.option")
+        XCTAssertEqual(options.count, 10, "形が10個並んでいない")
+        options.element(boundBy: 9).tap()
+        app.buttons["trunk.custom.tab.palette"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(options.count, 12, "色が12個並んでいない")
+        shoot(app, "96l-好きなデザインで作る（色）")
+        app.buttons["trunk.custom.tab.art"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(options.count, 12, "絵が12個並んでいない")
+        shoot(app, "96m-好きなデザインで作る（絵）")
+        XCTAssertGreaterThanOrEqual(done.frame.height, 44)
+        done.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: custom)], timeout: 8)
+        XCTAssertEqual(closed, .completed, "「このデザインで貼る」で届いた画面が閉じない")
     }
 
     /// **ラベルが3枚届いた**（`-JPPreviewTrunkArrived 3`・2026-11-12 判断・1.1.83 の案）: 主ボタンは「3 枚まとめて貼る」1回。
@@ -6803,7 +7093,8 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertTrue(crank.exists, "ハンドルが無い（指で回しても出る）")
         XCTAssertGreaterThanOrEqual(crank.frame.height, 44, "ハンドルが 44pt 未満")
         insert.tap()
-        Thread.sleep(forTimeInterval: 0.4)
+        // 硬貨が入れ口へ飛ぶ（0.42 秒）→ ハンドルが目盛りを点けながら回る（0.84 秒）の途中（札 #716）
+        Thread.sleep(forTimeInterval: 0.8)
         shoot(app, "98-カプセルの機械（回している）")
         let open = app.buttons["trunk.gacha.openCapsule"].firstMatch
         guard open.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
@@ -6812,8 +7103,11 @@ final class ScreenshotTests: JPUITestCase {
         open.tap()
         let equip = app.buttons["trunk.gachaOpen.equip"].firstMatch
         guard equip.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+        // 割れて部品が出て、文が段階で出そろうまで（約 1.2 秒）
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "98a-カプセルを開けた")
+        let title = app.descendants(matching: .any)["trunk.gachaOpen.title"].firstMatch
+        XCTAssertTrue(title.exists && title.label.hasSuffix("が出ました"), "開けた見出しが「〜が出ました」でない: \(title.label)")
         for id in ["trunk.gachaOpen.equip", "trunk.gachaOpen.keep", "trunk.gachaOpen.close"] {
             XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
         }
@@ -6842,7 +7136,59 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertFalse(app.buttons["trunk.gacha.insert"].firstMatch.exists, "硬貨 0 で回すボタンが出ている")
     }
 
-    /// **部品箱 → 付け替える**: 種類のタブ（錠前）・ピンバッジの付け替え
+    /// **カプセルの機械（圏外）**（札 #716）: 回す前に「電波が無いので回せません。硬貨は減りません」と言い、ボタンは押せない。
+    /// 見本の入り方で電波なしの帯が出ない作りなら撮らずに抜ける
+    func testCapturesTrunkGachaOffline() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewOffline", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return }
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        guard insert.waitForExistence(timeout: 10) else { return XCTFail("「硬貨を入れて回す」が無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98f-カプセルの機械（圏外）")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.gacha.offline"].firstMatch.exists, "圏外の一言が回す前に出ていない")
+        XCTAssertFalse(insert.isEnabled, "圏外なのに「硬貨を入れて回す」が押せる")
+    }
+
+    /// **カプセルを開けた（持っている部品・かけら）**（札 #716・#713）: 見本の3回目は持っている部品（`TrunkSample.gachaOrder`）。
+    /// 切符の切れ端が札にはまり、硬貨が残っていれば主ボタンは「もう1回まわす」。押すと閉じて続けて回る
+    func testCapturesTrunkGachaFragment() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "5"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        for draw in 0..<3 {
+            let insert = app.buttons["trunk.gacha.insert"].firstMatch
+            guard insert.waitForExistence(timeout: 10), insert.isEnabled else { return XCTFail("\(draw + 1) 回目の硬貨を入れられない") }
+            insert.tap()
+            let capsule = app.buttons["trunk.gacha.openCapsule"].firstMatch
+            guard capsule.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
+            if draw == 2 {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "98-カプセルの機械（出てきた、ふたと重ねた硬貨）")
+            }
+            capsule.tap()
+            let keep = app.buttons["trunk.gachaOpen.keep"].firstMatch
+            guard keep.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+            guard draw == 2 else {
+                Thread.sleep(forTimeInterval: 1)
+                keep.tap()
+                Thread.sleep(forTimeInterval: 1)
+                continue
+            }
+            // 割れて部品が影になり、切れ端が切符にはまるまで（約 2 秒）
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "98e-カプセルを開けた（かけら）")
+            XCTAssertTrue(app.descendants(matching: .any)["trunk.gachaOpen.ticket"].firstMatch.exists, "かけらの切符が無い")
+            let again = app.buttons["trunk.gachaOpen.again"].firstMatch
+            XCTAssertTrue(again.exists, "持っている部品で硬貨があるのに「もう1回まわす」が無い")
+            XCTAssertGreaterThanOrEqual(again.frame.height, 44, "「もう1回まわす」が 44pt 未満")
+            again.tap()
+            XCTAssertTrue(app.buttons["trunk.gacha.openCapsule"].firstMatch.waitForExistence(timeout: 10),
+                          "「もう1回まわす」で続けて回らない")
+        }
+    }
+
+    /// **部品箱**: 種類のタブ（錠前）・押して付ける・元に戻す・持っていない部品のシート
     func testCapturesTrunkPartsBox() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -6856,37 +7202,35 @@ final class ScreenshotTests: JPUITestCase {
         lockTab.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "99-部品箱（錠前）")
-        // 持っている部品を押すとシートで見て「トランクに付ける」（2026-11-12 判断・付け替えの画面へ行かない）
-        let owned = app.buttons.matching(identifier: "trunk.parts.owned").firstMatch
+        // 持っている部品を押すとその場で付く。下に「付けました」と「元に戻す」（2026-11-23・札 #711。付け替えの画面はなくした）
+        XCTAssertFalse(app.buttons["trunk.parts.equip"].firstMatch.exists, "「付け替える」の入口が残っている")
+        // 見本の錠前は lock.1・lock.2…の順で、lock.2 は付けている（`TrunkSample.equipped`）。押すと「外しました」になるので、
+        // 付けていない1つ目（lock.1）を押す（2026-11-23 確かめ役の指摘）
+        let owned = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 0)
         if owned.exists, owned.isHittable {
+            XCTAssertGreaterThanOrEqual(owned.frame.height, 44, "部品の札が 44pt 未満")
             owned.tap()
-            let sheetEquip = app.buttons["trunk.partSheet.equip"].firstMatch
-            guard sheetEquip.waitForExistence(timeout: 10) else { return XCTFail("持っている部品を押してもシートが出ない") }
-            Thread.sleep(forTimeInterval: 1)
-            shoot(app, "99j-部品のシート")
-            XCTAssertGreaterThanOrEqual(sheetEquip.frame.height, 43.99, "シートの主ボタンが 44pt 未満")
-            let close = app.buttons["trunk.partSheet.close"].firstMatch
-            if close.exists, close.isHittable { close.tap() }
-            Thread.sleep(forTimeInterval: 1)
+            Thread.sleep(forTimeInterval: 0.8)
+            shoot(app, "99a-部品を付けた")
+            let undo = app.buttons["toast.undo"].firstMatch
+            if undo.waitForExistence(timeout: 3) {
+                XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「元に戻す」が 44pt 未満")
+                undo.tap()
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "99b-部品を付けた（元に戻した）")
+            }
         }
-        let equip = app.buttons["trunk.parts.equip"].firstMatch
-        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
-        equip.tap()
-        let pinTab = app.buttons["trunk.equip.tab.pin"].firstMatch
-        guard pinTab.waitForExistence(timeout: 10) else { return XCTFail("付け替えの場所のタブが無い") }
-        pinTab.tap()
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "99a-部品を付け替える")
-        let part = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
-        if part.exists, part.isHittable {
-            XCTAssertGreaterThanOrEqual(part.frame.height, 44)
-            part.tap()
+        // 持っていない部品を押すと手に入れ方と「カプセルを回す」
+        let missing = app.buttons.matching(identifier: "trunk.parts.missing").firstMatch
+        if missing.exists, missing.isHittable {
+            missing.tap()
+            let gacha = app.buttons["trunk.missingSheet.gacha"].firstMatch
+            guard gacha.waitForExistence(timeout: 10) else { return XCTFail("持っていない部品を押しても手に入れ方が出ない") }
             Thread.sleep(forTimeInterval: 1)
-            shoot(app, "99b-部品を付け替える（ピンを足した）")
-            // 押すたびに保存し、右上の「ひとつ戻す」で戻せる（2026-11-12 判断・保存の確かめはなくした）
-            let undo = app.buttons["trunk.equip.undo"].firstMatch
-            XCTAssertTrue(undo.waitForExistence(timeout: 5) && undo.isEnabled, "付け替えたのに「ひとつ戻す」が押せない")
-            undo.tap()
+            shoot(app, "99j-持っていない部品")
+            XCTAssertGreaterThanOrEqual(gacha.frame.height, 43.99, "シートのボタンが 44pt 未満")
+            let close = app.buttons["trunk.missingSheet.close"].firstMatch
+            if close.exists, close.isHittable { close.tap() }
         }
     }
 
@@ -6935,7 +7279,7 @@ final class ScreenshotTests: JPUITestCase {
     }
 
     /// **部品箱の種類ごとの絵**（#305・2026-10-18）: 角金具・内張り・タグ・ワッペン・チャーム・鍵のタブの部品1点の絵（96pt）。
-    /// 付け替えの画面で錠前を替え、トランクに付けた錠前の形も撮る。タブが無ければ落とす
+    /// 部品箱で錠前を押して付け、上の小さいトランクに付いた錠前の形も撮る。タブが無ければ落とす
     func testCapturesTrunkPartsKinds() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -6951,23 +7295,19 @@ final class ScreenshotTests: JPUITestCase {
             Thread.sleep(forTimeInterval: 1.5)
             shoot(app, name)
         }
-        // 錠前を替えて、トランクに付けた錠前の形（丸い桜の紋）を撮る
+        // 錠前を替えて、トランクに付けた錠前の形を撮る
         let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
         revealTab(lockTab, in: app, toLeft: false)
         guard lockTab.frame.minX >= 0, lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
         lockTab.tap()
-        let equip = app.buttons["trunk.parts.equip"].firstMatch
-        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
-        equip.tap()
-        let equipLock = app.buttons["trunk.equip.tab.lock"].firstMatch
-        guard equipLock.waitForExistence(timeout: 10) else { return XCTFail("付け替えの錠前のタブが無い") }
-        equipLock.tap()
         Thread.sleep(forTimeInterval: 1)
-        let roundLock = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
+        // 部品箱の中で押して付ける（上の小さいトランクに映る・2026-11-23）。付けていない1つ目（lock.1）を押す
+        // （2つ目の lock.2 は見本で付けているので、押すと外れる）
+        let roundLock = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 0)
         if roundLock.exists, roundLock.isHittable {
             roundLock.tap()
             Thread.sleep(forTimeInterval: 1.5)
-            shoot(app, "99i-部品を付け替える（錠前を替えた）")
+            shoot(app, "99i-部品箱（錠前を替えた）")
         }
     }
 
@@ -8558,7 +8898,7 @@ final class ScreenshotTests: JPUITestCase {
     /// 中身が選んでいる札のもので、横にずれて止まっていない。
     /// 名指し: `screens=testPinsMyPageTabs`（既存の `testPinsMyPageTabs` と一緒に選ばれる）
     ///
-    /// **字の大きさごとに1本ずつ・1本で1回だけ起動する**（ほかの大きい文字の試験 `testCapturesCamperLargeText` などと同じ）。
+    /// **字の大きさごとに1本ずつ・1本で1回だけ起動する**（ほかの大きい文字の試験 `testCapturesTrunkLargeText` などと同じ）。
     /// 1本で3つの大きさを続けて起動すると、AX3 の途中で XCTest の1本 5 分の持ち時間を越え、止める途中で
     /// 「Failed to terminate」で落ちた（Mac run 1227・AX1 と AX3 で 300 秒。1 回の値の書き出しに 4〜5 秒かかる）
     func testPinsMyPageTabsAtLargeTextAX1() {
@@ -8596,7 +8936,7 @@ final class ScreenshotTests: JPUITestCase {
         let swipeProbe = app.descendants(matching: .any)["mypage.tabs.probe"].firstMatch
         let width = app.frame.width
         // 旅の記録の中身の目印（見本の利用者で出るものから、在る最初の1つ）
-        let tripMarks = ["trips.trunk", "trips.camper", "trips.albums", "trips.plans", "trips.passBook"]
+        let tripMarks = ["trips.trunk", "trips.albums", "trips.plans", "trips.passBook"]
             .map { app.descendants(matching: .any)[$0].firstMatch }
 
         /// 画面と交わっているか。**画面の外の要素に `isHittable` を聞かない**——横に送る並びで画面の外へ出た札に聞くと、
@@ -8915,741 +9255,6 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
-    // MARK: - とおまわり号の中（2026-10-19・板 CamperRoomMain・CamperFurniture）
-
-    /// 外の車の「中に入る」から室内へ。入れたら true
-    private func openCamperRoom(_ app: XCUIApplication) -> Bool {
-        guard openCamper(app) else { return false }
-        let enter = app.buttons["camper.room.enter"].firstMatch
-        guard enter.waitForExistence(timeout: 15) else { return false }
-        if !enter.isHittable { scrollTo(enter, in: app) }
-        enter.tap()
-        return app.descendants(matching: .any)["camper.room.scene"].firstMatch.waitForExistence(timeout: 15)
-    }
-
-    /// 立体を組み終えるまで待つ（読み上げの値に「camper-room-ready 部屋 時刻」が出る・見本の起動のときだけ）
-    @discardableResult
-    /// 接写の一覧の頁を 1 つ進める。押した後、いまの頁の合図（`from`）が消える（次の頁を描き始める）のを確かめ、
-    /// 消えなければ 2 回まで押し直す。2026-10-23 PR #371 の検証（run 39843960624）: 込んだ Mac で 16 → 17 頁の押しが
-    /// 届かず（アプリの応答が 1 回 2 秒以上止まっていた）、試験の数える頁がアプリより 1 つ先へずれ、17〜27 頁を全部
-    /// 「描き終えない」と落ちていた（アプリは 17〜26 頁を描いていた）
-    private func turnContactPage(_ app: XCUIApplication, _ next: XCUIElement, from marker: String) {
-        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
-        let moved = NSPredicate(format: "NOT (value CONTAINS %@)", marker)
-        for attempt in 1...3 {
-            next.tap()
-            if XCTWaiter().wait(for: [expectation(for: moved, evaluatedWith: sheet)], timeout: 10) == .completed { return }
-            print("UINOTE 接写の頁: 進むを押しても「\(marker)」のまま（\(attempt) 回目）")
-        }
-    }
-
-    private func waitRoom(_ app: XCUIApplication, _ id: String, _ marker: String, timeout: TimeInterval = 40) -> Bool {
-        let scene = app.descendants(matching: .any)[id].firstMatch
-        let ready = NSPredicate(format: "value CONTAINS %@", marker)
-        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: timeout) == .completed
-        // 組んだ形が次のコマで描かれ、カメラの動き（0.6 秒）が止まるまで
-        Thread.sleep(forTimeInterval: 2)
-        // 場面の値（組む段の記録 `stage=`・札 #530）をログに残す。待ちが切れた回は、どの段で止まったかを数で見る
-        // （通った回の値も残し、組み終えるまでの時間の幅と比べる）
-        let value = scene.exists ? ((scene.value as? String) ?? "(値なし)") : "(場面が無い)"
-        let line = "[roomProbe] \(id) 「\(marker)」 \(done ? "ok" : "時間切れ（\(Int(timeout)) 秒）"): \(value)"
-        print(line)
-        XCTContext.runActivity(named: line) { _ in }
-        if !done {
-            let note = XCTAttachment(string: line)
-            note.name = "roomProbe"
-            note.lifetime = .keepAlways
-            add(note)
-        }
-        return done
-    }
-
-    /// **とおまわり号の中**（`-JPPreviewCamperRoomReset`・Debug のみ。毎回最初の並び・保存しない）: 室内の昼・夜・家具の図鑑・
-    /// 家具の寄り 8 点（昼と夜）を**必ず撮る**（入れない・組み終えないなら落とす）。押せる所は 44pt 以上
-    func testCapturesCamperRoom() {
-        // 寄り 8 点は部屋を組み直す。既定の 300 秒で切らない（図鑑が 2,000 点を超えていた頃に決めた枠。2026-11-11 に 85 点へ減らした後もそのまま）
-        executionTimeAllowance = 1200
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
-        shoot(app, "96-とおまわり号の中（昼）")
-        for id in ["camper.room.back", "camper.room.night", "camper.room.tool.place", "camper.room.tool.style", "camper.room.tool.photos",
-                   "camper.room.tool.dex"] {
-            let b = app.buttons[id].firstMatch
-            XCTAssertTrue(b.exists, "\(id) が無い")
-            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
-        }
-        // 「外へ」と「外へ出る」は同じ操作なので 1 つ（左上の「外へ」）にまとめた（2026-10-21）
-        XCTAssertFalse(app.buttons["camper.room.out"].firstMatch.exists, "下の「外へ出る」が左上の「外へ」と重なっている")
-        app.buttons["camper.room.night"].firstMatch.tap()
-        XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "96a-とおまわり号の中（夜）")
-        app.buttons["camper.room.night"].firstMatch.tap()
-        waitRoom(app, "camper.room.scene", "day")
-
-        // 家具の図鑑
-        app.buttons["camper.room.tool.dex"].firstMatch.tap()
-        let count = app.descendants(matching: .any)["camper.room.dex.count"].firstMatch
-        XCTAssertTrue(count.waitForExistence(timeout: 10), "家具の図鑑が開かない")
-        // 家具の小さな絵（端末の中で描く）が出るまで
-        Thread.sleep(forTimeInterval: 3)
-        shoot(app, "96b-とおまわり号の家具の図鑑")
-        XCTAssertGreaterThanOrEqual(app.buttons["camper.room.dex.close"].firstMatch.frame.height, 44, "図鑑の「閉じる」が 44pt 未満")
-
-        // 家具の寄り（代表 8 点・昼と夜）。owner「ホンモノに見えるか」を絵で確かめる
-        let closeUps: [(tab: String, id: String, name: String)] = [
-            ("floor", "bed.platform", "木の寝台"), ("floor", "heater.wood_stove", "薪ストーブ"), ("floor", "storage.trunk", "旅の鞄"),
-            ("floor", "table.dinette_post", "一本脚の座卓"), ("floor", "seating.floor_cushion", "座布団"),
-            ("floor", "floor_lamp.brass_stem", "真鍮の一本足"), ("wall", "photo_frame.landscape", "横長の額"),
-            ("ceiling", "plant_hanger.macrame", "マクラメ"),
-        ]
-        let search = app.textFields["camper.room.dex.search"].firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5), "図鑑の探し欄が無い")
-        for (i, c) in closeUps.enumerated() {
-            let clear = app.buttons["camper.room.dex.search.clear"].firstMatch
-            if clear.exists { clear.tap() }
-            search.tap()
-            search.typeText(c.id + "\n")
-            let card = app.buttons["camper.room.dex.\(c.id)"].firstMatch
-            XCTAssertTrue(card.waitForExistence(timeout: 10), "図鑑に \(c.id) が無い")
-            guard card.isHittable else { XCTFail("\(c.id) を押せない"); continue }
-            card.tap()
-            XCTAssertTrue(waitRoom(app, "camper.room.closeup", "camper-room-ready"), "\(c.id) の寄りを組み終えない")
-            shoot(app, String(format: "96c%02d-家具の寄り（%@・昼）", i + 1, c.name))
-            let night = app.buttons["camper.room.closeup.night"].firstMatch
-            XCTAssertGreaterThanOrEqual(night.frame.height, 44, "寄りの昼夜の切り替えが 44pt 未満")
-            night.tap()
-            XCTAssertTrue(waitRoom(app, "camper.room.closeup", "night"), "\(c.id) の寄りが夜にならない")
-            Thread.sleep(forTimeInterval: 1)
-            shoot(app, String(format: "96c%02d-家具の寄り（%@・夜）", i + 1, c.name))
-            app.buttons["camper.room.closeup.close"].firstMatch.tap()
-            Thread.sleep(forTimeInterval: 1)
-        }
-        app.buttons["camper.room.dex.close"].firstMatch.tap()
-    }
-
-    /// **額に写真を飾る**（2026-10-21 owner の実機: 写真を選んで飾ったのに額の中が真っ白）。見本の写真は staging の本物の URL から、
-    /// 本番と同じ読み込み（`CamperRoomPhotoImages`）で読む。読み上げの値の `photos=絵の入った印画/額 rect=…`（`CamperRoomScene.photoProbe`）
-    /// で絵が額に入ったことを、その四角の画素が一色でないことで「見える」ことを確かめる（白い硝子が印画を覆っても数だけは合う）
-    func testCapturesCamperRoomHangPhoto() throws {
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
-        app.buttons["camper.room.tool.photos"].firstMatch.tap()
-        let frame = app.buttons["camper.room.frame"].firstMatch
-        guard frame.waitForExistence(timeout: 10) else { return XCTFail("飾る額の一覧が出ない") }
-        frame.tap()
-        let photo = app.buttons["camper.room.photo"].firstMatch
-        guard photo.waitForExistence(timeout: 30) else { return XCTFail("飾る写真の一覧が出ない（見本の写真が無い）") }
-        photo.tap()
-        let hang = app.buttons["camper.room.hang"].firstMatch
-        XCTAssertTrue(hang.waitForExistence(timeout: 5), "「この額に飾る」が無い")
-        hang.tap()
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        let shown = NSPredicate(format: "value MATCHES %@", ".*photos=[1-9][0-9]*/[0-9]+ uvOut=[0-9.]+ rect=[0-9]+,[0-9]+,[0-9]+,[0-9]+.*")
-        let waited = XCTWaiter().wait(for: [expectation(for: shown, evaluatedWith: scene)], timeout: 45)
-        let value = (scene.value as? String) ?? ""
-        print("CAMPERPHOTO 値: \(value)")
-        if app.buttons["camper.room.photo.retry"].firstMatch.exists { print("CAMPERPHOTO 読み込めませんでしたが出ている") }
-        guard waited == .completed else {
-            shoot(app, "96h-額に写真を飾った（入らない）")
-            return XCTFail("額に写真が入らない（読み上げの値: \(value)）")
-        }
-        Thread.sleep(forTimeInterval: 1.5)
-        shoot(app, "96h-額に写真を飾った")
-        // 写真の外を読まない（読むと端の画素が伸びて縦の筋になる・2026-10-22 楕円の額）
-        XCTAssertTrue(value.contains("uvOut=0.00"), "印画が写真の外を読む: \(value)")
-        // 印画の四角（SCNView の点）の内側 6 割の画素が一色でないこと
-        let numbers = value.components(separatedBy: "rect=").last?.split(separator: " ").first?.split(separator: ",").compactMap { Double($0) } ?? []
-        guard numbers.count == 4 else { return XCTFail("印画の四角を読めない: \(value)") }
-        let rect = CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]).insetBy(dx: numbers[2] * 0.2, dy: numbers[3] * 0.2)
-        let shot = scene.screenshot()
-        let crop = XCTAttachment(screenshot: shot)
-        crop.name = "96h-額に写真を飾った（箱庭だけ）"
-        crop.lifetime = .keepAlways
-        add(crop)
-        let stats = try XCTUnwrap(Self.lumaStats(shot.image, in: rect), "印画の四角が箱庭の外: \(rect)")
-        print("CAMPERPHOTO 印画の四角 \(rect) 明るさの平均 \(stats.mean) ばらつき \(stats.deviation)")
-        XCTAssertGreaterThan(stats.deviation, 12, "額の中が一色（平均 \(Int(stats.mean))）。飾った写真が見えていない")
-    }
-
-    /// 絵の四角（点）の中の明るさの平均とばらつき（0〜255）
-    private static func lumaStats(_ image: UIImage, in rect: CGRect) -> (mean: Double, deviation: Double)? {
-        guard let cg = image.cgImage else { return nil }
-        let scale = image.scale
-        let px = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
-            .intersection(CGRect(x: 0, y: 0, width: cg.width, height: cg.height)).integral
-        guard px.width >= 4, px.height >= 4, let part = cg.cropping(to: px) else { return nil }
-        let w = part.width, h = part.height
-        var bytes = [UInt8](repeating: 0, count: w * h * 4)
-        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.draw(part, in: CGRect(x: 0, y: 0, width: w, height: h))
-        var sum = 0.0, sq = 0.0
-        let n = Double(w * h)
-        for k in 0..<(w * h) {
-            let l = 0.299 * Double(bytes[k * 4]) + 0.587 * Double(bytes[k * 4 + 1]) + 0.114 * Double(bytes[k * 4 + 2])
-            sum += l
-            sq += l * l
-        }
-        let mean = sum / n
-        return (mean, max(0, sq / n - mean * mean).squareRoot())
-    }
-
-    /// **部屋の寄り**（`-JPPreviewCamperRoomCamera`・2026-10-21 owner の実機の寄りの絵と同じ所）: 手前の右の角（切った壁の天端・
-    /// 角の継ぎ目・敷居）と、窓の脇のカーテン（窓台・留め紐）を昼に撮る
-    func testCapturesCamperRoomCloseUps() {
-        for (preset, name) in [("corner", "96i-部屋の寄り（手前の右の角）"), ("curtain", "96j-部屋の寄り（窓の脇のカーテン）")] {
-            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomCamera", preset])
-            XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない（\(preset)）")
-            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない（\(preset)）"); continue }
-            shoot(app, name)
-            app.terminate()
-        }
-    }
-
-    /// **初めての手引きと押して置く**（`-JPPreviewCamperRoomCoach`・Debug のみ・2026-10-21）: 部屋に初めて入った時の 1 行の手引き（札 #628）、
-    /// 「置く」の新しい家具の件数・棚の真鍮の点、棚の家具を押して置ける所が光った所を**必ず撮る**。押せる所は 44pt 以上
-    func testCapturesCamperRoomGuide() {
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomCoach", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
-        // 2026-11-22（札 #628）: 手引きは部屋の下の端の1行。押せず（部屋はすぐ触れる）、部屋を触ったら消える
-        let coach = app.descendants(matching: .any)["camper.room.coach"].firstMatch
-        XCTAssertTrue(coach.waitForExistence(timeout: 5), "初めての手引きが出ない")
-        shoot(app, "96f-とおまわり号の中（初めての手引き）")
-        XCTAssertFalse(app.buttons["camper.room.coach.done"].firstMatch.exists, "「わかった」まで触れない札が残っている")
-        // 家具を選ばないよう、部屋の上の方（壁）を触る
-        app.descendants(matching: .any)["camper.room.scene"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
-        XCTAssertTrue(coach.waitForNonExistence(timeout: 3), "部屋を触っても手引きが消えない")
-        app.buttons["camper.room.tool.place"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
-        // 壁の額は何枚でも掛けられ、どの部屋にも置ける所がある（床の大きな寝台は置ける所が無いことがある・run 605）
-        app.buttons["camper.room.tab.wall"].firstMatch.tap()
-        // 棚は分類ごと（壁の最初は「壁の棚」）。額の分類に切り替える
-        let frameChip = app.buttons["camper.room.tray.cat.photo_frame"].firstMatch
-        XCTAssertTrue(frameChip.waitForExistence(timeout: 5), "壁の棚に額の分類が無い")
-        if frameChip.exists, frameChip.isHittable { frameChip.tap() }
-        let trayItems = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.photo_frame."))
-        let first = trayItems.firstMatch
-        guard first.waitForExistence(timeout: 5) else { return XCTFail("棚に家具が無い") }
-        Thread.sleep(forTimeInterval: 2)
-        first.tap()
-        let banner = app.descendants(matching: .any)["camper.room.armed"].firstMatch
-        XCTAssertTrue(banner.waitForExistence(timeout: 5), "棚の家具を押しても「置く所を押す」が出ない")
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "96g-とおまわり号の中（押して置く・置ける所）")
-        let cancel = app.buttons["camper.room.armed.cancel"].firstMatch
-        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44, "「やめる」が 44pt 未満")
-        // 同じ家具をもう一度押すと空いた所へ置く（今までの置き方）
-        first.tap()
-        XCTAssertFalse(banner.waitForExistence(timeout: 2), "もう一度押しても置かれない")
-        XCTAssertTrue(app.buttons["camper.room.undo"].firstMatch.isEnabled, "置いたのに元に戻せない")
-        app.buttons["camper.room.undo"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["camper.room.redo"].firstMatch.isEnabled, "元に戻したのにやり直せない")
-    }
-
-    /// **家具の接写の一覧**（`-JPPreviewCamperRoomContact`・Debug のみ・2026-10-21）: 板と別種の家具全部を本物の SceneKit で
-    /// 図鑑の寄りと同じ小部屋に描き、4 点ずつの頁を昼と夜で**必ず撮る**（全家具の出来を本物の絵で見る。ソフトラスタでは素材・光が見えない）
-    func testCapturesCamperRoomContactSheet() {
-        executionTimeAllowance = 1500
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomContact", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
-        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "接写の一覧が出ない")
-        let next = app.buttons["camper.room.contact.next"].firstMatch
-        let prev = app.buttons["camper.room.contact.prev"].firstMatch
-        for (mood, moodName) in [("day", "昼"), ("night", "夜")] {
-            var page = 1
-            while page <= 40 {
-                let ready = waitRoom(app, "camper.room.contact", "contact-ready \(mood) \(page)/", timeout: 90)
-                XCTAssertTrue(ready, "接写の一覧の \(moodName) \(page) 頁を描き終えない")
-                // 並びの所だけを撮る（画面全体だと長辺 700px に縮んで 1 点が小さい）
-                let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
-                let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
-                shot.name = String(format: "96e-家具の接写（%@・%02d）", moodName, page)
-                shot.lifetime = .keepAlways
-                add(shot)
-                guard next.exists, next.isEnabled else { break }
-                turnContactPage(app, next, from: "contact-ready \(mood) \(page)/")
-                page += 1
-            }
-            // 頁を初めに戻して、昼と夜を替える
-            while prev.exists, prev.isEnabled { prev.tap() }
-            if mood == "day" { app.buttons["camper.room.contact.mood"].firstMatch.tap() }
-        }
-    }
-
-    /// **家具の脚の接写**（`-JPPreviewCamperRoomLegs`・Debug のみ・2026-10-22 owner「椅子とかは家具によって足が壊れてたりする」）:
-    /// 脚のある家具を 1 頁に 1 つ、正面・斜め・横・低い所の 4 方向から本物の SceneKit で描き、昼の全頁を**必ず撮る**
-    /// （脚が床に着いているか・座面や天板に届いているか・貫の位置を、1 つずつ目で見る）。
-    /// **名指しした回だけ流す**（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED。全部を回す PR の検証・TestFlight では飛ばす・約5分）
-    func testCapturesCamperFurnitureLegs() {
-        executionTimeAllowance = 1500
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLegs", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
-        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "脚の接写の一覧が出ない")
-        let next = app.buttons["camper.room.contact.next"].firstMatch
-        var page = 1
-        while page <= 80 {
-            XCTAssertTrue(waitRoom(app, "camper.room.contact", "legs-ready \(page)/", timeout: 90), "脚の接写の \(page) 頁を描き終えない")
-            let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
-            let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
-            shot.name = String(format: "96f-家具の脚（%02d）", page)
-            shot.lifetime = .keepAlways
-            add(shot)
-            guard next.exists, next.isEnabled else { break }
-            turnContactPage(app, next, from: "legs-ready \(page)/")
-            page += 1
-        }
-    }
-
-    /// **額の頁**（`-JPPreviewCamperRoomFrames`・2026-10-22 owner の実機: 楕円の額で写真が縦の筋に崩れた）: 写真を入れられる
-    /// 全部の額に、自分の本物の写真（横長・縦長の 1 枚ずつ。飾る時と同じ読み込み）を入れた接写を昼に**必ず撮る**。
-    /// どの頁でも印画が写真の外を読まないこと（`uvOut=0.00`）、横長と縦長の写真が選べたことを確かめる
-    /// **名指しした回だけ流す**（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED・約6〜7分。印画の UV は単体テストが毎回見る）
-    func testCapturesCamperRoomFrameSheet() {
-        executionTimeAllowance = 3000
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomFrames", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
-        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "額の頁が出ない")
-        let next = app.buttons["camper.room.contact.next"].firstMatch
-        var page = 1
-        while page <= 90 {
-            let ready = waitRoom(app, "camper.room.contact", "contact-ready day \(page)/", timeout: 90)
-            let value = (sheet.value as? String) ?? ""
-            print("CAMPERFRAMES \(page): \(value)")
-            XCTAssertTrue(ready, "額の頁 \(page) を描き終えない（\(value)）")
-            XCTAssertTrue(value.contains("uvOut=0.00"), "額の頁 \(page): 印画が写真の外を読む（端の画素が伸びて筋になる）: \(value)")
-            if page == 1 {
-                XCTAssertFalse(value.contains("wide=-") || value.contains("tall=-"), "写真が読めない: \(value)")
-            }
-            let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
-            let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
-            shot.name = String(format: "96k-写真を入れた額（%02d）", page)
-            shot.lifetime = .keepAlways
-            add(shot)
-            guard next.exists, next.isEnabled else { break }
-            turnContactPage(app, next, from: "contact-ready day \(page)/")
-            page += 1
-        }
-    }
-
-    /// **置いている途中**（`-JPPreviewCamperRoomLift`・Debug のみ）: 旅の鞄を持ち上げて寝台の上へ動かした途中
-    /// （マス目・赤いマス）を**必ず撮る**。「元に戻す」「閉じる」は 44pt 以上。升の枠は縦 96pt 以上
-    func testCapturesCamperRoomPlacing() {
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLift", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready", timeout: 90) else { return XCTFail("部屋を組み終えない") }
-        XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
-        shoot(app, "96d-とおまわり号の中（置いている途中）")
-        for id in ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor", "camper.room.tab.wall",
-                   "camper.room.tab.ceiling"] {
-            let b = app.buttons[id].firstMatch
-            XCTAssertTrue(b.exists, "\(id) が無い")
-            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
-        }
-        // 「元に戻す」が主ボタンに押しつぶされない（run 568 で幅 0 になった）
-        XCTAssertGreaterThanOrEqual(app.buttons["camper.room.undo"].firstMatch.frame.width, 88, "「元に戻す」の幅が狭い")
-        let done = app.buttons["camper.room.done"].firstMatch
-        XCTAssertTrue(done.label.contains("閉じる"), "置くのを終える主ボタンは「閉じる」（今は「\(done.label)」）")
-        let resize = app.descendants(matching: .any)["camper.room.panelResize"].firstMatch
-        XCTAssertTrue(resize.exists, "棚の高さを変える境が無い")
-        // 分類チップ（`camper.room.tray.cat.*`）は除く（チップは 44pt・run 605 でチップを家具の枠と取り違えた）
-        let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@)",
-                                                    "camper.room.tray.", "camper.room.tray.cat.")).firstMatch
-        if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 96, "棚の家具の枠が縦に狭い") }
-    }
-
-    // MARK: - 部屋の下の板（2026-10-22 owner の実機 1.1.37「操作感も悪い」）
-
-    /// **部屋の下の板を全部**（家・置く・模様替えの 4 札・写真・図鑑・家具を持ち上げる・回す）を、既定の文字と大きい文字で撮り、
-    /// **重なる・切れる・押せる範囲が小さい**を要素の枠で、**部屋の絵が上へ押し出されて切れる**を画素で確かめる。
-    /// owner の実機で、模様替えの見本の名前が下の説明と重なり、札がタブの下線にかぶり、部屋の絵の上が切れていた
-    func testCapturesCamperRoomPanels() {
-        executionTimeAllowance = 1500
-        for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
-            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"] + extra)
-            XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない\(tag)")
-            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない\(tag)"); continue }
-            tourRoomPanels(app, tag: tag)
-            app.terminate()
-        }
-        // 家具を持ち上げた途中（置く場面）
-        let lift = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLift", "YES"])
-        XCTAssertTrue(openCamperRoom(lift), "とおまわり号の中に入れない（持ち上げ）")
-        if waitRoom(lift, "camper.room.scene", "camper-room-ready", timeout: 90) {
-            shoot(lift, "96p-部屋の下の板（家具を持ち上げた途中）")
-            checkRoomPanel(lift, "持ち上げ", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
-                                                    "camper.room.tab.wall", "camper.room.tab.ceiling"],
-                           groups: ["camper.room.tray.cat.@camper.room.trayCats"])
-        } else {
-            XCTFail("部屋を組み終えない（持ち上げ）")
-        }
-        lift.terminate()
-        // 家具を選んだ時の「回す・しまう」（`-JPPreviewCamperRoomSelect`）
-        let select = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomSelect", "YES"])
-        XCTAssertTrue(openCamperRoom(select), "とおまわり号の中に入れない（選ぶ）")
-        guard waitRoom(select, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない（選ぶ）") }
-        let rotate = select.buttons["camper.room.rotate"].firstMatch
-        XCTAssertTrue(rotate.waitForExistence(timeout: 5), "家具を選んでも「回す」が出ない")
-        shoot(select, "96q-部屋の下の板（家具を選んだ・回す・しまう）")
-        let scene = select.descendants(matching: .any)["camper.room.scene"].firstMatch.frame
-        var floating: [(String, CGRect)] = []
-        for id in ["camper.room.rotate", "camper.room.stow", "camper.room.resetView"] {
-            let b = select.buttons[id].firstMatch
-            guard b.exists else { continue }
-            floating.append((id, b.frame))
-            XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満")
-            XCTAssertGreaterThanOrEqual(b.frame.width, 44, "\(id) の幅が 44pt 未満")
-            XCTAssertTrue(scene.insetBy(dx: -1, dy: -1).contains(b.frame), "\(id) が部屋の絵の外へはみ出す（\(b.frame) / \(scene)）")
-        }
-        assertNoOverlap(floating, "回す・しまう")
-        if rotate.exists, rotate.isHittable {
-            rotate.tap()
-            Thread.sleep(forTimeInterval: 1.5)
-            shoot(select, "96r-部屋の下の板（回した後）")
-            XCTAssertTrue(select.buttons["camper.room.rotate"].firstMatch.exists, "回したら「回す」が消えた（続けて回せない）")
-        }
-    }
-
-    /// **部屋を回すボタン ⟲ ⟳**（2026-11-14・人間工学の点検 6・WCAG 2.5.7 引かなくても回せる）: 右上の並びに 44pt 以上で出て、
-    /// ⟳ を押すと横の向きが 30° 変わり、⟲ で元に戻る。向きは見本の起動のときだけ読み上げの値に出る ` yaw=度`（`CamperRoomView.sceneView`）
-    func testCapturesCamperRoomTurnButtons() {
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        func yaw() -> Int? {
-            let value = (scene.value as? String) ?? ""
-            guard let r = value.range(of: " yaw=") else { return nil }
-            return Int(value[r.upperBound...].prefix { $0 == "-" || $0.isNumber })
-        }
-        let right = app.buttons["camper.room.turn.right"].firstMatch
-        let left = app.buttons["camper.room.turn.left"].firstMatch
-        XCTAssertTrue(right.waitForExistence(timeout: 5), "⟳ が無い")
-        XCTAssertTrue(left.exists, "⟲ が無い")
-        let frame = scene.frame
-        for (id, b) in [("⟲", left), ("⟳", right)] {
-            XCTAssertGreaterThanOrEqual(b.frame.width, 44, "\(id) の幅が 44pt 未満")
-            XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満")
-            XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(b.frame), "\(id) が部屋の絵の外へはみ出す")
-        }
-        assertNoOverlap([("⟲", left.frame), ("⟳", right.frame)], "⟲ ⟳")
-        shoot(app, "96s-とおまわり号の中（回すボタン）")
-        guard let start = yaw() else { return XCTFail("向きが読めない（\(scene.value ?? "")）") }
-        right.tap()
-        let turned = NSPredicate(format: "value MATCHES %@", "(?s).* yaw=\(start + 30)")
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: turned, evaluatedWith: scene)], timeout: 5), .completed,
-                       "⟳ を押しても向きが 30° 変わらない（\(start) → \(yaw().map(String.init) ?? "?")）")
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "96t-とおまわり号の中（⟳ で回した）")
-        // 回した後は「向きを戻す」が ⟲ ⟳ の左に出る。重ならない
-        let reset = app.buttons["camper.room.resetView"].firstMatch
-        XCTAssertTrue(reset.waitForExistence(timeout: 3), "回しても「向きを戻す」が出ない")
-        XCTAssertGreaterThanOrEqual(reset.frame.height, 44, "「向きを戻す」が 44pt 未満")
-        assertNoOverlap([("向きを戻す", reset.frame), ("⟲", left.frame), ("⟳", right.frame)], "向きを戻す・⟲ ⟳")
-        left.tap()
-        let back = NSPredicate(format: "value MATCHES %@", "(?s).* yaw=\(start)")
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: back, evaluatedWith: scene)], timeout: 5), .completed,
-                       "⟲ を押しても元の向きに戻らない（\(yaw().map(String.init) ?? "?")）")
-        app.terminate()
-    }
-
-    /// 家 → 模様替え（4 札）→ 写真 → 置く → 図鑑 の順に撮って確かめる
-    private func tourRoomPanels(_ app: XCUIApplication, tag: String) {
-        shoot(app, "96k-部屋の下の板（家\(tag)）")
-        checkRoomPanel(app, "家\(tag)", ids: ["camper.room.counts", "camper.room.tool.place", "camper.room.tool.style",
-                                               "camper.room.tool.photos", "camper.room.tool.dex", "camper.room.hint"])
-        checkRoomPicture(app, "家\(tag)")
-
-        // 模様替え
-        app.buttons["camper.room.tool.style"].firstMatch.tap()
-        let done = app.buttons["camper.room.styleDone"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 5), "模様替えにならない\(tag)")
-        for (tab, name) in [("wall", "壁紙"), ("floor", "床"), ("curtain", "カーテン"), ("light", "灯り")] {
-            let t = app.buttons["camper.room.tab.\(tab)"].firstMatch
-            guard t.exists else { XCTFail("模様替えの「\(name)」の札が無い\(tag)"); continue }
-            revealInPanel(app, t)
-            t.tap()
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "96l-部屋の下の板（模様替え・\(name)\(tag)）")
-            let label = "模様替え・\(name)\(tag)"
-            checkRoomPanel(app, label, ids: ["camper.room.tab.wall", "camper.room.tab.floor", "camper.room.tab.curtain",
-                                             "camper.room.tab.light", "camper.room.styleDone"],
-                           groups: ["camper.room.style."])
-            // 見本の札は、タブの下線より下・説明より上（owner の実機で札が下線にかぶり、名前が説明と重なった）
-            let tabBottom = app.buttons["camper.room.tab.\(tab)"].firstMatch.frame.maxY
-            let swatches = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.style."))
-            XCTAssertGreaterThan(swatches.count, 1, "\(label): 見本が 1 つ以下")
-            let note = app.staticTexts["camper.room.styleNote"].firstMatch
-            for i in 0..<min(swatches.count, 8) {
-                let s = swatches.element(boundBy: i)
-                guard s.exists, s.isHittable else { continue }
-                XCTAssertGreaterThanOrEqual(s.frame.minY, tabBottom - 0.5, "\(label): 見本 \(s.identifier) がタブの下線にかぶる")
-                // 見本の四角（64）と名前の行が札の枠に収まっている（枠が潰れると名前が下へはみ出して重なる）
-                XCTAssertGreaterThanOrEqual(s.frame.height, 84, "\(label): 見本 \(s.identifier) の枠が低い（名前がはみ出す・\(s.frame.height)pt）")
-                if note.exists { XCTAssertLessThanOrEqual(s.frame.maxY, note.frame.minY + 0.5, "\(label): 見本 \(s.identifier) が説明と重なる") }
-            }
-            // 灯りの札は夜にして見せる（暗いので画素の明るさでは部屋の枠を測れない）
-            if tab != "light" { checkRoomPicture(app, label) }
-        }
-        // 何も変えていない時に「これにする」を光らせない（2026-10-22 owner）
-        XCTAssertFalse(done.label.contains("これにする"), "模様替えで何も変えていないのに「これにする」（今は「\(done.label)」）")
-        // 持っていない柄は鍵の札。押すと部屋で見本を試せ、どうすれば届くかと外まわりの図鑑への道が出る
-        let wallTab = app.buttons["camper.room.tab.wall"].firstMatch
-        revealInPanel(app, wallTab)
-        wallTab.tap()
-        let locked = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
-                                                      "camper.room.style.", "まだ持っていません")).firstMatch
-        if locked.waitForExistence(timeout: 3) {
-            revealInPanel(app, locked)
-            locked.tap()
-            let card = app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch
-            XCTAssertTrue(card.waitForExistence(timeout: 3), "持っていない柄を押しても見本の札が出ない\(tag)")
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "96l-部屋の下の板（模様替え・持っていない柄を試す\(tag)）")
-            checkRoomPanel(app, "模様替え・見本\(tag)", ids: ["camper.room.styleTrialEnd", "camper.room.styleCollect", "camper.room.styleDone"])
-            let end = app.buttons["camper.room.styleTrialEnd"].firstMatch
-            revealInPanel(app, end)
-            end.tap()
-            XCTAssertFalse(card.waitForExistence(timeout: 2), "「見本をやめる」で見本の札が消えない\(tag)")
-        } else {
-            XCTFail("壁紙に持っていない柄の札（鍵）が無い\(tag)")
-        }
-        // 持っている柄に変えたら「元に戻す」と「これにする」。戻したら「閉じる」
-        let curtainTab = app.buttons["camper.room.tab.curtain"].firstMatch
-        revealInPanel(app, curtainTab)
-        curtainTab.tap()
-        let indigo = app.buttons["camper.room.style.indigo"].firstMatch
-        revealInPanel(app, indigo)
-        indigo.tap()
-        let revert = app.buttons["camper.room.styleRevert"].firstMatch
-        XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない\(tag)")
-        XCTAssertTrue(done.label.contains("これにする"), "柄を変えたのに主ボタンが「これにする」でない（今は「\(done.label)」）")
-        Thread.sleep(forTimeInterval: 1.5)
-        shoot(app, "96l-部屋の下の板（模様替え・変えた後\(tag)）")
-        checkRoomPanel(app, "模様替え・変えた後\(tag)", ids: ["camper.room.styleRevert", "camper.room.styleDone"])
-        revealInPanel(app, revert)
-        revert.tap()
-        XCTAssertFalse(revert.waitForExistence(timeout: 2), "「元に戻す」で戻らない\(tag)")
-        XCTAssertFalse(done.label.contains("これにする"), "戻したのに「これにする」のまま\(tag)")
-        // 部屋のタブを替えたら、前の部屋の柄・見本を持ち越さない（確かめ役 2026-10-22: 部屋 B で何も触らないのに
-        // 「これにする／元に戻す」が光り、「元に戻す」で部屋 A の柄が B に書かれた）
-        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.room."))
-        if rooms.count > 1, rooms.element(boundBy: 1).isHittable {
-            revealInPanel(app, indigo)
-            indigo.tap()
-            XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない（部屋を替える前）\(tag)")
-            // 大きい文字では横に送る部屋のタブが、画面に見えていても XCUI が「押せない」と言うことがある（run 679）。
-            // 札の真ん中の点を押す
-            rooms.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            waitRoom(app, "camper.room.scene", "camper-room-ready")
-            XCTAssertTrue(rooms.element(boundBy: 1).isSelected, "部屋のタブを押しても部屋が替わらない\(tag)")
-            XCTAssertFalse(revert.exists, "部屋を替えたのに「元に戻す」が残る\(tag)")
-            XCTAssertFalse(done.label.contains("これにする"), "部屋を替えて何も触らないのに「これにする」（今は「\(done.label)」）\(tag)")
-            XCTAssertFalse(app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch.exists, "前の部屋の見本が残る\(tag)")
-            shoot(app, "96l-部屋の下の板（模様替え・部屋を替えた後\(tag)）")
-            rooms.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            waitRoom(app, "camper.room.scene", "camper-room-ready")
-        } else {
-            XCTFail("部屋のタブが 2 つ以上無い・押せない\(tag)")
-        }
-        revealInPanel(app, done)
-        done.tap()
-        XCTAssertTrue(app.buttons["camper.room.tool.photos"].firstMatch.waitForExistence(timeout: 5), "模様替えを閉じられない\(tag)")
-
-        // 写真を飾る
-        app.buttons["camper.room.tool.photos"].firstMatch.tap()
-        if app.buttons["camper.room.frame"].firstMatch.waitForExistence(timeout: 10) {
-            _ = app.buttons["camper.room.photo"].firstMatch.waitForExistence(timeout: 20)
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "96m-部屋の下の板（写真\(tag)）")
-            checkRoomPanel(app, "写真\(tag)", ids: ["camper.room.hang"],
-                           groups: ["camper.room.frame@camper.room.frames", "camper.room.photo@camper.room.photoGrid"])
-        } else {
-            XCTFail("飾る額の一覧が出ない\(tag)")
-        }
-        app.buttons["camper.room.back"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["camper.room.tool.place"].firstMatch.waitForExistence(timeout: 5), "写真から部屋に戻れない\(tag)")
-
-        // 置く
-        app.buttons["camper.room.tool.place"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない\(tag)")
-        // 押した直後から部屋が描かれている（置くの場面だけ立体を作り直し、組み上がるまで部屋が消えていた・run 666）
-        Thread.sleep(forTimeInterval: 0.3)
-        assertRoomDrawn(app, "置くを押した直後\(tag)")
-        Thread.sleep(forTimeInterval: 1.7)
-        shoot(app, "96n-部屋の下の板（置く\(tag)）")
-        checkRoomPanel(app, "置く\(tag)", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
-                                                 "camper.room.tab.wall", "camper.room.tab.ceiling"],
-                       groups: ["camper.room.tray.cat.@camper.room.trayCats", "camper.room.tray.@camper.room.trayGrid"])
-        checkRoomPicture(app, "置く\(tag)")
-        app.buttons["camper.room.done"].firstMatch.tap()
-
-        // 図鑑
-        let dex = app.buttons["camper.room.tool.dex"].firstMatch
-        XCTAssertTrue(dex.waitForExistence(timeout: 5), "置くから部屋に戻れない\(tag)")
-        dex.tap()
-        let close = app.buttons["camper.room.dex.close"].firstMatch
-        if close.waitForExistence(timeout: 10) {
-            Thread.sleep(forTimeInterval: 3)
-            shoot(app, "96o-部屋の下の板（図鑑\(tag)）")
-            XCTAssertGreaterThanOrEqual(close.frame.height, 44, "図鑑の「閉じる」が 44pt 未満\(tag)")
-            XCTAssertTrue(close.isHittable, "図鑑の「閉じる」を押せない\(tag)")
-            // 置き場所のタブの数が 1 字ずつ折れない（大きい文字で「474/1,19」「2」と折れた・run 666）
-            var tabBoxes: [(String, CGRect)] = []
-            for p in ["floor", "wall", "ceiling"] {
-                let t = app.buttons["camper.room.dex.tab.\(p)"].firstMatch
-                guard t.exists, t.isHittable else { continue }
-                tabBoxes.append((p, t.frame))
-                XCTAssertGreaterThanOrEqual(t.frame.height, 44, "図鑑のタブ \(p) が 44pt 未満\(tag)")
-                XCTAssertLessThan(t.frame.height, 90, "図鑑のタブ \(p) の字が折れて縦に伸びた（\(t.frame.height)pt）\(tag)")
-            }
-            XCTAssertFalse(tabBoxes.isEmpty, "図鑑の置き場所のタブが見えない\(tag)")
-            assertNoOverlap(tabBoxes, "図鑑のタブ\(tag)")
-            close.tap()
-        } else {
-            XCTFail("家具の図鑑が開かない\(tag)")
-        }
-    }
-
-    /// 下の板の要素が、画面の中・部屋の絵の下にあり、押せる物は 44pt 以上で、互いに重ならない。
-    /// `groups` は識別子の頭で集める（いま押せる物だけ）。「頭@入れ物の識別子」なら、送る一覧（入れ物）の中に丸ごと見えている物だけ
-    /// （一覧の端で切れて見えている升は、入れ物が切っているので重なり・はみ出しに数えない）
-    private func checkRoomPanel(_ app: XCUIApplication, _ label: String, ids: [String], groups: [String] = []) {
-        let window = app.windows.firstMatch.frame
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        // 大きい文字では板を送る。1 つずつ見える所まで送って、見えて押せるか・44pt かを見る（切れて届かないなら落とす）
-        for id in ids {
-            let e = app.descendants(matching: .any)[id].firstMatch
-            XCTAssertTrue(e.exists, "\(label): \(id) が無い")
-            guard e.exists else { continue }
-            revealInPanel(app, e)
-            XCTAssertTrue(e.isHittable, "\(label): \(id) が見えない・届かない（板の外へ切れる・\(e.frame)）")
-            if e.elementType == .button { checkTarget(e, id, label) }
-        }
-        // いま見えている物どうしで、画面の外・部屋の絵に掛かる・重なるを見る
-        var boxes: [(String, CGRect)] = []
-        var lines: [String] = ["窓 \(window)", "部屋の絵 \(scene.exists ? "\(scene.frame)" : "無し")"]
-        for id in ids {
-            let e = app.descendants(matching: .any)[id].firstMatch
-            guard e.exists, e.isHittable else { continue }
-            boxes.append((id, e.frame))
-            lines.append("\(id) \(e.frame)")
-        }
-        for group in groups {
-            let parts = group.split(separator: "@").map(String.init)
-            let prefix = parts[0]
-            let box = parts.count > 1 ? app.descendants(matching: .any)[parts[1]].firstMatch : nil
-            if let box { XCTAssertTrue(box.exists, "\(label): 一覧 \(parts[1]) が無い") }
-            let q = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
-            for i in 0..<min(q.count, 16) {
-                let e = q.element(boundBy: i)
-                guard e.exists, e.isHittable else { continue }
-                if let box, box.exists, !box.frame.insetBy(dx: -1, dy: -1).contains(e.frame) { continue }
-                let id = "\(e.identifier)#\(i)"
-                boxes.append((id, e.frame))
-                lines.append("\(id) \(e.frame)")
-                checkTarget(e, id, label)
-            }
-        }
-        let note = XCTAttachment(string: lines.joined(separator: "\n"))
-        note.name = "96-部屋の下の板の枠（\(label)）"
-        note.lifetime = .keepAlways
-        add(note)
-        for (id, f) in boxes {
-            XCTAssertTrue(window.insetBy(dx: -0.5, dy: -0.5).contains(f), "\(label): \(id) が画面の外へ切れる（\(f)）")
-            if scene.exists {
-                XCTAssertGreaterThanOrEqual(f.minY, scene.frame.maxY - 0.5, "\(label): \(id) が部屋の絵に掛かる（\(f) / \(scene.frame)）")
-            }
-        }
-        assertNoOverlap(boxes, label)
-    }
-
-    /// 下の板を送って `element` を見える所へ出す（送れない板・もう見えている時は何もしない）。板の左の縁を引く（部屋の絵は回さない）
-    private func revealInPanel(_ app: XCUIApplication, _ element: XCUIElement) {
-        let window = app.windows.firstMatch
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        var pushes = 0
-        // 少しでも見えていると押せる扱いになる。丸ごと画面に入るまで送る（大きい文字で下端が切れた・run 672）
-        while element.exists, !(element.isHittable && window.frame.contains(element.frame)), pushes < 6 {
-            let above = scene.exists && element.frame.minY < scene.frame.maxY
-            let from = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.74 : 0.94))
-            let to = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.9 : 0.78))
-            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
-            Thread.sleep(forTimeInterval: 0.6)
-            pushes += 1
-        }
-    }
-
-    private func checkTarget(_ e: XCUIElement, _ id: String, _ label: String) {
-        // 端数（43.99999）は 44 と見る
-        XCTAssertGreaterThanOrEqual(e.frame.height, 43.9, "\(label): \(id) の高さが 44pt 未満（\(e.frame.height)）")
-        XCTAssertGreaterThanOrEqual(e.frame.width, 43.9, "\(label): \(id) の幅が 44pt 未満（\(e.frame.width)）")
-    }
-
-    /// 枠どうしが重ならない（片方がもう片方を丸ごと含むのは、札の中の印なので除く）
-    private func assertNoOverlap(_ boxes: [(String, CGRect)], _ label: String) {
-        for i in boxes.indices {
-            for j in boxes.indices where j > i {
-                let a = boxes[i].1, b = boxes[j].1
-                let x = a.intersection(b)
-                guard !x.isNull, x.width > 1, x.height > 1, !a.contains(b), !b.contains(a) else { continue }
-                XCTFail("\(label): \(boxes[i].0) と \(boxes[j].0) が重なる（\(a) / \(b)）")
-            }
-        }
-    }
-
-    /// 部屋の絵（箱庭）が十分な高さで、上下どちらにも切れず、上下の空きが釣り合っている（画素で見る）。
-    /// owner の実機（2026-10-22）で、絵が上へ押し出されて切れ、下に大きな黒い空きがあった
-    private func checkRoomPicture(_ app: XCUIApplication, _ label: String) {
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        guard scene.exists else { return XCTFail("\(label): 部屋の絵が無い") }
-        XCTAssertGreaterThanOrEqual(scene.frame.height, 220, "\(label): 部屋の絵が低い（\(scene.frame.height)pt）")
-        guard let rows = Self.litRows(scene.screenshot().image) else { return XCTFail("\(label): 部屋の絵を読めない") }
-        guard let top = rows.firstIndex(where: { $0 }), let bottom = rows.lastIndex(where: { $0 }) else {
-            return XCTFail("\(label): 部屋が描かれていない（明るい画素が無い）")
-        }
-        let n = Double(rows.count)
-        let above = Double(top) / n, below = Double(rows.count - 1 - bottom) / n
-        print("CAMPERROOM \(label) 絵 \(scene.frame) 上の空き \(above) 下の空き \(below)")
-        XCTAssertGreaterThan(above, 0.005, "\(label): 部屋の絵の上が切れている")
-        XCTAssertGreaterThan(below, 0.005, "\(label): 部屋の絵の下が切れている")
-        XCTAssertLessThan(abs(above - below), 0.3, "\(label): 部屋が上か下へ寄っている（上の空き \(above)・下の空き \(below)）")
-    }
-
-    /// 部屋の絵に部屋が描かれている（明るい行が絵の 1 割以上）。組み直しの途中の暗い地だけなら落とす
-    private func assertRoomDrawn(_ app: XCUIApplication, _ label: String) {
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        guard scene.exists, let rows = Self.litRows(scene.screenshot().image) else { return XCTFail("\(label): 部屋の絵を読めない") }
-        let lit = rows.filter { $0 }.count
-        XCTAssertGreaterThan(Double(lit), Double(rows.count) * 0.1, "\(label): 部屋が描かれていない（明るい行 \(lit) / \(rows.count)）")
-    }
-
-    /// 行ごとに「部屋が写っているか」（明るさ 60 を超える画素が幅の 3% 以上）。暗い地（0x1D1B14 から黒）は数えない
-    private static func litRows(_ image: UIImage) -> [Bool]? {
-        guard let cg = image.cgImage else { return nil }
-        let w = cg.width, h = cg.height
-        guard w > 8, h > 8 else { return nil }
-        var bytes = [UInt8](repeating: 0, count: w * h * 4)
-        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
-        return (0..<h).map { y in
-            var lit = 0
-            for x in stride(from: 0, to: w, by: 2) {
-                let k = (y * w + x) * 4
-                let l = 0.299 * Double(bytes[k]) + 0.587 * Double(bytes[k + 1]) + 0.114 * Double(bytes[k + 2])
-                if l > 60 { lit += 1 }
-            }
-            return Double(lit) > Double(w / 2) * 0.03
-        }
-    }
-
     // MARK: - 大きい文字（Dynamic Type・2026-10-21）
 
     /// 文字の大きさの設定をアクセシビリティの XL にして起動する鍵（シミュレータの設定を変えずに、このアプリだけ）
@@ -9672,366 +9277,10 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
-    // MARK: - とおまわり号の描画を測る（2026-10-31・#430「キャンピングカーの描画を軽くする」）
-    //
-    // 外観（昼）・灯り（外の夜）・部屋（昼・夜）を開いて数秒動かし、次を取る。見本の起動（`-JPPreviewCamperPerf YES`）だけ数える。
-    // - XCTest の measure: アプリの CPU（`XCTCPUMetric`）・メモリ（`XCTMemoryMetric`）・1 コマと値渡しの印の時間
-    //   （`XCTOSSignpostMetric`・アプリの `CamperRenderMark`）。ログの `measured [` の行に出る
-    // - アプリの数（`CamperRenderProbe` の読み上げの値）の前後の差: 1 コマの回数・毎秒のコマ・平均・16.7 ms を越えたコマ・
-    //   値渡しの回数。ログの `CAMPERPERF:` の行と、注記（`計測（とおまわり号の描画・…）`・screenshots の枝の .txt）に残す
-    // 普段の回（PR の検証・TestFlight）では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
-    // 名指しは `screens=testMeasuresCamperRender`。値は Mac の CI のシミュレーターのもの（実機ではない）
-
-    /// アプリの `CamperRenderMeter.subsystem`・`category` と同じ字
-    private static let camperRenderSubsystem = "com.journeyphoto.camper"
-    private static let camperRenderCategory = "CamperRender"
-    /// measure の回数（1 回 4〜6 秒）
-    private static let camperRenderIterations = 3
-
-    struct CamperRenderTally {
-        var count = 0
-        var ms = 0.0
-        var max = 0.0
-        var slow = 0
-        /// アプリ全体（`Process`）の CPU の時間の合計（ms）とメモリ（MB）
-        var cpuMs = 0.0
-        var memMB = 0.0
-        /// メモリの内訳（`task_vm_info` の internal・compressed・device・MB・2026-11-07）
-        var intMB = 0.0
-        var cmpMB = 0.0
-        var devMB = 0.0
-        /// 場面の中身の数（`SceneExterior`・`SceneRoom`・`CamperSceneStats`）の「欄=値」の原文（2026-11-06・メモリの内訳）
-        var raw = ""
-    }
-
-    /// アプリの数を読む（`CamperRenderMeter.summary` の「名前 n= ms= max= slow=;」）
-    private func camperMeter(_ app: XCUIApplication, _ id: String) -> [String: CamperRenderTally] {
-        let probe = app.descendants(matching: .any)[id].firstMatch
-        guard probe.waitForExistence(timeout: 5) else { return [:] }
-        // 読み上げの値は 0.5 秒ごとに読み直される。いちばん新しい値を読む
-        Thread.sleep(forTimeInterval: 0.6)
-        var out: [String: CamperRenderTally] = [:]
-        for entry in ((probe.value as? String) ?? "").split(separator: ";") {
-            let words = entry.split(separator: " ")
-            guard let name = words.first else { continue }
-            var t = CamperRenderTally()
-            t.raw = words.dropFirst().joined(separator: " ")
-            for w in words.dropFirst() {
-                let kv = w.split(separator: "=")
-                guard kv.count == 2 else { continue }
-                switch kv[0] {
-                case "n": t.count = Int(kv[1]) ?? 0
-                case "ms": t.ms = Double(kv[1]) ?? 0
-                case "max": t.max = Double(kv[1]) ?? 0
-                case "slow": t.slow = Int(kv[1]) ?? 0
-                case "cpu_ms": t.cpuMs = Double(kv[1]) ?? 0
-                case "mem_mb": t.memMB = Double(kv[1]) ?? 0
-                case "int_mb": t.intMB = Double(kv[1]) ?? 0
-                case "cmp_mb": t.cmpMB = Double(kv[1]) ?? 0
-                case "dev_mb": t.devMB = Double(kv[1]) ?? 0
-                default: break
-                }
-            }
-            out[String(name)] = t
-        }
-        return out
-    }
-
-    /// 1 つの場面の前後の差を行にする（ログの `CAMPERPERF:` と注記の両方へ）
-    private func camperPhase(_ app: XCUIApplication, probe id: String, _ label: String, lines: inout [String], _ body: () -> Void) {
-        let before = camperMeter(app, id)
-        let start = Date()
-        body()
-        let seconds = Date().timeIntervalSince(start)
-        let after = camperMeter(app, id)
-        if after.isEmpty { lines.append("\(label): 数が読めない（\(id) が無い）") }
-        if let a = after["Process"] {
-            let b = before["Process"] ?? a
-            let cpu = a.cpuMs - b.cpuMs
-            // アプリの CPU（1 コア＝100%）とメモリ（前 → 後）
-            lines.append(String(format: "%@ | Process cpu_ms=%.0f cpu_pct=%.1f mem_mb_before=%.1f mem_mb_after=%.1f secs=%.1f",
-                                label, cpu, cpu / max(seconds, 0.001) / 10, b.memMB, a.memMB, seconds))
-        }
-        for key in after.keys.sorted() where key != "Process" {
-            // 場面の中身の数（回数・時間ではない）は、欄の原文をそのまま残す（メモリの内訳・#430）
-            if key.hasPrefix("Scene") {
-                lines.append("\(label) | \(key) \(after[key]!.raw)")
-                continue
-            }
-            let a = after[key]!, b = before[key] ?? CamperRenderTally()
-            let n = a.count - b.count
-            let ms = a.ms - b.ms
-            let avg = n > 0 ? ms / Double(n) : 0
-            lines.append(String(format: "%@ | %@ n=%d per_s=%.1f avg_ms=%.2f total_ms=%.1f slow=%d max_all_ms=%.2f secs=%.1f",
-                                label, key, n, Double(n) / max(seconds, 0.001), avg, ms, a.slow - b.slow, a.max, seconds))
-        }
-    }
-
-    private func camperRenderMetrics(_ app: XCUIApplication, _ names: [String]) -> [XCTMetric] {
-        var metrics: [XCTMetric] = [XCTCPUMetric(application: app), XCTMemoryMetric(application: app)]
-        for n in names {
-            metrics.append(XCTOSSignpostMetric(subsystem: Self.camperRenderSubsystem, category: Self.camperRenderCategory, name: n))
-        }
-        return metrics
-    }
-
-    private func camperRenderOptions() -> XCTMeasureOptions {
-        let o = XCTMeasureOptions()
-        o.iterationCount = Self.camperRenderIterations
-        return o
-    }
-
-    /// 指 1 本で横に引いて回す（行って戻る。ゆっくりの指で 1 回 2 秒ほど）
-    private func camperSpin(_ scene: XCUIElement, times: Int = 2) {
-        for i in 0..<times {
-            let left = scene.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-            let right = scene.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-            let (from, to) = i % 2 == 0 ? (right, left) : (left, right)
-            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.05)
-        }
-    }
-
-    /// 測った行をログと注記に残す
-    private func camperReport(_ title: String, _ lines: [String]) {
-        for line in lines { print("CAMPERPERF: \(name) \(line)") }
-        let text = XCTAttachment(string: lines.joined(separator: "\n"))
-        text.name = "計測（とおまわり号の描画・\(title)）"
-        text.lifetime = .keepAlways
-        add(text)
-    }
-
-    /// **外観（昼）**: 止まっている 3 秒・指で回す（measure）・回した後の 3 秒
-    func testMeasuresCamperRenderExterior() {
-        executionTimeAllowance = 600
-        let app = launchTrunk(["-JPPreviewCamperPerf", "YES"])
-        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
-        let probe = "camper.perf.exterior"
-        var lines: [String] = []
-        camperPhase(app, probe: probe, "外観・昼・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-        camperPhase(app, probe: probe, "外観・昼・回す（measure 全回）", lines: &lines) {
-            measure(metrics: camperRenderMetrics(app, ["CamperExteriorFrame", "CamperExteriorUpdate"]), options: camperRenderOptions()) {
-                self.camperSpin(scene)
-            }
-        }
-        camperPhase(app, probe: probe, "外観・昼・回した後に止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-        shoot(app, "95x1-計測（外観・昼）")
-        camperReport("外観・昼", lines)
-    }
-
-    /// **灯り（外の夜）**: 炎が揺れている夜の外を止めたまま（measure）・回す・中に入っている間の外（描き続けていないか）
-    func testMeasuresCamperRenderNight() {
-        executionTimeAllowance = 600
-        let app = launchTrunk(["-JPPreviewCamperPerf", "YES"])
-        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        let night = app.buttons["camper.mood.night"].firstMatch
-        guard night.waitForExistence(timeout: 5) else { return XCTFail("夜のボタンが無い") }
-        night.tap()
-        waitCamper(app, "night")
-        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
-        var lines: [String] = []
-        camperPhase(app, probe: "camper.perf.exterior", "外の夜・止まっている（measure 全回）", lines: &lines) {
-            measure(metrics: camperRenderMetrics(app, ["CamperExteriorFrame", "CamperExteriorUpdate"]), options: camperRenderOptions()) {
-                Thread.sleep(forTimeInterval: 4)
-            }
-        }
-        camperPhase(app, probe: "camper.perf.exterior", "外の夜・回す", lines: &lines) { camperSpin(scene) }
-        shoot(app, "95x2-計測（外の夜）")
-        // 中に入る（外の車は画面から外れる）。部屋を組み終えてから、外が描き続けていないかを見る
-        let enter = app.buttons["camper.room.enter"].firstMatch
-        guard enter.waitForExistence(timeout: 10) else { return XCTFail("「中に入る」が無い") }
-        if !enter.isHittable { scrollTo(enter, in: app) }
-        enter.tap()
-        XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない")
-        camperPhase(app, probe: "camper.perf.room", "外の夜から入った部屋・止まっている（外の車のコマを見る）", lines: &lines) {
-            Thread.sleep(forTimeInterval: 4)
-        }
-        shoot(app, "95x3-計測（外の夜から入った部屋）")
-        camperReport("外の夜", lines)
-    }
-
-    /// **部屋（昼）**: 止まっている 3 秒・指で回す（measure）
-    func testMeasuresCamperRenderRoom() {
-        measureCamperRoom(night: false)
-    }
-
-    /// **部屋（夜の灯り）**: 夜にして、止まっている 3 秒・指で回す（measure）
-    func testMeasuresCamperRenderRoomNight() {
-        measureCamperRoom(night: true)
-    }
-
-    private func measureCamperRoom(night: Bool) {
-        executionTimeAllowance = 600
-        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES"])
-        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
-        let label = night ? "部屋・夜" : "部屋・昼"
-        if night {
-            app.buttons["camper.room.night"].firstMatch.tap()
-            XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
-        }
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        let probe = "camper.perf.room"
-        var lines: [String] = []
-        camperPhase(app, probe: probe, "\(label)・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-        camperPhase(app, probe: probe, "\(label)・回す（measure 全回）", lines: &lines) {
-            measure(metrics: camperRenderMetrics(app, ["CamperRoomFrame", "CamperRoomUpdate", "CamperRoomPhotoImages", "CamperRoomPhotosMode",
-                                                        "CamperRoomShow"]),
-                    options: camperRenderOptions()) {
-                self.camperSpin(scene)
-            }
-        }
-        camperPhase(app, probe: probe, "\(label)・回した後に止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-        shoot(app, night ? "95x5-計測（部屋・夜）" : "95x4-計測（部屋・昼）")
-        camperReport(label, lines)
-    }
-
-    // MARK: - とおまわり号のメモリの内訳（2026-11-07・札 #430・測るだけ）
-    //
-    // 外観を開いて組み終えた後 → 「中に入る」で部屋を組み終えた後のアプリ全体のメモリ（phys_footprint）を、
-    // SCNView の輪郭のなめらかさ（`-JPPreviewCamperAA none|2x|4x`・外観と部屋の両方）を替えて、各 3 回測る。
-    // 毎回アプリを起動し直す。ログの `CAMPERMEM:` の行（値は MB・シミュレータ）。名指しは `screens=testMeasuresCamperMemory`
-
-    private func measureCamperMemory(aa: String, runs: Int = 3) {
-        executionTimeAllowance = 1100
-        var lines: [String] = []
-        for run in 1...runs {
-            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES", "-JPPreviewCamperAA", aa])
-            defer { app.terminate() }
-            guard openCamper(app), waitCamper(app, "camper-ready") else { XCTFail("外観を組み終えない（\(aa) \(run) 回目）"); continue }
-            let ext = camperMeter(app, "camper.perf.exterior")
-            let enter = app.buttons["camper.room.enter"].firstMatch
-            guard enter.waitForExistence(timeout: 15) else { XCTFail("「中に入る」が無い"); continue }
-            if !enter.isHittable { scrollTo(enter, in: app) }
-            enter.tap()
-            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない（\(aa) \(run) 回目）"); continue }
-            Thread.sleep(forTimeInterval: 3)
-            let room = camperMeter(app, "camper.perf.room")
-            Thread.sleep(forTimeInterval: 5)
-            let late = camperMeter(app, "camper.perf.room")
-            let e = ext["Process"] ?? CamperRenderTally(), r = room["Process"] ?? CamperRenderTally(), l = late["Process"] ?? CamperRenderTally()
-            lines.append(String(format: "CAMPERMEM aa=%@ run=%d ext_mb=%.1f room_mb=%.1f delta_mb=%.1f room_late_mb=%.1f | ext int=%.1f cmp=%.1f dev=%.1f | room int=%.1f cmp=%.1f dev=%.1f | SceneExterior %@ | SceneRoom %@",
-                                aa, run, e.memMB, r.memMB, r.memMB - e.memMB, l.memMB, e.intMB, e.cmpMB, e.devMB, r.intMB, r.cmpMB, r.devMB,
-                                ext["SceneExterior"]?.raw ?? "-", room["SceneRoom"]?.raw ?? "-"))
-        }
-        for line in lines { print("CAMPERMEM: \(line)") }
-        let text = XCTAttachment(string: lines.joined(separator: "\n"))
-        text.name = "計測（とおまわり号のメモリ・\(aa)）"
-        text.lifetime = .keepAlways
-        add(text)
-        XCTAssertEqual(lines.count, runs, "測れなかった回がある")
-    }
-
-    func testMeasuresCamperMemoryAA4x() { measureCamperMemory(aa: "4x") }
-    func testMeasuresCamperMemoryAA2x() { measureCamperMemory(aa: "2x") }
-    func testMeasuresCamperMemoryAANone() { measureCamperMemory(aa: "none") }
-
-    // MARK: - とおまわり号のメモリ: 途中の段・user_tag 別・差し替え（2026-11-07・札 #430・測るだけ）
-    //
-    // アプリ側の `CamperRenderMeter.mark`（組む途中の段）と `vmTagSummary`（user_tag 別）を、段ごとに読んでログ（`CAMPERSTAGE:`）に出す。
-    // 差し替え（`-JPPreviewCamperDiag lightbed|lightfurniture|halftex`）は測定専用。名指しは `screens=testMeasuresCamperStages`
-
-    /// 読み上げの値から、段・家具・殻・場面の数の行を 1 本ずつ出す
-    private func camperStageDump(_ app: XCUIApplication, probe id: String, _ label: String) {
-        let probeElement = app.descendants(matching: .any)[id].firstMatch
-        guard probeElement.waitForExistence(timeout: 5) else { print("CAMPERSTAGE: \(label) | 数が読めない（\(id) が無い）"); return }
-        Thread.sleep(forTimeInterval: 0.6)
-        let value = (probeElement.value as? String) ?? ""
-        for entry in value.split(separator: ";") {
-            let t = entry.trimmingCharacters(in: .whitespaces)
-            guard let name = t.split(separator: " ").first else { continue }
-            if name.hasPrefix("Scene") || name == "Process" { print("CAMPERSTAGE: \(label) | \(t)") }
-        }
-    }
-
-    private func enterCamperRoom(_ app: XCUIApplication) -> Bool {
-        let enter = app.buttons["camper.room.enter"].firstMatch
-        guard enter.waitForExistence(timeout: 15) else { return false }
-        if !enter.isHittable { scrollTo(enter, in: app) }
-        enter.tap()
-        return waitRoom(app, "camper.room.scene", "camper-room-ready")
-    }
-
-    private func measureCamperStages(diag: String?, aa: String? = nil, runs: Int, full: Bool) {
-        executionTimeAllowance = 1150
-        let d = diag ?? (aa.map { "aa-\($0)" } ?? "none")
-        for run in 1...runs {
-            var args = ["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES"]
-            if let diag { args += ["-JPPreviewCamperDiag", diag] }
-            if let aa { args += ["-JPPreviewCamperAA", aa] }
-            let app = launchTrunk(args)
-            defer { app.terminate() }
-            let tag = "diag=\(d) run=\(run)"
-            guard openCamper(app), waitCamper(app, "camper-ready") else { XCTFail("外観を組み終えない（\(tag)）"); continue }
-            camperStageDump(app, probe: "camper.perf.exterior", "\(tag) 外観")
-            guard enterCamperRoom(app) else { XCTFail("部屋を組み終えない（\(tag)）"); continue }
-            Thread.sleep(forTimeInterval: 3)
-            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼")
-            // 軽くする前後の絵の突き合わせ用（screenshots の枝の `95z1-…`）
-            if run == 1 { shoot(app, "95z1-計測（部屋・昼・\(d)）") }
-            guard full else { continue }
-            let night = app.buttons["camper.room.night"].firstMatch
-            night.tap()
-            XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
-            Thread.sleep(forTimeInterval: 3)
-            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・夜")
-            night.tap()
-            XCTAssertTrue(waitRoom(app, "camper.room.scene", "day"), "昼に戻らない")
-            Thread.sleep(forTimeInterval: 3)
-            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼に戻した")
-            // 外へ出て、5 秒おいて外の数を読む（部屋の分が戻るか）。もう一度入って出る
-            for cycle in 1...2 {
-                let back = app.buttons["camper.room.back"].firstMatch
-                guard back.waitForExistence(timeout: 10) else { return XCTFail("外へ戻れない") }
-                back.tap()
-                XCTAssertTrue(app.buttons["camper.room.enter"].firstMatch.waitForExistence(timeout: 15), "外の車に戻らない")
-                Thread.sleep(forTimeInterval: 5)
-                camperStageDump(app, probe: "camper.perf.exterior", "\(tag) 外へ出た後 \(cycle) 回目")
-                if cycle == 1 {
-                    guard enterCamperRoom(app) else { return XCTFail("部屋に入り直せない") }
-                    Thread.sleep(forTimeInterval: 3)
-                    camperStageDump(app, probe: "camper.perf.room", "\(tag) 入り直した部屋")
-                }
-            }
-        }
-    }
-
-    /// 軽くした後（既定）と、軽くする前（`keepmesh`）を各 3 回: 段・user_tag・昼夜・外へ出た後。
-    /// 輪郭のなめらかさ（AA）は none と 4x（外観と部屋の両方）で入るところまで 3 回ずつ
-    func testMeasuresCamperStages() { measureCamperStages(diag: nil, runs: 3, full: true) }
-    func testMeasuresCamperStagesKeepMesh() { measureCamperStages(diag: "keepmesh", runs: 3, full: true) }
-    func testMeasuresCamperStagesAANone() { measureCamperStages(diag: nil, aa: "none", runs: 3, full: false) }
-    func testMeasuresCamperStagesAA4x() { measureCamperStages(diag: nil, aa: "4x", runs: 3, full: false) }
-
-    /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
-    /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**
-    func testCapturesCamperLargeText() {
-        let app = launchTrunk(Self.largeText)
-        guard openCamper(app) else { return }
-        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
-        shoot(app, "95x-大きい文字（キャンピングカー）")
-        let stage = app.buttons["camper.stage.van"].firstMatch
-        guard stage.exists else { return XCTFail("段のボタンが無い") }
-        // 送るのは下の札の所から（上半分は立体の車で、払うと車が回る・Mac run 628 で `swipeUp` が車を回した）
-        dragUp(app, until: stage, from: 0.85, to: 0.76)
-        XCTAssertTrue(stage.isHittable, "大きい文字で段のボタンまで送れない")
-        shoot(app, "95y-大きい文字（キャンピングカー・数と段）")
-        let width = app.windows.firstMatch.frame.width
-        for id in ["camper.stage.van", "camper.stage.camper", "camper.stage.trailer"] {
-            let b = app.buttons[id].firstMatch
-            XCTAssertTrue(b.exists, "\(id) が無い")
-            guard b.exists else { continue }
-            XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満")
-            XCTAssertGreaterThan(b.frame.width, width / 2, "大きい文字なのに段が横に並んだまま（\(id) の幅 \(b.frame.width)）")
-        }
-    }
-
-    /// **旅のトランク（大きい文字）**: 上と、手持ちのラベルの下のボタン（貼る・作り直す・削除）。開けなければ撮らずに抜ける。
-    /// **出たのにボタンが 44pt 未満・押せなければ落とす**
+    /// **旅のトランク（大きい文字）**: 上と、手持ちのラベルの下のボタン（貼る・好きなデザインで作る・削除）。開けなければ撮らずに抜ける。
+    /// **出たのにボタンが 44pt 未満・押せなければ落とす**（作れる回数のある見本 `-JPPreviewTrunkCustomReady` で3つを出す・#706）
     func testCapturesTrunkLargeText() {
-        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"] + Self.largeText)
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkCustomReady", "YES"] + Self.largeText)
         guard openTrunk(app) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "90x-大きい文字（旅のトランク）")
@@ -10044,7 +9293,7 @@ final class ScreenshotTests: JPUITestCase {
         cell.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "92x-大きい文字（手持ちのラベル）")
-        for id in ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"] {
+        for id in ["trunk.pocket.stick", "trunk.pocket.custom", "trunk.pocket.delete"] {
             let button = app.buttons[id].firstMatch
             XCTAssertTrue(button.exists, "\(id) が無い")
             guard button.exists else { continue }
@@ -10052,7 +9301,7 @@ final class ScreenshotTests: JPUITestCase {
             XCTAssertTrue(button.isHittable, "\(id) を押せない")
         }
         // 3つは縦に積まれる（横並びに戻すと上端がそろって落ちる）
-        let ys = ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"].map { app.buttons[$0].firstMatch.frame.minY }
+        let ys = ["trunk.pocket.stick", "trunk.pocket.custom", "trunk.pocket.delete"].map { app.buttons[$0].firstMatch.frame.minY }
         XCTAssertTrue(ys[0] < ys[1] && ys[1] < ys[2], "大きい文字なのに手持ちのボタンが縦に積まれていない（上端 \(ys)）")
     }
 

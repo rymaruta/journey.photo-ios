@@ -128,7 +128,7 @@ struct InviteView: View {
             VStack(alignment: .leading, spacing: 0) {
                 mosaic(photos)
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(L("SHARED ALBUM\u{2002}招待されています", "SHARED ALBUM\u{2002}YOU'RE INVITED"))
+                    Text(eyebrow: L("SHARED ALBUM\u{2002}招待されています", "SHARED ALBUM\u{2002}YOU'RE INVITED"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityHidden(true)
