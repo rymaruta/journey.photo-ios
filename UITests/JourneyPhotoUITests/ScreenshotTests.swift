@@ -6146,6 +6146,20 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertTrue(spine.waitForExistence(timeout: 10), "「戻る」で棚へ戻らない")
     }
 
+    /// 確かめ用（2026-11-25・人間工学の見直しの前の main）: 背表紙を長押しすると「開く」のメニューが出るか。出ないなら前からの状態
+    func testErgoMenuCheckShelfLongPressShowsMenu() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let spine = app.descendants(matching: .any).matching(identifier: "trips.book").firstMatch
+        guard spine.waitForExistence(timeout: 20) else { return XCTFail("背表紙が無い") }
+        spine.press(forDuration: 1.5)
+        let menuOpen = app.buttons["開く"].firstMatch
+        let shown = menuOpen.waitForExistence(timeout: 3)
+        print("measured shelfMenuOnMain shown=\(shown) share=\(app.buttons["trips.share"].firstMatch.exists)")
+        shoot(app, "MenuCheck-本棚の長押し（main）")
+        XCTAssertTrue(shown, "main でも背表紙の長押しで「開く」のメニューが出ない")
+    }
+
     /// 旅の記録のタブを選ぶ（マイページ → 旅の記録）
     private func openTripShelf(_ app: XCUIApplication) -> Bool {
         let tabBar = app.tabBars.firstMatch
