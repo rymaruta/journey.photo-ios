@@ -211,6 +211,12 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 
 ## 提出前の最終確認（ここを全部緑にしてから出す）
 
+**審査に出すのは Actions の「App Store submit」（`.github/workflows/asc-submit.yml`・2026-11-25 札 #604）。**
+先に `ios-testflight.yml` を `storeShots=true`・`ascVersion=<版>`・`ascApply=true` で流して画面写真を入れ、
+`asc-submit.yml` を `apply=false`（下見）→ `apply=true` で流す。新機能の説明・ビルド・上の Notes・段階的リリースを入れて審査に出す。
+公開中の版には書かない。審査用のアカウントのパスワードは App Store Connect の値を残す（上書きしない）。
+新機能の説明の文は `Tools/asc-submit.py` の `WHATS_NEW`。
+
 - [ ] ビルドは、出すときの最新の TestFlight の版（2026-11-23 時点は `testflight/1.1.119`、df0eea4）。App Store Connect の「バージョン」をその版にし、同じ版のビルドを選ぶ
 - [ ] TestFlight の実機で一巡（AI で旅行プラン、AI に頼む、投稿、ストーリーの動画、メッセージ、旅行プランの会話の通報、通報、ブロック、退会、機内モード）
 - [ ] 画面写真を2組（大型ディスプレイ＝6.9インチ 1320×2868 と、中型ディスプレイ 1206×2622。中型は最低1枚が必須）。Mac の CI の `storeShots` で、見本の表示（`-JPStoreDemo`）だけで撮り、非公開の S3 から取り出す（`docs/APP_STORE_METADATA.md` の「作り方」）。本番の他の利用者の写真と他の作者の作例を1枚も入れない（画像は同梱の CC0 の作例写真だけ）。人の顔、他社のロゴも入れない
