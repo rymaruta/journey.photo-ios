@@ -1508,14 +1508,23 @@ final class CriticalFlowTests: JPUITestCase {
             let element = app.descendants(matching: .any)["detail.pull.probe"].firstMatch
             return (element.exists ? element.value as? String : nil) ?? "-"
         }
-        let window = app.windows.firstMatch.frame
-        // 少しだけ（約 50pt）引いて止めて離す: 戻る（写真の画面と同じ 120pt に届かない）
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3 + 50 / window.height)),
-                   withVelocity: .slow, thenHoldForDuration: 0.5)
-        Thread.sleep(forTimeInterval: 1)
-        print("measured askPull small probe=\(probe())")
-        XCTAssertTrue(field.exists, "少し引いて止めただけで閉じた（probe=\(probe())）")
+        // 少しだけ（50pt）ゆっくり引いて 1.5 秒止めて離す: 戻る（写真の詳細の `testDetailPull…` の「少し引いて離す」と同じ指）。
+        // Mac の回 1798: 正規の座標どうしの引き＋0.5 秒では probe が moves=2;moveAgeMs=0;endVy=235 で、止めた指になっていなかった
+        // （止めずに 235pt/秒で払った指は、写真の詳細と同じく 40 + 235 × 0.499 ≒ 157pt で閉じる＝正しい）。
+        // 写真の詳細と同じ「座標からのずらし」で引き、止めた指になったか（moveAgeMs > 100・endVy=0）を先に確かめる
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 50)),
+                    withVelocity: .slow, thenHoldForDuration: 1.5)
+        Thread.sleep(forTimeInterval: 1.5)
+        let small = probe()
+        print("measured askPull small probe=\(small)")
+        func number(_ key: String) -> Int? {
+            small.components(separatedBy: ";").first { $0.hasPrefix(key + "=") }.flatMap { Int($0.dropFirst(key.count + 1)) }
+        }
+        XCTAssertGreaterThan(number("moveAgeMs") ?? 0, 100, "試験の指が止まってから離れていない（probe=\(small)）")
+        XCTAssertEqual(number("endVy"), 0, "止めて離した指に速さが残っている（probe=\(small)）")
+        XCTAssertTrue(field.exists, "少し引いて止めただけで閉じた（probe=\(small)）")
+        guard field.exists else { return }
         // 大きく引く: 閉じる
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))

@@ -136,7 +136,11 @@ struct TripBookshelfView<Opened: View>: View {
             if presented == nil { stage.reset() }
         }
         // ずらして別の背に替わった時の軽い振動（見張るのはこの子だけ）
-        .background { SpineSlideFeedback(lifter: lifter) }
+        .background {
+            SpineSlideFeedback(lifter: lifter)
+            // UI テストの事実取り（`-JPPreviewPullProbe YES` のときだけ・Mac の回 1798）
+            if PreviewSession.pullProbe { SpineSlideProbeView() }
+        }
     }
 
     /// 押さえて浮かせてよいか（本が開く・閉じる動きの最中は受けない）

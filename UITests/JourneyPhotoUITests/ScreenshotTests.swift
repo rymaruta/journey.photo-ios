@@ -6149,7 +6149,12 @@ final class ScreenshotTests: JPUITestCase {
     /// **本棚の背は、押して・ずらして・離して開く**（2026-11-25・人間工学の案 3）。1冊目を押さえ、離さずに隣の背へずらして
     /// 離すと、隣の一冊が開く（押した背ではない）。開いた一冊の題（上の帯）で見分ける
     func testErgo1125ShelfSlideOpensNeighbor() {
-        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        // `-JPPreviewPullProbe`: 押さえの始まり・ずらし始め・離した時刻と、開くと決めたか（`trips.slide.probe`・Mac の回 1798 の事実取り）
+        let app = launchTrunk(["-JPPreviewTripShelf", "many", "-JPPreviewPullProbe", "YES"])
+        func slideProbe() -> String {
+            let element = app.descendants(matching: .any)["trips.slide.probe"].firstMatch
+            return (element.exists ? element.value as? String : nil) ?? "-"
+        }
         guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
         let spines = app.descendants(matching: .any).matching(identifier: "trips.book")
         guard spines.firstMatch.waitForExistence(timeout: 20) else { return XCTFail("背表紙が無い") }
@@ -6178,7 +6183,8 @@ final class ScreenshotTests: JPUITestCase {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
             Thread.sleep(forTimeInterval: 1)
         }
-        XCTAssertFalse(app.buttons["trips.share"].firstMatch.exists, "長押しのメニューを閉じたら本が開いた")
+        print("measured shelfMenu probe=\(slideProbe())")
+        XCTAssertFalse(app.buttons["trips.share"].firstMatch.exists, "長押しのメニューを閉じたら本が開いた（probe=\(slideProbe())）")
         guard first.isHittable, second.isHittable else { return XCTFail("メニューを閉じた後に背表紙を押せない") }
         print("measured shelfSlide first=\(first.frame) \(firstTitle) second=\(second.frame) \(secondTitle)")
         // 押さえて（0.4 秒・押さえたとみなす 0.28 秒より長く、長押しのメニューより短い）、隣の背の真ん中へずらして離す
@@ -6186,7 +6192,9 @@ final class ScreenshotTests: JPUITestCase {
             .press(forDuration: 0.4, thenDragTo: second.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
                    withVelocity: .slow, thenHoldForDuration: 0.2)
         let share = app.buttons["trips.share"].firstMatch
-        guard share.waitForExistence(timeout: 15) else { return XCTFail("押さえてずらして離しても一冊が開かない") }
+        let opened = share.waitForExistence(timeout: 15)
+        print("measured shelfSlide probe=\(slideProbe())")
+        guard opened else { return XCTFail("押さえてずらして離しても一冊が開かない（probe=\(slideProbe())）") }
         if firstTitle != secondTitle {
             let bar = app.navigationBars.firstMatch
             XCTAssertTrue(bar.staticTexts[secondTitle].firstMatch.waitForExistence(timeout: 5)

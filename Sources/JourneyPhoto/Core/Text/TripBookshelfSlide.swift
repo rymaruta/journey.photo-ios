@@ -25,20 +25,31 @@ extension TripBookshelf {
     /// 段の上下へ外れても浮きを残す幅（pt）。これより外へ出たら浮きを消す（やめる）
     static let slideSlack: Double = 30
 
-    /// 押さえたまま動かさずにこれだけ経ったら、長押しのメニュー（表紙だけ見る）の指として押さえをやめる（秒）。
-    /// 2026-11-25 判断（Mac の回 1796）: 1.2 秒押して離すと、メニューが出ずに本が開いていた（押さえが取り消されずに離した所で開いた）。
-    /// メニューの出る約 0.5 秒より少し前に、押さえを必ず取り消して浮きを戻す。離しても何も開かない
-    static let menuSeconds: Double = 0.45
+    /// 動かさずにこれだけ押さえてから離した指は、長押しのメニュー（表紙だけ見る）の指として扱い、本を開かない（秒）。
+    /// 2026-11-25 判断（Mac の回 1796）: 1.2 秒押して離すと本が開いていた。
+    /// 2026-11-25 判断（Mac の回 1798）: 1796 のあと、0.45 秒で押さえを**時計で取り消す**形にしたら、0.4 秒押さえてから
+    /// 250pt/秒でずらした指（0.45 秒の時点で動きはまだ 10pt 前後）まで取り消され、ずらして離しても開かなくなった。
+    /// 時計で取り消すのをやめ、**離した時に**「どれだけ押していたか」と「ずらしたか」で決める（`releaseOpens`）。メニューの約 0.5 秒にそろえる
+    static let menuSeconds: Double = 0.5
 
-    /// 押さえを長押しのメニューに譲るか: 押さえてから `menuSeconds` 経ち、その間に `holdSlop` より動いていない（ずらしていない）
-    static func yieldsToMenu(heldSeconds: Double, travelled: Double) -> Bool {
-        heldSeconds >= menuSeconds && travelled <= holdSlop
+    /// 押さえて離した時に開くか: ずらした（`holdSlop` より動いた）か、メニューの時間より前に離した
+    static func releaseOpens(heldSeconds: Double, travelled: Double) -> Bool {
+        travelled > holdSlop || heldSeconds < menuSeconds
     }
 
     /// 「すぐ押して離した」として開くか（押していた秒）。押さえを取り消した長い押し（メニューに譲った・縦の送りに渡した）を、
     /// 押した1回に数え直さない
     static func tapOpens(pressedSeconds: Double) -> Bool {
         pressedSeconds < holdSeconds + 0.1
+    }
+
+    /// UI テストの事実取りの1行（`SpineSlideProbe`・`-JPPreviewPullProbe YES` のときだけ出す）。時刻は指が触れてからの ms
+    static func probeLine(began: Double?, moved: Double?, ended: Double?, travelled: Double, cancels: Int,
+                          opened: Int?, decided: Bool?) -> String {
+        func ms(_ v: Double?) -> String { v.map { String(Int(($0 * 1000).rounded())) } ?? "-" }
+        let decision = decided.map { $0 ? "1" : "0" } ?? "-"
+        return "began=\(ms(began));moved=\(ms(moved));ended=\(ms(ended));travelled=\(Int(travelled.rounded()))"
+            + ";cancels=\(cancels);opened=\(opened.map(String.init) ?? "-");opens=\(decision)"
     }
 
     /// 押さえたあと縦にこれだけ（`slideSlack` より多く）動いたら、ずらすのをやめて縦の送りに渡す（2026-11-25 確かめ役の指摘）

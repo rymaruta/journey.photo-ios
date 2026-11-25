@@ -18,6 +18,44 @@ final class SpineLifter: ObservableObject {
     func switched() { switches &+= 1 }
 }
 
+/// UI テストの事実取りだけ（`-JPPreviewPullProbe YES`）: 押さえの始まり・ずらし始め・離した時刻（指が触れてからの ms）・
+/// 動いた量・取り消しの回数・開くと決めたか。見えない要素 `trips.slide.probe` の値に出す（Mac の回 1798 で外れたあとの事実取り）
+@MainActor
+final class SpineSlideProbe: ObservableObject {
+    static let shared = SpineSlideProbe()
+    static let identifier = "trips.slide.probe"
+    @Published var value = TripBookshelf.probeLine(began: nil, moved: nil, ended: nil, travelled: 0, cancels: 0,
+                                                   opened: nil, decided: nil)
+    var down: Double = 0
+    var began: Double?, moved: Double?, ended: Double?
+    var travelled = 0.0, cancels = 0
+    var opened: Int?, decided: Bool?
+
+    func touchDown(_ time: Double) {
+        down = time
+        began = nil; moved = nil; ended = nil; travelled = 0; opened = nil; decided = nil
+        publish()
+    }
+
+    func publish() {
+        value = TripBookshelf.probeLine(began: began, moved: moved, ended: ended, travelled: travelled, cancels: cancels,
+                                        opened: opened, decided: decided)
+    }
+}
+
+struct SpineSlideProbeView: View {
+    @ObservedObject var probe = SpineSlideProbe.shared
+
+    var body: some View {
+        Text(" ")
+            .font(.system(size: 1))
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityIdentifier(SpineSlideProbe.identifier)
+            .accessibilityValue(probe.value)
+    }
+}
+
 /// ずらして替わった時の軽い振動（2026-11-25 判断・案 3）。見張るのはこの小さな子だけ
 struct SpineSlideFeedback: View {
     @ObservedObject var lifter: SpineLifter
@@ -104,8 +142,6 @@ struct SpineSlideHost: UIViewRepresentable {
         private var travelled: Double = 0
         /// 指が触れた時刻（すぐ押して離したかを見る・`tapOpens`）
         private var touchDownTime: CFTimeInterval = 0
-        /// 押さえたまま動かさない指を、長押しのメニューに譲る見張り
-        private var menuWatch: DispatchWorkItem?
 
         private lazy var hold: UILongPressGestureRecognizer = {
             let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
@@ -162,19 +198,14 @@ struct SpineSlideHost: UIViewRepresentable {
                 travelled = 0
                 slide = TripBookshelf.Slide(start: target(recognizer))
                 handlers.onLift(slide.lifted)
-                // 動かさずに押さえ続けたら、メニューの出る前に押さえを取り消す（離しても開かない・浮きを戻す）
-                menuWatch?.cancel()
-                let watch = DispatchWorkItem { [weak self, weak recognizer] in
-                    guard let self, let recognizer, recognizer.state == .began || recognizer.state == .changed else { return }
-                    let held = TripBookshelf.menuSeconds
-                    if TripBookshelf.yieldsToMenu(heldSeconds: held, travelled: self.travelled) { self.cancel(recognizer) }
-                }
-                menuWatch = watch
-                DispatchQueue.main.asyncAfter(deadline: .now() + (TripBookshelf.menuSeconds - TripBookshelf.holdSeconds),
-                                              execute: watch)
+                note { $0.began = CACurrentMediaTime() - $0.down }
             case .changed:
                 let here = recognizer.location(in: nil)
+                let wasStill = travelled <= TripBookshelf.holdSlop
                 travelled = max(travelled, Double(hypot(here.x - holdStart.x, here.y - holdStart.y)))
+                if wasStill, travelled > TripBookshelf.holdSlop {
+                    note { $0.moved = CACurrentMediaTime() - $0.down }
+                }
                 // 縦に大きく動いた: ずらすのをやめて縦の送りに渡す（取り消すと `.cancelled` が来る）
                 if TripBookshelf.handsToScroll(dy: Double(recognizer.location(in: nil).y - holdStart.y)) {
                     cancel(recognizer)
@@ -183,11 +214,21 @@ struct SpineSlideHost: UIViewRepresentable {
                 if slide.move(to: target(recognizer)) { handlers.onSwitch() }
                 handlers.onLift(slide.lifted)
             case .ended:
-                let opens = slide.opens
+                // 開くかは離した時に決める: ずらしたか、メニューの時間より前に離したか（時計で取り消さない・Mac の回 1798）
+                let held = CACurrentMediaTime() - touchDownTime
+                let decided = TripBookshelf.releaseOpens(heldSeconds: held, travelled: travelled)
+                let opens = decided ? slide.opens : nil
+                note { probe in
+                    probe.ended = CACurrentMediaTime() - probe.down
+                    probe.travelled = self.travelled
+                    probe.opened = opens
+                    probe.decided = decided
+                }
                 reset()
                 if let opens { handlers.onOpen(opens) }
             case .cancelled, .failed:
-                // 長押しのメニューに譲った・縦の送りに渡した・電話が来た: 何も開かない
+                // 長押しのメニューが出た・縦の送りに渡した・電話が来た: 何も開かない
+                note { $0.cancels += 1 }
                 reset()
             default:
                 break
@@ -204,11 +245,18 @@ struct SpineSlideHost: UIViewRepresentable {
 
         /// 押さえの状態を必ず初めに戻す（浮きを消す・見張りを止める）
         private func reset() {
-            menuWatch?.cancel()
-            menuWatch = nil
             travelled = 0
             slide = TripBookshelf.Slide(start: nil)
             handlers?.onLift(nil)
+        }
+
+        /// UI テストの事実取り（`SpineSlideProbe`）。`-JPPreviewPullProbe` のときだけ
+        private func note(_ change: (SpineSlideProbe) -> Void) {
+            guard PreviewSession.pullProbe else { return }
+            MainActor.assumeIsolated {
+                change(SpineSlideProbe.shared)
+                SpineSlideProbe.shared.publish()
+            }
         }
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
@@ -224,7 +272,10 @@ struct SpineSlideHost: UIViewRepresentable {
             // 流れている送りの上の一押しは、送りを止めるだけ（本を開かない）
             guard TripBookshelf.receivesTouch(scrollDecelerating: host?.isDecelerating == true) else { return false }
             guard probe.bounds.contains(touch.location(in: probe)) else { return false }
-            if gestureRecognizer === tap { touchDownTime = CACurrentMediaTime() }
+            if gestureRecognizer === hold {
+                touchDownTime = CACurrentMediaTime()
+                note { $0.touchDown(self.touchDownTime) }
+            }
             return true
         }
 

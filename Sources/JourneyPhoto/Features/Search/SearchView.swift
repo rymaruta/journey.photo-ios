@@ -711,6 +711,9 @@ struct SearchView: View {
             JPTextField(fieldPrompt, text: $query)
                 .focused($fieldFocused)
                 .textFieldStyle(.plain)
+                // 押せる高さは 44 以上（Mac の回 1798: 字の欄の高さ 22 のままだった。枠は 44 でも、欄そのものの当たりは字の高さだった）
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
                 // 板の 16（`.callout`）
                 .font(.callout)
                 .foregroundStyle(WebTheme.foreground)
@@ -739,6 +742,9 @@ struct SearchView: View {
                 .accessibilityIdentifier("search.clear")
             }
         }
+        // 枠のどこを押しても打てる（虫めがねの上・欄の左右の余白も。消す「×」は自分のボタンが先に受ける）
+        .contentShape(Rectangle())
+        .onTapGesture { fieldFocused = true }
         // 地・縁・高さは撮影スポットの一覧の探す欄と同じ（`jpSearchBoxFace`・札 #524 で切り出した）
         .jpSearchBoxFace()
         .padding(.horizontal, JPSpace.gutter)
