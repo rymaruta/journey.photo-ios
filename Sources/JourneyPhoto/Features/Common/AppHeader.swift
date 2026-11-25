@@ -27,6 +27,9 @@ import UIKit
 @MainActor
 struct AppHeaderItems: ToolbarContent {
 
+    /// 右の当たりどうしの間（2026-11-25 判断・人間工学の確かめ 観点3「中心の間 50pt 以上・間 6pt 以上」）
+    nonisolated static let buttonGap: CGFloat = 6
+
     let unread: Int
     let onOpenNotifications: () -> Void
     /// 受信箱に未読の会話がある（リクエストは数えない・`DMInboxStore.hasUnread`）
@@ -57,8 +60,15 @@ struct AppHeaderItems: ToolbarContent {
         // **どのタブでも同じ中身**（メッセージ・お知らせ・メニュー）。前はホームだけ「探す」があり、右の枠の幅が
         // タブごとに違ったので、探す・マップではロゴが真ん中に寄って見えた（run 609 の 10・11・13）。
         // 探すのタブで押すと、探す口に字を打てるようにする（`SearchView`）
+        //
+        // 2026-11-25 判断（人間工学の確かめ 観点3・Artifact「人間工学アーティファクト」の A）: **当たりの間を 6pt ずつ空ける。**
+        // 44pt の当たりが隙間なく接していると、いちばん遠い右上の角で押す目安の円（9.2mm・約55pt）が隣にかかり、
+        // 押し間違えると隣の画面が開く。当たりは 44 のまま、絵の大きさ（17pt・箱 24）も変えない。中心の間は 50pt。
+        // 帯は 18pt 長くなるので、字つきの「AI に頼む」を出す幅（`AskEntryButton.labelMinWindowWidth`）を上げ、
+        // 375pt の iPhone ではロゴを少し深く縮められるようにした（`AppLogo.headerMinimumScale`）。
+        // 未読の点は絵の箱（`webToolbarIcon`）に付いていて、当たりの外の間には付かないので、位置は変わらない
         ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: 0) {
+            HStack(spacing: Self.buttonGap) {
                 // 2026-11-21 判断（札 #675・案1）: 「✦ AI に頼む」をどのタブの帯にも（ホーム、探す、マップ）。押すと AI の画面
                 AskEntryButton()
                 // 2026-11-12 判断（デザインの案 第10章「どこに何を置くか」）: **見出しの「探す」は外した**（4 → 3つ）。
@@ -124,7 +134,11 @@ struct AskEntryButton: View {
     /// 右の枠は ✦ の字つき 約90 ＋ メッセージ、お知らせ、メニューの 44×3 ＝ 約222。左右の余白 16×2 と枠の間 約16 を引くと、
     /// ロゴ（絵 19 ＋ 間 8 ＋「Journey Photo」22pt 約150、縮めて 0.8 で約147）に残るのは 375pt の iPhone SE で約105、
     /// 390pt で約120 しかなく、ロゴが切れる。✦ だけ（44）なら 375pt でも約151 残る。400pt 以上（402、430、440）は字つき
-    static let labelMinWindowWidth: CGFloat = 400
+    ///
+    /// 2026-11-25 判断（当たりの間 6pt×3 を足した・`AppHeaderItems.buttonGap`）: 右の枠は字つきで約240、✦ だけで約194。
+    /// ロゴの縮めた幅は約132（絵 19 ＋ 間 8 ＋ 字 約150×0.7・`AppLogo.headerMinimumScale`）。字つきは 48＋240＋132＝420pt 以上
+    /// （430、440）だけにし、402pt は ✦ だけにする（字つきだと残りが約114 でロゴが切れる）。375pt は ✦ だけで残り約133
+    static let labelMinWindowWidth: CGFloat = 420
 
     /// 字を出さず ✦ だけにするか（大きな字のとき、狭い iPhone のとき）。窓の幅が読めなければ字を出す
     nonisolated static func iconOnly(largeText: Bool, windowWidth: CGFloat? = nil) -> Bool {

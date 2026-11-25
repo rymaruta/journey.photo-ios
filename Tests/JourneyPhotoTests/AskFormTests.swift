@@ -242,14 +242,22 @@ final class AskFormTests: XCTestCase {
         XCTAssertFalse(body.contains(".foregroundStyle(WebTheme.accent)"), "帯の入口の字が真鍮")
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 375), "iPhone SE（375pt）で字を出すとロゴが押される")
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 390))
-        XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: 402))
+        // 2026-11-25: 当たりの間 6pt×3 を足したので、402pt も ✦ だけ（字つきだとロゴが切れる）
+        XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 402))
+        XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: 430))
         XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: 440))
         XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: nil))
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: true, windowWidth: 440))
-        // 配置の計算: ✦ だけなら 375pt でもロゴ（縮めて約147）が入る
-        let trailing: CGFloat = 44 + 44 * 3
+        // 配置の計算: ✦ だけなら 375pt でもロゴ（縮めて約132・`AppLogo.headerMinimumScale`）が入る。
+        // 2026-11-25: 当たりの間（`AppHeaderItems.buttonGap`）を 3つ足す
+        let gaps = AppHeaderItems.buttonGap * 3
+        let trailing: CGFloat = 44 + 44 * 3 + gaps
         let margins: CGFloat = 16 * 2 + 16
-        XCTAssertGreaterThanOrEqual(375 - trailing - margins, 147)
+        let logo: CGFloat = 19 + 8 + 150 * AppLogo.headerMinimumScale
+        XCTAssertGreaterThanOrEqual(375 - trailing - margins, logo)
+        // 字つき（約90）は、字を出す幅の下限でもロゴが入る
+        let labeled: CGFloat = 90 + 44 * 3 + gaps
+        XCTAssertGreaterThanOrEqual(AskEntryButton.labelMinWindowWidth - labeled - margins, logo)
     }
 
     // MARK: - 流れ

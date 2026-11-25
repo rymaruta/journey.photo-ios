@@ -622,6 +622,10 @@ struct GalleryView: View {
                                  title: L("フォロー中の人の新しい写真", "New from people you follow"))
                     .padding(.horizontal, JPSpace.gutter)
                 HomeMosaic(groups: rows.following, onReport: { reportTarget = $0 }, firstPostIds: firstPosts)
+                // 2026-11-25 判断（人間工学の確かめ 観点15・Artifact「人間工学アーティファクト」の B）: 新しい写真の終わりに1行。
+                // 前は区切りなくほかの写真が続き、どこで見終わったか分からなかった。読むだけで、押す回数は増えない。
+                // この段は新しい写真がある日だけ出て、読み込み中（`.loading` の骨格）には並びごと描かないので、そのときは出ない
+                HomeFollowingEndNote()
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("home.following")
@@ -950,4 +954,31 @@ struct RequestedSpot: Hashable {
 
     static func == (a: RequestedSpot, b: RequestedSpot) -> Bool { a.spot.slug == b.spot.slug }
     func hash(into hasher: inout Hasher) { hasher.combine(spot.slug) }
+}
+
+/// ホームの「フォロー中の人の新しい写真」の終わりの1行（2026-11-25 判断・人間工学の確かめ 観点15「続く並びに『ここまで』の印」）。
+///
+/// 板どおり: 黒地の上なので印は真鍮（合図）、字は text-3（#9A9A9A・黒の上 7.46:1）の footnote（13pt・大きな字の設定で大きくなる）。
+/// 中黒で区切らない。読むだけの1行（押せない）
+struct HomeFollowingEndNote: View {
+    /// 画面に出す文（英語は「You're all caught up」）
+    static var text: String { L("新しい写真は、ここまでです", "You're all caught up") }
+
+    var body: some View {
+        HStack(spacing: JPSpace.xs) {
+            Image(systemName: "checkmark.circle")
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityHidden(true)
+            Text(Self.text)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, JPSpace.gutter)
+        .padding(.top, JPSpace.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.followingEnd")
+    }
 }
