@@ -28,11 +28,12 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$DEST.new.partial"' EXIT
 
 echo "== マニフェストを引く（${TAG}）"
-TOKEN=$(curl -sS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/swift:pull" \
-    | python3 -c "import json,sys;print(json.load(sys.stdin)['token'])")
-curl -sS -H "Authorization: Bearer $TOKEN" \
+# マニフェストも mirror.gcr.io から引く（2026-11-25: Docker Hub は回数の制限（1時間 100 回・同じ出口の全員で数える）で
+# ときどき空の答えを返し、展開の前で止まった。ミラーは鍵が要らない）
+REG="https://mirror.gcr.io/v2/library/swift"
+curl -fsS --retry 3 \
     -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
-    "https://registry-1.docker.io/v2/library/swift/manifests/$TAG" -o "$WORK/index.json"
+    "$REG/manifests/$TAG" -o "$WORK/index.json"
 
 DIGEST=$(python3 -c "
 import json
@@ -42,27 +43,32 @@ for m in d['manifests']:
     if p.get('os') == 'linux' and p.get('architecture') == 'amd64':
         print(m['digest']); break
 ")
-curl -sS -H "Authorization: Bearer $TOKEN" \
+curl -fsS --retry 3 \
     -H "Accept: application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
-    "https://registry-1.docker.io/v2/library/swift/manifests/$DIGEST" -o "$WORK/manifest.json"
+    "$REG/manifests/$DIGEST" -o "$WORK/manifest.json"
 
 echo "== 層を落としながら展開する（およそ 1GB）"
 # **blob は mirror.gcr.io から取る。** Docker Hub は blob を
 # production.cloudfront.docker.com へ逃がすが、そちらは塞がれていることがある
-COUNT=$(python3 -c "import json;print(len(json.load(open('$WORK/manifest.json'))['layers']))")
+COUNT=$(python3 -c "import json;print(len(json.load(open('$WORK/manifest.json'))['layers']))") || {
+    echo "マニフェストが読めません:"; head -c 400 "$WORK/manifest.json"; echo; exit 1; }
 rm -rf "$DEST.new.partial"
 mkdir -p "$DEST.new.partial"
 for i in $(seq 0 $((COUNT - 1))); do
     D=$(python3 -c "import json;print(json.load(open('$WORK/manifest.json'))['layers'][$i]['digest'])")
     echo "   層 $i"
     # /usr の下だけ。デバッガ（lldb）と言語サーバー（sourcekit-lsp・clangd）は入れない（約 700MB）
-    curl -sS -L "https://mirror.gcr.io/v2/library/swift/blobs/$D" --max-time 900 \
-        | tar -xz -C "$DEST.new.partial" --strip-components=1 --wildcards \
+    curl -fsS -L --retry 3 "$REG/blobs/$D" --max-time 900 \
+        | tar -xz -C "$DEST.new.partial" --wildcards \
             --exclude='usr/bin/lldb*' --exclude='usr/lib/liblldb*' \
             --exclude='usr/bin/sourcekit-lsp' --exclude='usr/lib/libsourcekitdInProc*' \
             --exclude='usr/bin/clangd' 'usr/*' 2>/dev/null || true
 done
 
+# **`usr/` の形のまま置き、`bin` は `usr/bin` への近道にする**（2026-11-25・Swift 6.4.2）。6.4 の `swift build` の
+# 既定の作り方（swiftbuild）は、道具を `<根>/usr/bin` の形で探す。`usr` を外して置くと swiftc が見つからず
+#「/作業の場所/swiftc is not an executable file」で落ちた。PATH は今までどおり `$DEST/bin` でよい
+ln -s usr/bin "$DEST.new.partial/bin"
 "$DEST.new.partial/bin/swift" --version
 echo "== $DEST を入れ替える"
 rm -rf "$DEST.old"
