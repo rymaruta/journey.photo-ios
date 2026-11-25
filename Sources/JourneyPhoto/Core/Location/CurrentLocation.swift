@@ -51,25 +51,56 @@ final class CurrentLocation: NSObject, ObservableObject {
 
     private let manager: LocationRequesting
 
-    /// - Parameter manager: 省略すると本物。テストは偽物を渡す
-    init(manager: LocationRequesting? = nil) {
+    /// 2026-11-25 判断（札 #594・owner「重いところの調査と改善」）: **許可の状態をメインスレッドで聞きに行かない。**
+    /// Mac run 1786 の `testUsageSurveyProbe` で、地図を初めて開いた時の止まり（2,296ms）の中に、`locate` の
+    /// `manager.authorizationStatus`（作ったばかりの `CLLocationManager` は、位置の係から答えが来るまでその場で待つ）が
+    /// 当たっていた。iOS は管理者を作った直後に必ず `locationManagerDidChangeAuthorization` を送るので、
+    /// **その知らせで状態を控え**（`knownStatus`）、知らせの前に呼ばれた `locate` は控えて（`pending`）、知らせが来たら動く
+    private var knownStatus: CLAuthorizationStatus?
+    /// 知らせの前に頼まれたこと。`locate` は `locateIfAllowed` より強い（尋ねてよい）ので上書きする
+    private enum Pending { case locate, ifAllowed }
+    private var pending: Pending?
+    /// 状態を管理者に聞かず、知らせを待つか。本物は `true`。偽物は既定で `false`（偽物の値をその場で読む）
+    private let waitsForStatusNotice: Bool
+
+    /// - Parameters:
+    ///   - manager: 省略すると本物。テストは偽物を渡す
+    ///   - waitsForStatusNotice: 本物と同じく知らせを待つか（偽物で本物の順を試すとき `true`）
+    init(manager: LocationRequesting? = nil, waitsForStatusNotice: Bool = false) {
         if let manager {
             self.manager = manager
+            self.waitsForStatusNotice = waitsForStatusNotice
             super.init()
         } else {
             let real = CLLocationManager()
             real.desiredAccuracy = kCLLocationAccuracyKilometer
             self.manager = real
+            self.waitsForStatusNotice = true
             super.init()
             real.delegate = self
         }
+    }
+
+    /// 分かっている許可の状態。本物は知らせが来るまで nil（管理者に聞きに行かない）
+    private var currentStatus: CLAuthorizationStatus? {
+        if let knownStatus { return knownStatus }
+        return waitsForStatusNotice ? nil : manager.authorizationStatus
     }
 
     /// 権限が無ければ尋ね、あれば1回だけ位置を取る。
     /// - Parameter requestedByUser: ボタンから `true`（既定）、地図を開いたときの自動は `false`
     func locate(requestedByUser: Bool = true) {
         self.requestedByUser = requestedByUser
-        switch manager.authorizationStatus {
+        guard let status = currentStatus else {
+            pending = .locate
+            return
+        }
+        pending = nil
+        locate(with: status)
+    }
+
+    private func locate(with status: CLAuthorizationStatus) {
+        switch status {
         case .notDetermined:
             state = .asking
             manager.requestWhenInUseAuthorization()
@@ -78,6 +109,8 @@ final class CurrentLocation: NSObject, ObservableObject {
         case .authorizedAlways, .authorizedWhenInUse:
             state = .locating
             manager.requestLocation()
+        @unknown default:
+            state = .failed
         }
     }
 
@@ -85,7 +118,15 @@ final class CurrentLocation: NSObject, ObservableObject {
     /// 探すの撮影スポットの一覧を近い順にするため（札 #524・2026-11-11 判断: 一覧を開いただけで
     /// 位置の許可を尋ねない。許していない人は名前の順のまま）
     func locateIfAllowed() {
-        switch manager.authorizationStatus {
+        guard let status = currentStatus else {
+            if pending == nil { pending = .ifAllowed }
+            return
+        }
+        locateIfAllowed(with: status)
+    }
+
+    private func locateIfAllowed(with status: CLAuthorizationStatus) {
+        switch status {
         case .authorizedAlways, .authorizedWhenInUse:
             // **まだ一度も取っていないときだけ**（取り終えた・取っている・失敗したあとは取り直さない）。
             // 一覧から詳細を開いて戻るたびに取り直すと、並びが目の前で動く（確かめ役の指摘・2026-11-11）
@@ -104,6 +145,16 @@ final class CurrentLocation: NSObject, ObservableObject {
     /// 直後にも同じ知らせを送るので、そこで位置を要求すると押していないのに
     /// 取りにいく。取り終えたあとに再び届いても再要求しない（1回だけ）
     func handle(status: CLAuthorizationStatus) {
+        knownStatus = status
+        // 知らせの前に頼まれていたら、いま分かった状態で動く（2026-11-25 札 #594）
+        if let next = pending {
+            pending = nil
+            switch next {
+            case .locate: locate(with: status)
+            case .ifAllowed: locateIfAllowed(with: status)
+            }
+            return
+        }
         guard state == .asking else { return }
         switch status {
         case .notDetermined:
@@ -113,6 +164,8 @@ final class CurrentLocation: NSObject, ObservableObject {
         case .authorizedAlways, .authorizedWhenInUse:
             state = .locating
             manager.requestLocation()
+        @unknown default:
+            break
         }
     }
 
