@@ -6209,6 +6209,25 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "Ergo1125-旅の一冊（ずらして隣を開いた）")
     }
 
+    /// 事実取り（2026-11-25）: main では背表紙の長押しで「開く」のメニューが出る（回 1825）が、この枝では出ない。
+    /// 段の指の部品（押さえ・すぐ押し）を外した姿ごとに、メニューが出るかを値で見る。判定は報告で使う（ここでは落とさない）
+    func testErgo1125ShelfMenuProbe() {
+        for off in ["", "tap", "hold", "both"] {
+            var args = ["-JPPreviewTripShelf", "many", "-JPPreviewPullProbe", "YES"]
+            if !off.isEmpty { args += ["-JPShelfCatcherOff", off] }
+            let app = launchTrunk(args)
+            guard openTripShelf(app) else { XCTFail("旅の記録のタブを開けない（off=\(off)）"); continue }
+            let spine = app.descendants(matching: .any).matching(identifier: "trips.book").firstMatch
+            guard spine.waitForExistence(timeout: 20) else { XCTFail("背表紙が無い（off=\(off)）"); continue }
+            spine.press(forDuration: 1.5)
+            let shown = app.buttons["開く"].firstMatch.waitForExistence(timeout: 3)
+            let probe = app.descendants(matching: .any)["trips.slide.probe"].firstMatch
+            let value = (probe.exists ? probe.value as? String : nil) ?? "-"
+            print("measured shelfMenuProbe off=\(off.isEmpty ? "none" : off) shown=\(shown) share=\(app.buttons["trips.share"].firstMatch.exists) probe=\(value)")
+            app.terminate()
+        }
+    }
+
     /// 旅の記録のタブを選ぶ（マイページ → 旅の記録）
     private func openTripShelf(_ app: XCUIApplication) -> Bool {
         let tabBar = app.tabBars.firstMatch
