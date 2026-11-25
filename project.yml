@@ -22,23 +22,18 @@ configs:
   Release: release
 
 packages:
+  # Amplify は 2.64.0 以上（札 #733・2026-11-25）。2.64.0 は smithy-swift 0.268.0 を使い、その CBOR の `switch` は
+  # `default:` を持つので、aws-crt-swift 0.64.5 の `CBORType` の新しい場合でも組める。前は smithy-swift 0.242.0 が
+  # 組めず aws-crt-swift を 0.64.3 に止めていた（#646・2026-11-19）。その固定はここで外した
   Amplify:
     url: https://github.com/aws-amplify/amplify-swift
-    from: 2.27.0
-  # 🔴 Amplify の下の aws-crt-swift を 0.64.3 に留める（#646・2026-11-19）。
-  # 0.64.5 で `CBORType` に `.bigInteger`・`.bigDecimal` が足され、smithy-swift 0.242.0 の `switch` が
-  # 「switch must be exhaustive」で組めない（run 1572、控えが無く依存を解き直した回）。控えが当たる回は
-  # 古い版が戻るので見えないが、控えが外れると落ちる。どのターゲットにも足さない（版を縛るためだけ）。
-  # smithy-swift が新しい aws-crt-swift に合った版を出したら外す
+    from: 2.64.0
   # 「Google でログイン」（札 #715・2026-11-23）。Google の公式の部品。**この版以上**（CLAUDE.md の部品の決まり）。
   # nonce を渡せるのが 7.1.0 から。上は縛らない（新しい版で壊れたら、こちらを直して合わせる）
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     minVersion: 7.1.0
     maxVersion: 100.0.0
-  AwsCrtSwift:
-    url: https://github.com/awslabs/aws-crt-swift
-    exactVersion: 0.64.3
 
 targets:
   JourneyPhoto:
