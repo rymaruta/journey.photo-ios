@@ -546,7 +546,7 @@ struct ProfileSwipePanHost: UIViewRepresentable {
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            // ホームの写真を手に取っている間は札を替える払いを始めない（2026-11-12 札 #543・`PhotoLiftCenter`）
+            // ホームの送る人の列が開いている間は札を替える払いを始めない（2026-11-12 札 #543・`PhotoLiftCenter`）
             if gestureRecognizer === pan, PhotoLiftCenter.holding { return false }
             guard gestureRecognizer === pan, let probe, let handlers else { return true }
             var move = pan.translation(in: probe)

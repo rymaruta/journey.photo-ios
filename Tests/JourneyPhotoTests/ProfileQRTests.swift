@@ -122,28 +122,6 @@ final class ProfileQRTests: XCTestCase {
         XCTAssertEqual(ProfileQRScanResult.resolved(nil, myUserId: uid), .other)
     }
 
-    /// 前の版の中身（公開プロフィールの URL）: 合図は引けない・更新は出さない・更新を頼まれても作らない
-    func testPublicProfileSourceCannotRenew() async throws {
-        let source = PublicProfileQRSource(base: base)
-        let url = try await source.code(for: uid)
-        XCTAssertEqual(url.absoluteString, "https://journey-photo.com/users?id=\(uid)")
-        do {
-            _ = try await source.code(for: "a/b")
-            XCTFail("URL に入れられない id で中身を作った")
-        } catch {
-            XCTAssertEqual(error as? ProfileQRSourceError, .cannotMake)
-        }
-        let resolved = try await source.resolve(pass: "abc")
-        XCTAssertNil(resolved)
-        XCTAssertFalse(source.canRenew)
-        do {
-            _ = try await source.renew(for: uid)
-            XCTFail("取り替えられない中身で更新した")
-        } catch {
-            XCTAssertEqual(error as? ProfileQRSourceError, .cannotMake)
-        }
-    }
-
     /// アプリが使うのは更新できる合図（2026-11-12 owner 承認・札 #545）
     func testAppUsesTheRenewableSource() throws {
         let text = try source("Core/Text/ProfileQR.swift")

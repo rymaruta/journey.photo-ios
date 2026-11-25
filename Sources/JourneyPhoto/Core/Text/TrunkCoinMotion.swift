@@ -286,11 +286,6 @@ enum TrunkOpenClock {
 
     /// 時計を止めるか（動きを減らす設定・まだ始めていない・画面に出ていない）
     static func paused(started: Bool, visible: Bool) -> Bool { !started || !visible }
-
-    /// 段階で出る文のうち、経った秒までに出ている数（0〜6）
-    static func textsShown(elapsed: Double) -> Int {
-        TrunkMotion.stageDelays.filter { $0 <= elapsed + 1e-9 }.count
-    }
 }
 
 extension TrunkCrank {

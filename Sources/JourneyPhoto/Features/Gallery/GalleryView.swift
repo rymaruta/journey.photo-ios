@@ -543,7 +543,7 @@ struct GalleryView: View {
             // UI テストのときだけ: 中身の上端（送りの枠での位置）を数に出す（開いたときと「ホーム」を押した後を比べる）
             .modifier(FeedTopProbe { [feedProbeTop] top in if top != feedProbeTop.top { feedProbeTop.top = top } })
         }
-        // 写真を手に取っている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
+        // 送る人の列（読み上げの「送る」）が開いている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
         .modifier(PhotoLiftScrollLock(center: PhotoLiftCenter.shared))
         // UI テストのときだけ: 1本の並びの数を見えない要素に出す（`PreviewSession.feedProbe`）
         .overlay(alignment: .bottomTrailing) {

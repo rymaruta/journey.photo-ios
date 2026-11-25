@@ -259,12 +259,6 @@ enum TrunkEntryRule {
         return false
     }
 
-    /// 公開の写真を投稿したか（硬貨とラベルが届く・`PhotoTrip.isPublic`）。取り消し・ストーリー・
-    /// 下書き・公開範囲を絞った写真では読み直さない
-    static func postedPublic(_ photos: [Photo]) -> Bool {
-        photos.contains(where: PhotoTrip.isPublic)
-    }
-
     /// 読むか
     static func needsRead(readAt: Date?, failedAt: Date?, stale: Bool, now: Date) -> Bool {
         if stale { return true }
@@ -312,21 +306,14 @@ enum TrunkEntryText {
         return n
     }
 
-    /// 札の題の下の行（型の名前・例「革の旅行鞄」）。いま描く型（Pro をやめたら最後の無料の型）
-    static func modelName(_ state: TrunkState?) -> String? {
-        state.map { TrunkText.info($0.effectiveModel).name }
-    }
-
-    /// 読み上げの値: 型の名前・硬貨の枚数・貼っていないラベルの有無（色の点だけで伝えない）
-    static func accessibilityValue(_ summary: TrunkEntrySummary?, model: String? = nil) -> String {
-        guard let summary else { return model ?? "" }
+    /// 読み上げの値: 硬貨の枚数・貼っていないラベルの有無（色の点だけで伝えない）
+    static func accessibilityValue(_ summary: TrunkEntrySummary?) -> String {
+        guard let summary else { return "" }
         let coins = L("硬貨 \(summary.coins)枚", summary.coins == 1 ? "1 coin" : "\(summary.coins) coins")
         let labels = summary.hasUnstuck
             ? L("まだ貼っていないラベルが \(summary.unstuck)枚あります",
                 summary.unstuck == 1 ? "1 label not stuck yet" : "\(summary.unstuck) labels not stuck yet")
             : L("貼っていないラベルはありません", "No labels waiting")
-        let counts = L("\(coins)、\(labels)", "\(coins), \(labels)")
-        guard let model, !model.isEmpty else { return counts }
-        return L("\(model)、\(counts)", "\(model), \(counts)")
+        return L("\(coins)、\(labels)", "\(coins), \(labels)")
     }
 }

@@ -230,36 +230,6 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertFalse(gate.shouldRecheck(isBackground: false, isActive: true), "2回目の active でも読んでいる")
     }
 
-    private func photo(_ id: String, audience: String? = nil, published: Bool? = nil) throws -> Photo {
-        let a = audience.map { ",\"audience\":\"\($0)\"" } ?? ""
-        let p = published.map { ",\"published\":\($0)" } ?? ""
-        return try JSONDecoder.api.decode(Photo.self, from: Data("{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(a)\(p)}".utf8))
-    }
-
-    /// 投稿の画面を閉じても、**公開の写真を上げたときだけ**読み直す（取り消し・ストーリー・下書き・絞った公開では読まない）
-    func testPostedPublicOnly() async throws {
-        XCTAssertFalse(TrunkEntryRule.postedPublic([]), "取り消し・ストーリー（写真が上がっていない）で読み直している")
-        XCTAssertFalse(TrunkEntryRule.postedPublic([try photo("d", published: false)]), "下書きで読み直している")
-        XCTAssertFalse(TrunkEntryRule.postedPublic([try photo("f", audience: "followers")]), "フォロワー限定で読み直している")
-        XCTAssertTrue(TrunkEntryRule.postedPublic([try photo("p")]))
-        XCTAssertTrue(TrunkEntryRule.postedPublic([try photo("f", audience: "followers"), try photo("e", audience: "everyone")]))
-    }
-
-    /// 札の題の下の型の名前と、読み上げに型の名前（2026-10-18 A′）
-    func testModelNameAndSpokenValue() async throws {
-        let state = TrunkSample.state(isPro: false, coins: 3)
-        let name = try XCTUnwrap(TrunkEntryText.modelName(state))
-        XCTAssertEqual(name, TrunkText.info(state.effectiveModel).name)
-        XCTAssertNil(TrunkEntryText.modelName(nil))
-        let spoken = TrunkEntryText.accessibilityValue(TrunkEntrySummary(state), model: name)
-        XCTAssertTrue(spoken.hasPrefix(name), spoken)
-        XCTAssertTrue(spoken.contains(L("硬貨 3枚", "3 coins")), spoken)
-        // Pro をやめた人は、いま描く型（最後の無料の型）の名前
-        let lapsed = TrunkState(model: .urushi, effectiveModel: .leather, pocket: [], stuck: [], limit: 30, isPro: false,
-                                rerollsLeft: 0, posts: 3, receiveLabels: true)
-        XCTAssertEqual(TrunkEntryText.modelName(lapsed), TrunkText.info(.leather).name)
-    }
-
     /// 口が無い人のためには読まない・数も出さない
     func testStoreDoesNotReadWhenUnavailable() async {
         let store = TrunkEntryStore()

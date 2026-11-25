@@ -203,19 +203,6 @@ enum TrunkGachaText {
                 "\u{201C}\(r.part.name)\u{201D} was one you have. You got a fragment.")
             : L("「\(r.part.name)」が出ました。部品箱に入れました", "\u{201C}\(r.part.name)\u{201D} came out. It\u{2019}s in your parts box.")
     }
-
-    /// かけらの交換の札の下の行（モック PartsBox）
-    static func exchangeNote(fragments: Int, selected: TrunkPart?) -> String {
-        let need = TrunkPartsBoxText.fragmentsPerExchange
-        if fragments < need {
-            return L("まだ持っていない部品から選べます\u{2002}あと \(need - fragments) つ",
-                     "Choose from parts you don\u{2019}t have yet\u{2002}\(need - fragments) more")
-        }
-        if let selected {
-            return L("「\(selected.name)」と交換します", "Exchange for \u{201C}\(selected.name)\u{201D}")
-        }
-        return L("まだ持っていない部品（影）を選んでください", "Choose a part you don\u{2019}t have yet (shadow)")
-    }
 }
 
 /// カプセルの機械の段取り
@@ -293,9 +280,6 @@ enum TrunkEquipText {
         guard ids.count < part.kind.capacity else { return (e, true) }
         return (e.setting(part.kind, ids + [part.id]), false)
     }
-
-    /// その場所を全部外す
-    static func clearing(_ kind: TrunkPartKind, on e: TrunkEquipped) -> TrunkEquipped { e.setting(kind, []) }
 
     /// いっぱいの一言
     static func fullNote(_ kind: TrunkPartKind) -> String {

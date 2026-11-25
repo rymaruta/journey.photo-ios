@@ -211,7 +211,6 @@ final class TrunkPartsTests: XCTestCase {
         let withLock = TrunkEquipText.equipping(lock, on: TrunkEquipped(lock: "lock.1")).equipped
         XCTAssertEqual(withLock.lock, "lock.3", "1つの場所は置き換え")
         XCTAssertNil(TrunkEquipText.toggling(lock, on: withLock).equipped.lock, "押し直しで外れない")
-        XCTAssertEqual(TrunkEquipText.clearing(.pin, on: e).pins, [])
         XCTAssertNil(TrunkEquipText.outline(.lining), "見えない内張りに枠を出した")
     }
 
@@ -300,7 +299,6 @@ final class TrunkPartsTests: XCTestCase {
     func testNoCoinsAndFragmentsWording() {
         // 2026-11-23（札 #716）: どこからも呼ばれていなかった古い `TrunkGachaText.hint`（「ころん」ほか）は消した
         XCTAssertEqual(TrunkGachaText.spinHint(coins: 0, phase: .idle), "公開の投稿1件で、硬貨を1枚もらえます（1日3枚まで）")
-        XCTAssertEqual(TrunkGachaText.exchangeNote(fragments: 3, selected: nil), "まだ持っていない部品から選べます\u{2002}あと 2 つ")
         XCTAssertFalse(TrunkPartsBoxText.canExchange(fragments: 4))
         XCTAssertTrue(TrunkPartsBoxText.canExchange(fragments: 5))
         XCTAssertEqual(TrunkPartsBoxText.filledFragments(12), 5)

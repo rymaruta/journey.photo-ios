@@ -283,12 +283,6 @@ final class TrunkCoinMachineTests: XCTestCase {
         XCTAssertTrue(TrunkOpenClock.paused(started: false, visible: true), "動きを減らす設定で時計が回る")
         XCTAssertTrue(TrunkOpenClock.paused(started: true, visible: false), "画面に出ていないのに時計が回る")
         XCTAssertFalse(TrunkOpenClock.paused(started: true, visible: true))
-        // 文は段で出て、最後の段のあとは増えない（時計で作り直さない）
-        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: 0), 0)
-        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: 0.42), 2)
-        let last = TrunkMotion.stageDelays.last ?? 0
-        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: last), TrunkMotion.stageDelays.count)
-        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: 100), TrunkMotion.stageDelays.count)
         let open = try? source("Features/Trunk/TrunkGachaView.swift")
         let body = open.flatMap { text in text.range(of: "struct TrunkGachaOpenView").map { String(text[$0.upperBound...]) } } ?? ""
         XCTAssertEqual(body.components(separatedBy: "TimelineView(").count - 1, 1, "開けた画面の時計が舞台の外も包んでいる")

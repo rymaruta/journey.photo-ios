@@ -205,7 +205,7 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Features/Profile/ProfileImageFromPhoto.swift": "自分の写真の中身を取る口（`download`）",
         "Features/Profile/PhotoRecolor.swift": "自分の写真の色の編集の元（`fetchSource`）",
         "Features/PhotoDetail/PhotoDetailView.swift": "共有カード・ストーリーの絵。持ち主のときだけ（`showsSocialCard`・`canShareToStory`）",
-        "Features/Gallery/PhotoLiftOverlay.swift": "手に取った写真をストーリーへ。自分の写真だけ（`PhotoOwnership.isMine`）",
+        "Features/Gallery/PhotoLiftOverlay.swift": "読み上げの「ストーリーで紹介」。自分の写真だけ（`PhotoOwnership.isMine`）",
         "Features/Common/SignatureShareCardSheet.swift": "持ち主の顔（アイコン）を共有カードに載せる。カードは自分の写真だけ",
         "Features/Common/TravelStorySheet.swift": "旅をストーリーにの写真。自分の写真と自分の一冊だけ",
         "Features/Trips/TripBookView.swift": "旅の一冊の絵。自分の一冊だけ（`TripBook.canShare(_:isMine:)`）",

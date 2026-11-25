@@ -11,7 +11,8 @@ import Foundation
 /// 古い QR は使えなくなる形にした（悪用を防ぐ）。** 中身は取り替えられる合図（`/qr?t=<合図>`・`ProfileQR.passURL`）で、
 /// サーバーの口（`GET /user/qr`・`POST /user/qr/rotate`・`GET /qr/{合図}`。user API とは別のスタック）が持つ:
 /// - QR に入れる中身を作るのは `ProfileQRSource` の1か所だけ。アプリは `ServerProfileQRSource`（合図）を使う。
-///   公開プロフィールの URL の実装（`PublicProfileQRSource`）は前の版の QR を読むために形だけ残す
+///   前の版の QR（公開プロフィールの URL）は `ProfileQRLink.parse` が読む（2026-11-25 札 #733: 使っていなかった
+///   中身の作り手 `PublicProfileQRSource` は消した）
 /// - 読み取った文字を見分けるのは `ProfileQRLink.parse` の1か所だけ。合図は `ProfileQRSource.resolve` で人に引き、
 ///   引けない（更新された・退会した）ときは「この QR コードは使えません」
 ///
@@ -118,22 +119,6 @@ protocol ProfileQRSource {
 
 enum ProfileQRSourceError: Error, Equatable {
     case cannotMake
-}
-
-/// 今の中身（仮の実装）: 公開プロフィールの URL。合図は引けない・更新は出さない
-struct PublicProfileQRSource: ProfileQRSource {
-    var base: URL = AppConfig.siteBaseURL
-
-    func code(for userId: String) async throws -> URL {
-        guard let url = ProfileQR.url(userId: userId, base: base) else { throw ProfileQRSourceError.cannotMake }
-        return url
-    }
-
-    func resolve(pass: String) async throws -> String? { nil }
-
-    var canRenew: Bool { false }
-
-    func renew(for userId: String) async throws -> URL { throw ProfileQRSourceError.cannotMake }
 }
 
 enum ProfileQRSources {
