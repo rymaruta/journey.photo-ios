@@ -6,7 +6,8 @@ import SwiftUI
 ///
 /// 先に「なぜ通知か」を言ってから、「オンにする」でシステムのダイアログへ進む
 /// （設定の「プッシュ通知を受け取る」と同じ道＝`PushCenter.enable`）。
-/// 「あとで」は閉じるだけ（二度と出さない・設定の「プッシュ通知を受け取る」からいつでも）。
+/// 2026-11-25 判断（審査 5.1.1(iv) の差し戻し・札 #604）: 主ボタンは「続ける」、「あとで」は置かず、下に引いても閉じない。
+/// 説明のあとは必ず iOS の確認へ進む（そこで「許可しない」を選べる）。前は「オンにする」と「あとで」だった。
 ///
 /// 写真の無い画面なので、板（DesignSystem「黒塗りの真鍮」）どおり: 黒地・眉ラベルは真鍮・
 /// 見出しは明朝・主ボタンは真鍮の塗り（`accentFill`）に墨・印は白（`LibraryTripIntroView` と同じ形）
@@ -69,23 +70,12 @@ struct PushPrimerView: View {
                         dismiss()
                     }
                 } label: {
-                    Text(L("オンにする", "Turn on"))
+                    Text(PushPrimerText.proceed)
                         .jpPillButton(.accent)
                 }
                 .buttonStyle(.plain)
                 .disabled(isAsking)
                 .accessibilityIdentifier("push.primer.allow")
-                Button { dismiss() } label: {
-                    Text(L("あとで", "Not now"))
-                        .font(JPFont.body)
-                        .foregroundStyle(WebTheme.text2)
-                        // 48: 半分の高さのシートは iOS 26 で約 96% に縮めて描かれ、44 だと
-                        // 当たりが 42.4pt になっていた（run 407・408 の画面で主ボタンの幅も 0.962 倍）
-                        .frame(maxWidth: .infinity, minHeight: PushPrimerLayout.laterHeight)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("push.primer.later")
             }
             .padding(.horizontal, JPSpace.xl)
             .padding(.bottom, JPSpace.xs)
@@ -98,7 +88,9 @@ struct PushPrimerView: View {
         // 読めなかった回は**分かっている値のまま**（`PushPrimerPoint.resolvedPro`・2026-10-21）
         .task { isPro = PushPrimerPoint.resolvedPro(loaded: (try? await environment.profiles.myProfile())?.isPro, known: isPro) }
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        // 下に引いて閉じさせない（審査 5.1.1(iv)・説明のあとは必ず iOS の確認へ）。つまみも出さない
+        .presentationDragIndicator(.hidden)
+        .sheetSwipeGuard(.hold)
     }
 
     private func point(_ systemImage: String, _ text: String) -> some View {
@@ -123,8 +115,15 @@ struct PushPrimerView: View {
 enum PushPrimerLayout {
     /// 項目の印の箱（板: 40）
     static let iconTile: CGFloat = 40
-    /// 「あとで」の当たり（48・UI テストが 44 以上を見る。半分の高さのシートは iOS 26 で約 96% に縮む）
+    /// 半分の高さのシートの文字ボタンの当たり（48・UI テストが 44 以上を見る。半分の高さのシートは iOS 26 で約 96% に縮む）。
+    /// 2026-11-25 にこの画面の「あとで」は外した。AI の同意のシートの「やめる」（`AIServerConsentLayout.cancelHitHeight`）が使う
     static let laterHeight: CGFloat = 48
+}
+
+/// 通知の説明の言葉（2026-11-25・審査 5.1.1(iv)）
+enum PushPrimerText {
+    /// 主ボタン。「許可」「オンにする」とは呼ばない（押すと iOS の確認が出る）
+    static var proceed: String { L("続ける", "Continue") }
 }
 
 /// 説明に並べる項目（2026-10-11）。

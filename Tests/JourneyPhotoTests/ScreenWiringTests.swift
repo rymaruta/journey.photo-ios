@@ -316,7 +316,9 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertEqual(rootLines[guardLine + 3], "reviewPrompt.consume() else { return }")
         let primer = try source("Features/Settings/PushPrimerView.swift")
         XCTAssertTrue(primer.contains("await push.enable()"), "「通知を受け取る」がシステムの許可へ進まない")
-        XCTAssertTrue(primer.contains("push.primer.later"))
+        // 2026-11-25（審査 5.1.1(iv)）: 「あとで」は置かない。下に引いても閉じない
+        XCTAssertFalse(primer.contains("push.primer.later"))
+        XCTAssertTrue(primer.contains(".sheetSwipeGuard(.hold)"))
         let rows = try source("Features/Pro/LightAlertSettingsRows.swift")
         XCTAssertTrue(rows.contains("LightAlertPushNotice.state(wants: wants, knownNotPro: knownNotPro,"),
                       "「前の晩に知らせる」がプッシュの状態を見ていない")

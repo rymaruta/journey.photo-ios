@@ -258,15 +258,14 @@ final class V2SettingsProTests: XCTestCase {
 
     // MARK: - 通知の説明（板 PushPrimer）
 
-    /// 「あとで」の当たり 48（UI テストの 44 以上の決まり）・真鍮の主ボタン・シートの面
+    /// 真鍮の主ボタン「続ける」だけ・シートの面（2026-11-25 審査 5.1.1(iv): 「あとで」は外した。`AppReviewFixesTests` も見る）
     func testPushPrimer() throws {
         XCTAssertGreaterThanOrEqual(PushPrimerLayout.laterHeight, 48)
         XCTAssertEqual(PushPrimerLayout.iconTile, 40)
         let view = try source("Features/Settings/PushPrimerView.swift")
-        assertInOrder(["Text(L(\"オンにする\", \"Turn on\"))", ".jpPillButton(.accent)",
-                       ".accessibilityIdentifier(\"push.primer.allow\")",
-                       "Text(L(\"あとで\", \"Not now\"))", ".frame(maxWidth: .infinity, minHeight: PushPrimerLayout.laterHeight)",
-                       ".accessibilityIdentifier(\"push.primer.later\")"], in: view, "通知の説明のボタン")
+        assertInOrder(["Text(PushPrimerText.proceed)", ".jpPillButton(.accent)",
+                       ".accessibilityIdentifier(\"push.primer.allow\")"], in: view, "通知の説明のボタン")
+        XCTAssertFalse(view.contains("push.primer.later"), "通知の説明に「あとで」が残っている")
         XCTAssertTrue(view.contains(".background(WebTheme.sheet, ignoresSafeAreaEdges: .all)"))
         XCTAssertTrue(view.contains(".presentationBackground(WebTheme.sheet)"))
         XCTAssertTrue(view.contains(".background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.field))"),
@@ -367,7 +366,8 @@ final class V2SettingsProTests: XCTestCase {
         let view = try source("Features/Legal/LegalGateView.swift")
         // 写真の上の眉ラベルは白（CLAUDE.md）、規約のリンクは真鍮
         XCTAssertTrue(view.contains("Text(\"JOURNEY PHOTO\").jpEyebrow().foregroundStyle(Color.white.opacity(0.9))"))
-        XCTAssertTrue(view.contains(".font(JPFont.body).foregroundStyle(WebTheme.accent) }"), "規約のリンクが真鍮でない")
+        // 2026-11-25: リンクの下に同意の注記を足したので、リンクの行は `}` で閉じずに改行する
+        XCTAssertTrue(view.contains(".font(JPFont.body).foregroundStyle(WebTheme.accent)\n"), "規約のリンクが真鍮でない")
         XCTAssertTrue(view.contains(".jpPillButton(LegalGateLayout.agreeStyle)"))
         XCTAssertTrue(view.contains(".accessibilityIdentifier(\"legal.agree\")"))
         let experience = slice(view, from: "private func experience", to: "private var safetyNote")

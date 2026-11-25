@@ -1685,12 +1685,12 @@ final class ScreenshotTests: JPUITestCase {
     /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に、ホームの小さな印（`home.whatsNew`）が出る。
     /// 2026-11-22（札 #628）から起動のシートは出さない（大きく変わる版の `announce` だけ）。印を押すとシートが開く。
     ///
-    /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 1`）・前に見た版が古い
+    /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 2`・今の版）・前に見た版が古い
     /// （`-whatsNew.seenVersion 0.0.1`）。どちらも UserDefaults の引数の領域で、端末には書かない。
     /// 印とシートを撮って、主ボタン「閉じる」で閉じられ、印が消えることも見る。出なければ落とす（札 #531）
     func testCapturesWhatsNew() {
         let app = XCUIApplication.jp()
-        app.launchArguments += ["-legal.consent.version", "1"]
+        app.launchArguments += ["-legal.consent.version", "2"]
         app.launchArguments += ["-whatsNew.seenVersion", "0.0.1"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2236,8 +2236,8 @@ final class ScreenshotTests: JPUITestCase {
     /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。
     /// 鍵を持たない入り方では投稿できないので、起動の鍵（`-JPPreviewPushPrimer`・Debug のみ）で起動のときに出す。
     ///
-    /// 出なければ撮らずに抜ける（この試験の決まり）。**出たのに「通知を受け取る」「あとで」が無い・44pt 未満・
-    /// 「あとで」で閉じなければ落とす**。「通知を受け取る」は押さない（シミュレータに許可を残さない）
+    /// 出なければ撮らずに抜ける（この試験の決まり）。**出たのに主ボタンが「続ける」でない・44pt 未満・
+    /// 「あとで」が残っていれば落とす**（2026-11-25 審査 5.1.1(iv)）。「続ける」は押さない（シミュレータに許可を残さない）
     func testCapturesPushPrimer() {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -2255,23 +2255,15 @@ final class ScreenshotTests: JPUITestCase {
         guard allow.waitForExistence(timeout: 20) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "02c-通知の説明")
-        let later = app.buttons["push.primer.later"].firstMatch
-        XCTAssertTrue(later.exists, "「あとで」が無い（断る口が無い）")
-        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「通知を受け取る」が 44pt 未満")
-        XCTAssertGreaterThanOrEqual(later.frame.height, 44, "「あとで」が 44pt 未満")
-        guard later.exists, later.isHittable else { return XCTFail("「あとで」を押せない") }
-        later.tap()
-        let gone = NSPredicate(format: "exists == false")
-        // 2026-11-10 判断: 待ちを 5 → 15 秒。分けて流した run 42838160142（組 2）で、押したあと「説明が残っているか」を
-        // 1 回調べるだけで 4.07 秒かかり（t=24.73→28.80）、5 秒の待ちが切れた。同じ枝の run 42856953207 では 0.32 秒で閉じていた。
-        // 調べる速さは Mac によって 10 倍以上違うので、実測の遅い方の約 3.7 倍にする
-        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 15)
-        XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
+        // 2026-11-25（審査 5.1.1(iv)・札 #604）: 主ボタンは「続ける」だけ。「あとで」があれば落とす
+        XCTAssertEqual(allow.label, "続ける", "通知の説明の主ボタンが「続ける」でない: \(allow.label)")
+        XCTAssertFalse(app.buttons["push.primer.later"].exists, "通知の説明に「あとで」が残っている（審査 5.1.1(iv)）")
+        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「続ける」が 44pt 未満")
     }
 
     /// **通知の説明（初めてのフォロー・コメント・メッセージのあと）**（2026-11-15 札 #618・`PushPrimerMoment.reachOut`）。
     /// 起動の鍵（`-JPPreviewPushPrimer`・`-JPPreviewPushPrimerMoment reachOut`・Debug のみ）で起動のときに出す。
-    /// 出なければ撮らずに抜ける。**出たのに見出しが返事の言い方でない・「あとで」が無い・44pt 未満なら落とす**
+    /// 出なければ撮らずに抜ける。**出たのに見出しが返事の言い方でない・「あとで」が残っている・44pt 未満なら落とす**
     func testCapturesPushPrimerReachOut() {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -2290,10 +2282,8 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "02d-通知の説明_返事")
         let title = app.staticTexts["push.primer.title"].firstMatch
         XCTAssertTrue(title.exists && title.label.contains("返事や反応"), "見出しが返事の言い方でない: \(title.label)")
-        let later = app.buttons["push.primer.later"].firstMatch
-        XCTAssertTrue(later.exists, "「あとで」が無い（断る口が無い）")
-        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「オンにする」が 44pt 未満")
-        XCTAssertGreaterThanOrEqual(later.frame.height, 44, "「あとで」が 44pt 未満")
+        XCTAssertFalse(app.buttons["push.primer.later"].exists, "通知の説明に「あとで」が残っている（審査 5.1.1(iv)）")
+        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「続ける」が 44pt 未満")
     }
 
     /// **すれちがい**（板「10 すれちがい」・きっぷは案C・2026-10-16）: ホームの「カードが届きました」の札 →
@@ -2503,7 +2493,7 @@ final class ScreenshotTests: JPUITestCase {
     func testCapturesPassBookStatus() {
         let app = XCUIApplication.jp()
         // 更新した人として起動する（規約に同意済み・前に見た版が古い。`testCapturesWhatsNew` と同じ）
-        app.launchArguments += ["-legal.consent.version", "1"]
+        app.launchArguments += ["-legal.consent.version", "2"]
         app.launchArguments += ["-whatsNew.seenVersion", "0.0.1"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]

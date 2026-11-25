@@ -77,6 +77,15 @@ class Fake:
             return {"data": self.phased}
         if path.startswith("/v1/reviewSubmissions/"):
             return {"data": {"id": parts[3], "attributes": {"state": self.submissions[parts[3]]}}}
+        # 定期購入の中身（下見で読む・2026-11-25）: 値段なし、審査用の画面写真なし、販売する国や地域はあり
+        if path.startswith("/v1/subscriptions/") and path.endswith("/prices"):
+            return {"data": []}
+        if path.startswith("/v1/subscriptions/") and path.endswith("/appStoreReviewScreenshot"):
+            return {"data": None}
+        if path.startswith("/v1/subscriptions/") and path.endswith("/subscriptionAvailability"):
+            if getattr(self, "no_availability", False):
+                raise sub.ApiError(404, "NOT_FOUND")
+            return {"data": {"id": "av1"}}
         raise AssertionError(f"知らない GET: {path}")
 
     def get_all(self, path, params=None):
@@ -100,6 +109,12 @@ class Fake:
                     {"id": "suby", "attributes": {"productId": "pro.yearly", "state": self.subs}}]
         if path == "/v1/reviewSubmissions":
             return [{"id": k, "attributes": {"state": v}} for k, v in self.submissions.items()]
+        if path == "/v1/subscriptionGroups/grp1/subscriptionGroupLocalizations":
+            return [{"id": "gl1", "attributes": {"locale": "ja"}}]
+        if path.startswith("/v1/subscriptions/") and path.endswith("/subscriptionLocalizations"):
+            return [{"id": "sl1", "attributes": {"locale": "en-US"}}]
+        if path == "/v1/apps/app1/inAppPurchasesV2":
+            return []
         if path.endswith("/items"):
             return []
         raise AssertionError(f"知らない GET: {path}")
@@ -301,6 +316,31 @@ class Test(unittest.TestCase):
         code, out = go(f, Args(apply=True))
         self.assertEqual(code, "stop", out)
         self.assertFalse([w for w in f.writes if "reviewSubmission" in w[1]])
+
+    def test_dry_run_lists_what_subscriptions_lack(self):
+        """審査の差し戻し 2.1(b)（2026-11-25）: 下見で、定期購入に足りないもの（値段・審査用の画面写真・言語）を出す。書かない"""
+        f = Fake(subs="MISSING_METADATA")
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertIn("定期購入 pro.monthly: MISSING_METADATA", out)
+        self.assertIn("pro.monthly: 審査用の画面写真がありません", out)
+        self.assertIn("pro.yearly: 値段が決まっていません", out)
+        self.assertIn("pro.monthly: 表示名と説明（ja）がありません", out)
+        self.assertNotIn("販売する国や地域が決まっていません", out)
+
+    def test_availability_404_means_not_set(self):
+        """販売する国や地域を決めていない定期購入は 404 が返る（run 45664927348）。読めないではなく「決まっていない」"""
+        f = Fake(subs="MISSING_METADATA")
+        f.no_availability = True
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertIn("pro.monthly: 販売する国や地域が決まっていません", out)
+
+    def test_dry_run_skips_details_of_approved_subscriptions(self):
+        f = Fake(subs="APPROVED")
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertNotIn("審査用の画面写真がありません", out)
 
     def test_texts_fit_and_have_no_nakaguro(self):
         for loc, text in sub.WHATS_NEW.items():

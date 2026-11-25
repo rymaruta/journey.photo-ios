@@ -306,8 +306,82 @@ def read_subscriptions(c, aid: str) -> list[dict]:
         for s in c.get_all(f"/v1/subscriptionGroups/{g['id']}/subscriptions",
                            {"fields[subscriptions]": "productId,state", "limit": 50}):
             a = s.get("attributes") or {}
-            out.append({"id": s["id"], "productId": a.get("productId", "?"), "state": a.get("state", "?")})
+            out.append({"id": s["id"], "productId": a.get("productId", "?"), "state": a.get("state", "?"),
+                        "group": g["id"]})
     return out
+
+
+def subscription_details(c, aid: str, subs: list[dict]) -> list[str]:
+    """下見のときだけ: 定期購入ごとに、審査に出すのに要るものがそろっているかを読む（読むだけ・2026-11-25 札 #604）。
+
+    審査の差し戻し 2.1(b)「Pro の商品が審査に出されていない」を受けて足した。今までは状態（MISSING_METADATA など）しか
+    読まず、何が足りないかが分からなかった。読むのは Apple の App Store Connect API の文書の口
+    （subscriptionLocalizations・prices・appStoreReviewScreenshot・subscriptionAvailability・
+    subscriptionGroupLocalizations・inAppPurchasesV2）。足りないものを文で返す（`::warning::` で出す）"""
+    missing: list[str] = []
+
+    def safe(fn, what: str):
+        try:
+            return fn()
+        except (ApiError, Unsure, urllib.error.URLError, KeyError, TypeError, ValueError) as e:
+            print(f"   {what}: 読めませんでした（{tfc.clean(str(e), 80)}）")
+            return None
+
+    for gid in sorted({x["group"] for x in subs if x.get("group")}):
+        glocs = safe(lambda: c.get_all(f"/v1/subscriptionGroups/{gid}/subscriptionGroupLocalizations", {"limit": 50}),
+                     "定期購入のグループの表示名")
+        if glocs is not None:
+            names = sorted((x.get("attributes") or {}).get("locale", "?") for x in glocs)
+            print(f"   定期購入のグループの表示名: {len(names)} 言語（{', '.join(names) or 'なし'}）")
+            if REQUIRED_LOCALE not in names:
+                missing.append(f"定期購入のグループの表示名に {REQUIRED_LOCALE} がありません")
+    for x in subs:
+        pid, sid = x["productId"], x["id"]
+        print(f"-- 定期購入 {pid}: {x['state']}")
+        locs = safe(lambda: c.get_all(f"/v1/subscriptions/{sid}/subscriptionLocalizations", {"limit": 50}), "表示名と説明")
+        if locs is not None:
+            names = sorted((y.get("attributes") or {}).get("locale", "?") for y in locs)
+            print(f"   表示名と説明: {len(names)} 言語（{', '.join(names) or 'なし'}）")
+            if REQUIRED_LOCALE not in names:
+                missing.append(f"{pid}: 表示名と説明（{REQUIRED_LOCALE}）がありません")
+        prices = safe(lambda: c.get(f"/v1/subscriptions/{sid}/prices", {"limit": 1}).get("data", []), "値段")
+        if prices is not None:
+            print(f"   値段: {'あり' if prices else 'なし'}")
+            if not prices:
+                missing.append(f"{pid}: 値段が決まっていません")
+        # 中身が無い（data が null）と読めなかったを分けるため、答えをそのまま受ける
+        shot_answer = safe(lambda: c.get(f"/v1/subscriptions/{sid}/appStoreReviewScreenshot"), "審査用の画面写真")
+        if shot_answer is not None:
+            shot = shot_answer.get("data")
+            state = (((shot or {}).get("attributes") or {}).get("assetDeliveryState") or {}).get("state")
+            print(f"   審査用の画面写真: {'なし' if not shot else state or 'あり'}")
+            if not shot:
+                missing.append(f"{pid}: 審査用の画面写真がありません（App Review に関する情報）")
+            elif state and state != "COMPLETE":
+                missing.append(f"{pid}: 審査用の画面写真が {state} です")
+        # 決めていない定期購入は 404 が返る（2026-11-25 run 45664927348 で見た）。404 は「決まっていない」と読む
+        def read_avail():
+            try:
+                return c.get(f"/v1/subscriptions/{sid}/subscriptionAvailability")
+            except ApiError as e:
+                if getattr(e, "status", None) == 404:
+                    return {"data": None}
+                raise
+        avail_answer = safe(read_avail, "販売する国や地域")
+        if avail_answer is not None:
+            avail = avail_answer.get("data")
+            print(f"   販売する国や地域: {'決まっている' if avail else '決まっていない'}")
+            if not avail:
+                missing.append(f"{pid}: 販売する国や地域が決まっていません")
+    others = safe(lambda: c.get_all(f"/v1/apps/{aid}/inAppPurchasesV2",
+                                    {"fields[inAppPurchases]": "productId,state,inAppPurchaseType", "limit": 50}),
+                  "定期購入でないアプリ内課金")
+    if others is not None:
+        print(f"-- 定期購入でないアプリ内課金: {len(others)} 件")
+        for y in others:
+            a = y.get("attributes") or {}
+            print(f"   {tfc.clean(a.get('productId') or '?', 80)}: {a.get('state', '?')}（{a.get('inAppPurchaseType', '?')}）")
+    return missing
 
 
 def screenshot_problems(c, vid: str) -> list[str]:
@@ -531,6 +605,9 @@ def run(c, a) -> int:
     subs = read_subscriptions(c, aid)
     sub_steps, sub_problems = plan_subscriptions(subs)
     if not a.apply:
+        # 定期購入の中身を先に読む（版のビルドが無くて下見が止まっても、課金の足りないものは見えるように）
+        for m in subscription_details(c, aid, [x for x in subs if x["state"] not in SUB_OK]):
+            print(f"::warning::{m}")
         if how == "create":
             print("   版がまだ無いので、版の中身（新機能の説明・ビルド・審査の情報・画面写真）は作ってから読みます")
             build = latest_build(c, aid, a.version)

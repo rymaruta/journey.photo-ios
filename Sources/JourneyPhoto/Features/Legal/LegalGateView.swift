@@ -92,7 +92,12 @@ struct LegalGateView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L("安心して写真を楽しむために", "For a safe photo community"), systemImage: "shield")
                 .font(.footnote.weight(.semibold)).foregroundStyle(WebTheme.accent)
-            Text(L("いやがらせ、わいせつ、権利を侵す投稿は認めません。写真から通報、ブロックできます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。", "Harassment, obscene content and rights violations are not allowed. Photos can be reported and posters blocked. Metadata is removed on device and locations are rounded to about 1 km."))
+            // 2026-11-25 判断（審査 1.2 の差し戻し・札 #604）: 「一切許さない」と「消す・止める」を先に、太い白の字で言う。
+            // 前は「認めません」だけで、審査で「不適切な内容と嫌がらせを許さないと規約に明記して」と言われた
+            Text(LegalGateText.zeroTolerance)
+                .font(JPFont.footnote.weight(.semibold)).lineSpacing(4).foregroundStyle(WebTheme.text).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("legal.zeroTolerance")
+            Text(LegalGateText.howToReport)
                 .font(JPFont.footnote).lineSpacing(4).foregroundStyle(WebTheme.text2).fixedSize(horizontal: false, vertical: true)
         }.padding(14)
         // 板 v2 の札（surface-1・白 8% の縁・角 14）
@@ -101,9 +106,11 @@ struct LegalGateView: View {
     }
 
     // 押せる高さは**リンクごとに** 44pt（外の枠だけ高くしても、押せるのは文字の高さだけ）
-    private var links: some View { HStack(spacing: 20) { Link(destination: LegalConsent.termsURL) { Text(L("利用規約", "Terms of Use")).underline().frame(minHeight: 44).contentShape(Rectangle()) }; Link(destination: LegalConsent.privacyURL) { Text(L("プライバシーポリシー", "Privacy Policy")).underline().frame(minHeight: 44).contentShape(Rectangle()) } }.font(JPFont.body).foregroundStyle(WebTheme.accent) }
+    private var links: some View { VStack(alignment: .leading, spacing: 0) { HStack(spacing: 20) { Link(destination: LegalConsent.termsURL) { Text(L("利用規約", "Terms of Use")).underline().frame(minHeight: 44).contentShape(Rectangle()) }; Link(destination: LegalConsent.privacyURL) { Text(L("プライバシーポリシー", "Privacy Policy")).underline().frame(minHeight: 44).contentShape(Rectangle()) } }.font(JPFont.body).foregroundStyle(WebTheme.accent)
+        // 押すと何に同意するのかを、ボタンの上で言う（審査 1.2: 登録・ログインの前に規約へ同意させる・2026-11-25）
+        Text(LegalGateText.agreeNote).font(JPFont.caption).foregroundStyle(WebTheme.text3).fixedSize(horizontal: false, vertical: true) } }
 
-    private var agreeButton: some View { Button { consent.accept() } label: { Text(L("同意してJourney Photoをはじめる", "Agree and start Journey Photo")).jpPillButton(LegalGateLayout.agreeStyle) }.buttonStyle(.plain).accessibilityIdentifier("legal.agree").jpBottomBar() }
+    private var agreeButton: some View { Button { consent.accept() } label: { Text(LegalGateText.agree).jpPillButton(LegalGateLayout.agreeStyle) }.buttonStyle(.plain).accessibilityIdentifier("legal.agree").jpBottomBar() }
 }
 
 /// 同意の画面の決まり（v2 の板 LegalGate・2026-10-14）。テストで見張る
@@ -128,5 +135,29 @@ enum LegalGateLayout {
     static func heroAsset(day: Date = Date(), calendar: Calendar = .current) -> String {
         let ordinal = calendar.ordinality(of: .day, in: .era, for: day) ?? 0
         return heroAssets[((ordinal % heroAssets.count) + heroAssets.count) % heroAssets.count]
+    }
+}
+
+/// 同意の画面の言葉（2026-11-25・審査 1.2 の差し戻し・札 #604）。試験で見張る。
+///
+/// 審査の指摘: 「登録・ログインの前に利用規約（EULA）へ同意させ、規約に不適切な投稿と嫌がらせを一切許さないと書くこと」。
+/// サイトの規約（`/terms` の 4 節の頭）と同じ中身を、ここでも短く言う
+enum LegalGateText {
+    /// 決まりの一言（太い白の字）
+    static var zeroTolerance: String {
+        L("不適切な投稿や、ほかの人へのいやがらせは一切許しません。違反した投稿は削除し、投稿した人の利用を止めます。",
+          "We have zero tolerance for objectionable content and abusive users. Posts that break these rules are removed, and the people who posted them are banned.")
+    }
+    /// 通報とブロックの場所と、写真の情報の扱い
+    static var howToReport: String {
+        L("写真、コメント、プロフィール、メッセージの「…」から、通報とブロックができます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。",
+          "You can report or block from the \u{2026} menu on any photo, comment, profile or message. Photo metadata is removed on your device, and locations are rounded to about 1 km.")
+    }
+    /// 主ボタン（何に同意するかをボタンの字で言う）
+    static var agree: String { L("利用規約に同意してはじめる", "Agree to the Terms and start") }
+    /// ボタンの上の注記
+    static var agreeNote: String {
+        L("「利用規約に同意してはじめる」を押すと、利用規約とプライバシーポリシーに同意したことになります。ログインや登録の前に、この同意が要ります。",
+          "By tapping \u{201C}Agree to the Terms and start,\u{201D} you agree to the Terms of Use (EULA) and the Privacy Policy. This is required before you sign in or sign up.")
     }
 }

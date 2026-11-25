@@ -13,7 +13,10 @@ import Combine
 final class LegalConsent: ObservableObject {
 
     /// 規約を変えたら上げる。上げると全員にもう一度出る。
-    nonisolated static let currentVersion = 1
+    ///
+    /// 2026-11-25 判断（審査 1.2 の差し戻し・札 #604）: 2 に上げた。規約に「不適切な投稿といやがらせは一切許さない。
+    /// 違反した投稿は消し、利用を止める」を足したので、前の版に同意した人にもう一度出す（Web の `LEGAL_CONSENT_VERSION` と同じ数）
+    nonisolated static let currentVersion = 2
 
     /// この画面が求める版。**テストから差し替えるために開けてある。**
     ///

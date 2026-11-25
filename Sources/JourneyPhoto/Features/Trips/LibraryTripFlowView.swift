@@ -48,9 +48,14 @@ struct LibraryTripFlowView: View {
                         }
                     })
                 } else {
-                    LibraryTripIntroView(status: model.status,
-                                         onAllow: { Task { await model.requestAccess() } },
-                                         onLater: { dismiss() })
+                    // 2026-11-25 判断（審査 5.1.1(iv) の差し戻し・札 #604）: まだ聞いていなければ、**開いたらすぐ iOS の
+                    // 許可の画面を出す**。前は自前の説明に「写真へのアクセスを許可」と「あとで」を置き、審査で
+                    // 「進むボタンを『許可』と呼ばない・あとで閉じて先送りさせない」と差し戻された。説明の文は
+                    // iOS の確認の後ろに残す（何に使うかは読める）。断られたら「設定を開く」だけを出す
+                    LibraryTripIntroView(status: model.status)
+                        .task {
+                            if PhotoAccessAsk.asksOnAppear(model.status) { await model.requestAccess() }
+                        }
                 }
             }
             // 設定アプリで許可して戻ってきたら見直す
@@ -221,8 +226,6 @@ struct LibraryTripIntroView: View {
     @Environment(\.openURL) private var openURL
 
     let status: PHAuthorizationStatus
-    let onAllow: () -> Void
-    let onLater: () -> Void
 
     private var refused: Bool { status == .denied || status == .restricted }
 
@@ -266,30 +269,21 @@ struct LibraryTripIntroView: View {
             .padding(.top, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // 断られたあとだけ、設定のアプリへの案内を出す（審査 5.1.1(iv) でも認められている形）。
+        // まだ聞いていない間はボタンを置かない（開いたらすぐ iOS の確認が出る・`PhotoAccessAsk`）
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 4) {
+            if refused {
                 Button {
-                    if refused {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                    } else {
-                        onAllow()
-                    }
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 } label: {
-                    Text(refused ? L("設定を開く", "Open Settings") : L("写真へのアクセスを許可", "Allow photo access"))
+                    Text(L("設定を開く", "Open Settings"))
                         .jpPillButton(.accent)
                 }
                 .buttonStyle(.plain)
-                Button(action: onLater) {
-                    Text(L("あとで", "Not now"))
-                        .font(JPFont.body)
-                        .foregroundStyle(WebTheme.text2)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                .accessibilityIdentifier("libraryTrips.openSettings")
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
         }
         .webScreen()
         .navigationBarTitleDisplayMode(.inline)
@@ -309,4 +303,12 @@ struct LibraryTripIntroView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+}
+
+/// 写真の許可をいつ尋ねるか（2026-11-25・審査 5.1.1(iv) の差し戻し・札 #604）。
+///
+/// 自前の説明の画面に「許可」「あとで」を置かない。**まだ聞いていなければ、画面が開いたらすぐ iOS の確認を出す**。
+/// 一度決まった（許した・一部だけ・断った）ら、もう尋ねない（断られたら設定のアプリへの案内だけ）
+enum PhotoAccessAsk {
+    static func asksOnAppear(_ status: PHAuthorizationStatus) -> Bool { status == .notDetermined }
 }
