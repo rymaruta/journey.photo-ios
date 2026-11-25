@@ -47,6 +47,8 @@ if [ -x /opt/swift/bin/swift ]; then
     export PATH=/opt/swift/bin:$PATH
 fi
 if command -v swift >/dev/null 2>&1; then
+    # Mac の Xcode と同じ版か（Tools/toolchain.env の JP_SWIFT・2026-11-25）。違えば警告だけ
+    bash Tools/toolchain.sh check-swift
     swift build
     swift test
 else
@@ -65,6 +67,12 @@ if [ -n "$XCODEGEN" ]; then
     # Linux のコンテナには実在の利用者が居ないことがある（XcodeGen が名前を引く）
     USER="${USER:-claude}" LOGNAME="${LOGNAME:-claude}" "$XCODEGEN" generate --quiet
     echo "   生成できました（JourneyPhoto.xcodeproj）"
+    # Mac の CI と同じ版か（Tools/toolchain.env・2026-11-25）。違っても止めないが、入れ直しを促す
+    want_xcodegen="$(bash Tools/toolchain.sh xcodegen)"
+    have_xcodegen="$("$XCODEGEN" --version 2>/dev/null | sed 's/^Version: //')"
+    if [ "$have_xcodegen" != "$want_xcodegen" ]; then
+        echo "   ⚠ XcodeGen が ${have_xcodegen:-不明}（決めた版は ${want_xcodegen}）。入れ直す: bash Tools/install-xcodegen-linux.sh"
+    fi
 else
     echo "   xcodegen がありません: bash Tools/install-xcodegen-linux.sh"
 fi
@@ -72,8 +80,7 @@ fi
 echo
 if command -v xcodebuild >/dev/null 2>&1; then
     echo "== Xcode プロジェクトの生成とビルド =="
-    command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen がありません: brew install xcodegen"; exit 1; }
-    xcodegen generate
+    bash Tools/toolchain.sh generate
     # 機種名は固定しない（Xcode が上がると入っているシミュレータが入れ替わる）
     DEVICE="$(python3 Tools/pick-simulator.py)"
     echo "   シミュレータ: $DEVICE"

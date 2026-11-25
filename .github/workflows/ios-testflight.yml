@@ -412,6 +412,8 @@ jobs:
           case "$sdkmajor" in ''|*[!0-9]*) sdkmajor=0 ;; esac
           echo "いちばん新しい iOS SDK: ${sdk:-不明}"
           echo "### Xcode $ver / iOS SDK ${sdk:-不明}" >> "$GITHUB_STEP_SUMMARY"
+          # この Xcode の Swift の版を出し、手元と PR の検証の Linux の段の版（Tools/toolchain.env）と違えば警告（2026-11-25）
+          bash Tools/toolchain.sh check-swift
 
           # **上げない回は止めない。** 絵を撮る用途は古い SDK でも成立するし、
           # そちらまで赤くすると「本物の SwiftUI で通るか」が読めなくなる
@@ -499,11 +501,8 @@ jobs:
       - name: 配信用アプリをビルドツールをインストール
         run: |
           set -euo pipefail
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          else
-            echo "xcodegen はインストール済みのため再インストールしません"
-          fi
+          # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
+          bash Tools/toolchain.sh install-xcodegen
 
 
       # Codemagic CLI は署名・Archive・アップロード時だけ必要。
@@ -1025,12 +1024,8 @@ jobs:
 
       - name: Xcodeプロジェクトを生成
         run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          else
-            echo "xcodegen はインストール済みのため再インストールしません"
-          fi
-          xcodegen generate
+          # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
+          bash Tools/toolchain.sh generate
 
       - name: コンパイルだけ（アプリ・単体テスト・UI テストを build-for-testing）
         id: compile
@@ -1164,12 +1159,8 @@ jobs:
 
       - name: Xcodeプロジェクトを生成
         run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          else
-            echo "xcodegen はインストール済みのため再インストールしません"
-          fi
-          xcodegen generate
+          # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
+          bash Tools/toolchain.sh generate
 
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
         run: |

@@ -26,7 +26,6 @@ owner:「実機の確認の仕方わからない」への答え。**iPhone に�
 ### 1. プロジェクトを開く
 
 ```bash
-brew install xcodegen      # まだなら
 cd journey.photo-ios
 bash Tools/mac-release.sh  # 生成 → ビルド → テスト
 open JourneyPhoto.xcodeproj

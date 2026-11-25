@@ -16,7 +16,6 @@ cd "$(dirname "$0")/.."
 : "${APPLE_APP_PASSWORD:?APPLE_APP_PASSWORD を設定してください（App 用パスワード）}"
 
 command -v xcodebuild >/dev/null 2>&1 || { echo "Xcode がありません"; exit 1; }
-command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen がありません: brew install xcodegen"; exit 1; }
 
 BUILD_DIR="build"
 ARCHIVE="$BUILD_DIR/JourneyPhoto.xcarchive"
@@ -30,7 +29,8 @@ echo "== ビルド番号を上げる"
 # 訊かずに上げる（上げすぎて困ることはない）
 bash Tools/bump-build.sh
 
-xcodegen generate
+# XcodeGen は Tools/toolchain.env の版（CI と同じ版で作る）
+bash Tools/toolchain.sh generate
 
 echo
 echo "== Archive"
