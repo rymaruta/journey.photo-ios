@@ -207,6 +207,16 @@ jobs:
           # 分けて流す回は、この job は Archive だけ。単体・UI は「テストの品を組む」から「まとめ」までの job が流す
           sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
           echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
+          # 2026-11-25 判断: `screens` に `小さい画面`（`small`）があれば、名指ししたテストを小さい iPhone（375pt）でも流す
+          # （下の「小さい iPhone でも流す」）。名指しが無い・全部の回なら、ここで止める（`pick-ui-tests.py --small`）
+          python3 Tools/pick-ui-tests.py --small "${SCREENS:-}" > /tmp/ui-small.txt
+          if [ -s /tmp/ui-small.txt ]; then
+            echo "small=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### 小さい iPhone（375pt）でも流す"
+              sed 's/^/- /' /tmp/ui-small.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
           # 配信前の検証は、前回の配信成功地点から変更された機能を対象にする。
           # 明示的な screens 指定は尊重し、対象不明時は全件に倒す。
           if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
@@ -611,6 +621,30 @@ jobs:
           sleep 20
           kill "$watcher" 2>/dev/null || true
           exit "$status"
+
+      # **小さい iPhone（幅 375pt）でも流す**（2026-11-25 判断・owner「できるだけより良い開発できるように」）。
+      # いつもの機種（6.9 インチ・440pt）だけだと、狭い画面で崩れる（字が切れる・ボタンが押し出される）のが分からない。
+      # `screens` に `小さい画面` を足した回だけ、名指ししたテストを流し直す（全部は流さない・毎回30分以内）。
+      # 機種は入っている中から幅 375pt の iPhone（SE → mini の順・`store-screenshots.py --device small`）。無ければ赤
+      - name: 小さい iPhone でも流す
+        id: uismall
+        if: ${{ always() && steps.scope.outputs.small == 'true' && (steps.ui.outcome == 'success' || steps.ui.outcome == 'failure') }}
+        run: |
+          set -euo pipefail
+          SMALL="$(python3 Tools/store-screenshots.py --device small)"
+          echo "### 小さい iPhone: $SMALL" >> "$GITHUB_STEP_SUMMARY"
+          DEVICE="$SMALL" bash Tools/xcode-test.sh ui build/ios/test/Small.xcresult /tmp/ui-small.txt
+
+      # 小さい iPhone の絵は、組 `small` として別に置く（`bash Tools/fetch-shots.sh <run>` の `small/`）
+      - name: 小さい iPhone の画面写真を非公開の S3 に置く
+        if: ${{ always() && (steps.uismall.outcome == 'success' || steps.uismall.outcome == 'failure') && github.event_name != 'pull_request' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          CI_SHOTS_ROLE_ARN: ${{ secrets.CI_SHOTS_ROLE_ARN }}
+          CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
+          NARROWED: "true"
+        run: bash Tools/upload-shots.sh small build/ios/test/Small.xcresult
 
       # **App Store 用の中型の枠（1206×2622）の画面を、その寸法がそのまま出る機種で撮る**（2026-11-23 owner「イメージで作るのはダメ」）。
       # 同じ絵の試験（STORE_TESTS）を中型の機種（`store-screenshots.py --device medium`・無ければ赤）で流し直す。合成も縮めもしない
