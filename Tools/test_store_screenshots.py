@@ -117,10 +117,12 @@ class StoreScreenshotsTests(unittest.TestCase):
         payload = {"devices": {}}
         self.assertEqual(store.select_devices("small", types, payload),
                          [("create", "t.se3", (750, 1334), "iPhone SE (3rd generation)"),
-                          ("create", "t.mini", (1080, 2340), "iPhone 13 mini")])
-        # 390pt 以上の機種には落とさない
-        self.assertEqual(store.select_devices("small", types[2:], payload), [])
-        self.assertIsNone(store.select_device("small", types[2:], payload))
+                          ("create", "t.mini", (1080, 2340), "iPhone 13 mini"),
+                          ("create", "t.16e", (1170, 2532), "iPhone 16e")])
+        # 375pt が無ければ、いちばん最後に 390pt（1170×2532）。それより広い機種には落とさない
+        self.assertEqual(store.select_devices("small", types[2:], payload),
+                         [("create", "t.16e", (1170, 2532), "iPhone 16e")])
+        self.assertIsNone(store.select_device("small", types[2:3], payload))
         # 点で書かれた SE の機種の情報も 750×1334 になる
         self.assertEqual(store.profile_size({"mainScreenWidth": 375, "mainScreenHeight": 667, "mainScreenScale": 2}), (750, 1334))
 

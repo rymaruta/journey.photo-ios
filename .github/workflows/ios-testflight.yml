@@ -625,7 +625,8 @@ jobs:
       # **小さい iPhone（幅 375pt）でも流す**（2026-11-25 判断・owner「できるだけより良い開発できるように」）。
       # いつもの機種（6.9 インチ・440pt）だけだと、狭い画面で崩れる（字が切れる・ボタンが押し出される）のが分からない。
       # `screens` に `小さい画面` を足した回だけ、名指ししたテストを流し直す（全部は流さない・毎回30分以内）。
-      # 機種は入っている中から幅 375pt の iPhone（SE → mini の順・`store-screenshots.py --device small`）。無ければ赤
+      # 機種は入っている中から幅 375pt の iPhone（SE → mini の順・`store-screenshots.py --device small`）。
+      # Xcode 27.2 の iOS 27.2 には 375pt の機種が載らない（run 45623230009）ので、古い iOS が無ければ 390pt（iPhone 16e など）で流して警告する
       - name: 小さい iPhone でも流す
         id: uismall
         if: ${{ always() && steps.scope.outputs.small == 'true' && (steps.ui.outcome == 'success' || steps.ui.outcome == 'failure') }}
