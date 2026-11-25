@@ -29,10 +29,27 @@ enum DiscoverySections {
     ///    「ヴェルサイユ, Versailles, …, 78000, フランス」→「ヴェルサイユ」）
     ///  - **国名しか無い撮影地は出さない**（国は「撮影地」として広すぎ、近くの地名で補うと当て推量になる）
     ///  - 同じ名前（空白・大小を無視）は1枚の札にまとめる
+    ///
+    /// 2026-11-25 判断（札 #594・owner「重いところの調査と改善」）: **同じ撮影地の文字は1回だけ調べる。** Mac run 1786 の
+    /// 探すを開いた時の止まりの中に、ここ（`stripCountry` の国名の照らし合わせ）が主スレッドで当たっていた。以前は
+    /// 写真1枚ごとに札の名前を作り、札ごとに**全部の写真**を `photoIsIn`（文字をそろえて語に割る）に通していた
+    /// （札の数 × 写真の枚数）。同じ旅の写真は撮影地の文字が同じなので、文字ごとに束ねて
+    /// 「札の数 × 撮影地の文字の種類」にする。答え（札・枚数・表紙・並び）は変えない
     static func popularSpots(in photos: [Photo], limit: Int = 6) -> [Spot] {
+        // 撮影地の文字ごとの枚数（`photoIsIn` は文字だけで決まるので、同じ文字の写真は同じ答え）
+        var locationCounts: [String?: Int] = [:]
+        var names: [String?: String?] = [:]
         var byPlace: [String: (name: String, list: [Photo])] = [:]
         for photo in photos {
-            guard let name = spotName(photo.location) else { continue }
+            locationCounts[photo.location, default: 0] += 1
+            let name: String?
+            if let known = names[photo.location] {
+                name = known
+            } else {
+                name = spotName(photo.location)
+                names[photo.location] = .some(name)
+            }
+            guard let name else { continue }
             let key = LocationMatch.normalized(name)
             byPlace[key, default: (name: name, list: [])].list.append(photo)
         }
@@ -52,7 +69,10 @@ enum DiscoverySections {
                 // 同じ絵に見えたので重複よけを書いたが、**変異を当てたら1件も
                 // 落ちなかった**——よく見ると別の写真（柱頭と列柱）で、
                 // 直す対象が最初から無かった。消した
-                let counted = PhotoQuery.photos(photos, in: .location(place)).count
+                // `PhotoQuery.photos(photos, in: .location(place)).count` と同じ数（撮影地の文字ごとに1回だけ当てる）
+                let counted = locationCounts.reduce(0) { sum, entry in
+                    LocationMatch.photoIsIn(entry.key, place) ? sum + entry.value : sum
+                }
                 // 1字の名前は行き先の突き合わせ（`photoIsIn`）が当てない。0枚の札は出さない
                 guard counted > 0 else { return nil }
                 return Spot(id: place, count: counted, cover: cover)
@@ -88,20 +108,50 @@ enum DiscoverySections {
     /// 欠片から国名を落とす。欠片そのものが国名なら空、空白で区切った頭か尾の国名
     /// （「フランス ヴェルサイユ」「Kyoto Japan」）は外す。語の途中の国名（「フランス・メトロポリテーヌ」）は触らない。
     /// 英語の国名は**尾だけ**見る（頭で外すと「Turkey Hill」のような地名が欠ける）
+    ///
+    /// 2026-11-25 判断（札 #594）: 表から作る語（「日本 」「 japan」など）は1度だけ作る（以前は欠片ごとに 55 行の
+    /// 文字を足し、名前ごとに小文字に直していた）。**空白の無い欠片は頭・尾を見ない**（区切りの空白が無ければ当たらない）
     private static func stripCountry(_ part: String) -> String {
         var text = part
-        let table = VisitedCountries.table
-        if table.contains(where: { text == $0.ja || text.caseInsensitiveCompare($0.en) == .orderedSame }) { return "" }
-        for entry in table where text.hasPrefix(entry.ja + " ") || text.hasPrefix(entry.ja + "　") {
-            text = String(text.dropFirst(entry.ja.count + 1)).trimmingCharacters(in: .whitespaces)
+        let names = CountryNames.shared
+        if names.ja.contains(text) || names.en.contains(text.lowercased()) { return "" }
+        guard text.contains(" ") || text.contains("　") else { return text }
+        for entry in names.prefixes where text.hasPrefix(entry.half) || text.hasPrefix(entry.full) {
+            text = String(text.dropFirst(entry.length + 1)).trimmingCharacters(in: .whitespaces)
         }
-        for name in table.flatMap({ [$0.ja, $0.en] }) {
-            let lower = text.lowercased()
-            if lower.hasSuffix(" " + name) || lower.hasSuffix("　" + name) {
-                text = String(text.dropLast(name.count + 1)).trimmingCharacters(in: .whitespaces)
-            }
+        var lower = text.lowercased()
+        for entry in names.suffixes where lower.hasSuffix(entry.half) || lower.hasSuffix(entry.full) {
+            text = String(text.dropLast(entry.length + 1)).trimmingCharacters(in: .whitespaces)
+            lower = text.lowercased()
         }
         return text
+    }
+
+    /// `VisitedCountries.table` から1度だけ作る照らし合わせの語（並びは表のまま・日本語の次に英語）
+    private struct CountryNames {
+        static let shared = CountryNames(VisitedCountries.table)
+
+        struct Affix {
+            /// 半角の空白で区切った形 / 全角の空白で区切った形
+            let half: String
+            let full: String
+            /// 名前の字数（落とすのは字数 + 区切りの1字）
+            let length: Int
+        }
+
+        let ja: Set<String>
+        /// 英語の名前（表はもう小文字）。欠片は小文字に直して引く
+        let en: Set<String>
+        let prefixes: [Affix]
+        let suffixes: [Affix]
+
+        init(_ table: [(ja: String, en: String)]) {
+            ja = Set(table.map(\.ja))
+            en = Set(table.map { $0.en.lowercased() })
+            prefixes = table.map { Affix(half: $0.ja + " ", full: $0.ja + "　", length: $0.ja.count) }
+            suffixes = table.flatMap { [$0.ja, $0.en] }
+                .map { Affix(half: " " + $0, full: "　" + $0, length: $0.count) }
+        }
     }
 
     /// いまの季節（西暦の月で決める——イスラム暦などの月は季節と合わない）
