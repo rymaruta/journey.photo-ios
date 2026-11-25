@@ -4669,6 +4669,20 @@ final class ScreenshotTests: JPUITestCase {
                 XCTAssertTrue(apple.waitForExistence(timeout: 5), "Apple のボタンが無い（\(name)）")
                 XCTAssertTrue(google.waitForExistence(timeout: 5), "Google のボタンが無い（\(name)）")
                 Thread.sleep(forTimeInterval: 1)
+                // ボタンの字が今の側に合う（札 #730・Mac run 1808: 登録からログインへ切り替えても「Appleで登録」のまま残った）。
+                // 登録の側は「Appleで登録」「Google で登録」、ログインの側は「Appleでサインイン」「Google でログイン」
+                print("[signin-label] \(name) apple=\(apple.label) google=\(google.label)")
+                // 字の国はシミュレーターに従うので、英語の字（Sign up／Sign in）も受ける
+                let says = { (label: String, words: [String]) in words.contains { label.localizedCaseInsensitiveContains($0) } }
+                if signUp {
+                    XCTAssertTrue(says(apple.label, ["登録", "Sign up"]), "Apple のボタンが登録の字でない（\(name)・「\(apple.label)」）")
+                    XCTAssertTrue(says(google.label, ["登録", "Sign up"]), "Google のボタンが登録の字でない（\(name)・「\(google.label)」）")
+                } else {
+                    XCTAssertTrue(says(apple.label, ["サインイン", "Sign in"]), "Apple のボタンがログインの字でない（\(name)・「\(apple.label)」）")
+                    XCTAssertFalse(says(apple.label, ["登録", "Sign up"]), "切り替えても Apple のボタンが登録の字のまま（\(name)・「\(apple.label)」）")
+                    XCTAssertTrue(says(google.label, ["ログイン", "Sign in"]), "Google のボタンがログインの字でない（\(name)・「\(google.label)」）")
+                    XCTAssertFalse(says(google.label, ["登録", "Sign up"]), "切り替えても Google のボタンが登録の字のまま（\(name)・「\(google.label)」）")
+                }
                 let window = app.windows.firstMatch.frame
                 let email = app.textFields["signin.email"].firstMatch
                 let line = "[signin-layout] \(name) window=\(window) email=\(email.frame) submit=\(submit.frame) apple=\(apple.frame) google=\(google.frame) toggle=\(toggle.frame)"
