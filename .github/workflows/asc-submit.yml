@@ -1,0 +1,80 @@
+# App Store Connect の申請用の版をそろえて、審査に出す（手で流すだけ・2026-11-25・札 #604）。
+#
+# owner は iPhone しか無く、App Store Connect の Web は iPhone では版の文・ビルド・審査の情報を入れにくい。
+# そこで CI から入れる（owner 2026-11-25 承認）。中身は `Tools/asc-submit.py`（頭の注記に、使う口と守ることがある）。
+#
+# 🔴 守ること
+#   - 既定は下見（apply=false）。それぞれ「今の値 → 入れる値」を出すだけで、何も書かない
+#   - 書くのは、まだ公開されていない申請用の版（PREPARE_FOR_SUBMISSION など）だけ。公開中（READY_FOR_SALE）の版には書かない
+#   - 鍵は ios-testflight.yml と同じ Secrets だけ。鍵・審査用のアカウントの中身はログに出さない
+#   - 画面写真はここでは上げない。先に ios-testflight.yml を storeShots=true・ascVersion=<版>・ascApply=true で流して入れる
+#     （絵は Mac の回の中にしか無い）。ここでは、そろっているかを確かめ、そろっていなければ審査に出さない
+#
+# 流れ: apply=false で下見 → よければ apply=true（submit=true で審査に出す。submit=false は版をそろえるだけ）
+name: App Store submit
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "審査に出す版（例 1.2.6）"
+        required: true
+        type: string
+      apply:
+        description: "App Store Connect に書く（false は下見だけ）"
+        type: boolean
+        default: false
+      submit:
+        description: "apply=true のとき審査に出す（false は版をそろえるだけ）"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: 審査に出す（${{ (inputs.apply == true || inputs.apply == 'true') && '書く' || '下見' }}）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 同じ版の画面写真の入れ替え（ios-testflight.yml の asc-<版>）と重ねない
+    concurrency:
+      group: asc-${{ inputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 審査に出す仕組みの回帰テスト
+        run: |
+          python3 Tools/test_asc_submit.py
+          python3 Tools/test_asc_screenshots.py
+
+      - name: App Store Connect の版をそろえる
+        env:
+          VERSION: ${{ inputs.version }}
+          # 真偽でも文字（API から -f で 'true'）でも来る。'false' の文字を真と読まないよう名指しで比べる
+          APPLY: ${{ (inputs.apply == true || inputs.apply == 'true') && 'true' || 'false' }}
+          SUBMIT: ${{ (inputs.submit == false || inputs.submit == 'false') && 'false' || 'true' }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]] || { echo "::error::版の形が変です（例 1.2.6）"; exit 1; }
+          args=(--version "$VERSION")
+          [ "$APPLY" = "true" ] && args+=(--apply)
+          [ "$SUBMIT" = "false" ] && args+=(--no-submit)
+          status=0
+          python3 -I Tools/asc-submit.py "${args[@]}" || status=$?
+          {
+            if [ "$status" -ne 0 ]; then
+              echo "### 版 ${VERSION}: 止まりました（理由は段のログの赤い行）"
+            elif [ "$APPLY" = "true" ] && [ "$SUBMIT" = "true" ]; then
+              echo "### 版 ${VERSION} を審査に出しました（状態は段のログの最後の行）"
+            elif [ "$APPLY" = "true" ]; then
+              echo "### 版 ${VERSION} をそろえました（審査には出していません）"
+            else
+              echo "### 版 ${VERSION} の下見（App Store Connect は何も変えていません）"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
