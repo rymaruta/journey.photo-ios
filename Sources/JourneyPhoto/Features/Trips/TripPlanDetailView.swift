@@ -129,7 +129,6 @@ struct TripPlanDetailView: View {
     @State private var chosenTab: TripShareText.Tab?
     @State private var members: [TripMember] = []
     @State private var shareWorking = false
-    @State private var shareError: String?
     @State private var inviting = false
     @State private var inviteLink: TripInviteLink?
     @State private var inviteError: String?
@@ -138,12 +137,13 @@ struct TripPlanDetailView: View {
     @State private var rebases = 0
     /// 「保存して戻る／変更を捨てる」の確認
     @State private var confirmLeave = false
-    /// 「保存して戻る」が断られた（アラートで出す——下までスクロールしていると
-    /// 画面の中の赤い行は見えず、押しても何も起きないように見えた）
-    @State private var leaveSaveError: String?
-    /// 削除が断られた（アラートで出す——理由は `leaveSaveError` と同じ。
-    /// 削除の札は画面のいちばん下にあり、上の赤い行は見えない）
-    @State private var deleteError: String?
+    /// 失敗の帯（2026-11-25 判断・人間工学の案 2・`TripPlanFailure`）。前は5つの窓（`.alert`）で、OK しか無く画面が止まった。
+    /// 下の帯に出して、「もう一度」1回で直す（`failureRetry`）。下までスクロールしていても見える所（指の近く）に出す
+    @State private var failure: TripPlanFailure?
+    /// 帯の「もう一度」で走らせる直し（送り直せる失敗だけ。項目が変わった回は nil で「閉じる」）
+    @State private var failureRetry: (() -> Void)?
+    /// 帯を払っている量（離したら戻すか閉じる・`TripPlanFailure.swipeCloses`）
+    @State private var failureDrag: CGSize = .zero
     /// 名前を引く材料が**一度でも取れたか**。取れた後の読み直しの失敗で消さない
     @State private var gotPhotos = false
     @State private var gotIndex = false
@@ -185,27 +185,6 @@ struct TripPlanDetailView: View {
     private struct NoteTarget { let day: Int; let item: Int; let original: TripItem }
     @State private var noteTarget: NoteTarget?
     @State private var noteText = ""
-    /// ひとことを書いている間に届いた保存の失敗。**欄を閉じたあとに出す**（その間に出すと
-    /// アラートが2つ重なって片方が捨てられる。捨てると下までスクロールした人に何も見えない）
-    @State private var deferredSaveError: String?
-    /// ひとことを入れられなかった知らせ（書いている間に項目が外れた）
-    @State private var noteError: String?
-    /// 項目を動かせなかった知らせ（メニューを開いている間に日程が差し替わった）
-    @State private var moveError: String?
-
-    /// **いまアラートを出してよいか。** 候補のシート・上に積んだ画面・戻る確認・ひとことの欄の
-    /// 間と、**ほかのアラートがもう立っている間**は出さない（2つ目は捨てられ、その値が立った
-    /// ままになると次から出なくなる）。同じ条件を手で写すと片方だけ直す形になるので1か所に置く
-    private var canPresentAlert: Bool {
-        picking == nil && onTop && !confirmLeave && noAlertShowing
-    }
-
-    /// ほかのアラートがどれも立っていない。**アラートを立てる経路は全部これを見る**
-    /// （1本でも見ないと、立ったままの値が残ったとき全部の知らせが止まる）。
-    /// ひとことの欄（`noteTarget`）は経路ごとに扱いが違う（閉じてから出す／出さない）ので含めない
-    private var noAlertShowing: Bool {
-        leaveSaveError == nil && noteError == nil && deleteError == nil && moveError == nil
-    }
     private struct Draft: Equatable {
         var days: [TripDay]
         var start: String?
@@ -288,23 +267,7 @@ struct TripPlanDetailView: View {
                            canSave: model.busy == nil && !isOffline && problem != .conflict,
                            message: L("まだ送れていない変更があります。保存せずに戻ると、変えた日程は残りません。",
                                       "Some changes aren't sent yet. If you go back without saving, they'll be lost."),
-                           onSave: {
-                               Task {
-                                   // 断られたら残り、アラートで知らせる
-                                   if await flush(force: true) {
-                                       dismiss()
-                                   } else {
-                                       let mine = saveAttempt
-                                       let message = Self.problemText(problem, shared: plan?.share != nil)
-                                       // 確認の板が閉じ切ってから出す（閉じている途中に出すと
-                                       // SwiftUI が黙って捨てることがある）
-                                       try? await Task.sleep(nanoseconds: 350_000_000)
-                                       guard saveAttempt == mine, !confirmLeave, noAlertShowing else { return }
-                                       if noteTarget != nil { deferredSaveError = message; return }
-                                       leaveSaveError = message
-                                   }
-                               }
-                           },
+                           onSave: { saveAndLeave() },
                            onDiscard: {
                                discarding = true
                                autosave.cancel()
@@ -328,13 +291,6 @@ struct TripPlanDetailView: View {
                 }
             }
         }
-        .alert(L("保存できませんでした", "Couldn't save"),
-               isPresented: Binding(get: { leaveSaveError != nil },
-                                    set: { if !$0 { leaveSaveError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(leaveSaveError ?? "")
-        }
         // ひとこと（項目に添えるメモ・200字まで）。**変えたら日程と一緒に保存する**
         // （保存ボタンと「保存せずに戻る？」の確認は、ほかの変更と同じ扱い）
         .alert(L("ひとこと", "Note"),
@@ -350,52 +306,17 @@ struct TripPlanDetailView: View {
                     days = next
                 } else {
                     // 書いている間に項目が外れた（別の端末・保存の応答で差し替わった）。
-                    // 黙って捨てずに知らせる。アラートは閉じた後に、出してよい時だけ
-                    // （ほかの確認・候補のシート・上に積んだ画面の間は出さない）
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 350_000_000)
-                        guard canPresentAlert, noteTarget == nil else { return }
-                        noteError = L("書いている間に項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
-                                      "The item changed while you were writing, so the note wasn't added. Please try again.")
-                    }
+                    // 黙って捨てずに下の帯で知らせる（2026-11-25 判断・窓をやめた。もう一度しても同じなので「閉じる」）
+                    fail(.note, L("書いている間に項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
+                                  "The item changed while you were writing, so the note wasn't added. Please try again."))
                 }
             }
             Button(Labels.Common.cancel, role: .cancel) { noteTarget = nil }
         } message: {
             Text(L("\(TripPlanService.noteMax)字まで。空にすると外します", "Up to \(TripPlanService.noteMax) characters. Leave empty to remove."))
         }
-        .alert(L("ひとことを入れられませんでした", "Couldn't add the note"),
-               isPresented: Binding(get: { noteError != nil },
-                                    set: { if !$0 { noteError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(noteError ?? "")
-        }
-        .alert(L("動かせませんでした", "Couldn't move"),
-               isPresented: Binding(get: { moveError != nil },
-                                    set: { if !$0 { moveError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(moveError ?? "")
-        }
-        // ひとことの欄を閉じたら、その間に届いた保存の失敗を出す
-        .onChange(of: noteTarget == nil) { _, closed in
-            guard closed, let message = deferredSaveError else { return }
-            deferredSaveError = nil
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                guard canPresentAlert, noteTarget == nil else { return }
-                leaveSaveError = message
-            }
-        }
         .sheet(isPresented: $inviting) {
             TripInviteSheet(title: plan?.title ?? "", link: inviteLink, failed: inviteError)
-        }
-        .alert(L("共有できませんでした", "Couldn't share"),
-               isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(shareError ?? "")
         }
         .task(id: plan?.share?.memberIds ?? []) { await loadShare() }
         .onAppear { adoptAINote() }
@@ -426,13 +347,8 @@ struct TripPlanDetailView: View {
                 })
             }
         }
-        .alert(L("削除できませんでした", "Couldn't delete"),
-               isPresented: Binding(get: { deleteError != nil },
-                                    set: { if !$0 { deleteError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(deleteError ?? "")
-        }
+        // 失敗の帯（2026-11-25 判断・人間工学の案 2）。日程と会話のどちらのタブでも、いちばん下（指の近く）に出す
+        .safeAreaInset(edge: .bottom) { failureBand }
         // 🔴 **取り直せなかった回は、取れていた材料を消さない。** この `.task` は
         // 項目のスポットを開いて戻るたびに走る。圏外で戻ると、読めていた場所の名前と
         // リンクが消えて鍵（sp_…）だけになり、候補も「読み込めませんでした」になっていた
@@ -1846,21 +1762,77 @@ struct TripPlanDetailView: View {
     }
 
     /// 押したときに項目が見つからなかった（メニューを開いている間に日程が差し替わった）。
-    /// **黙って何もしないと、押しても効かなかったように見える**——目で見ている人には
-    /// アラート（ひとことの経路と同じく、メニューが閉じてから・出してよい時だけ）、
-    /// VoiceOver の人にはアラートがそのまま読まれる
+    /// **黙って何もしないと、押しても効かなかったように見える**——下の帯で知らせ、読み上げでも伝える
+    /// （2026-11-25 判断・窓をやめた。もう一度しても同じなので「閉じる」）
     private func notMoved(_ name: String) {
-        let message = L("「\(name)」は項目が変わったため動かせませんでした。もう一度お試しください。",
-                        "\(name) couldn't be moved because the item changed. Please try again.")
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            // 出せないとき（戻る確認・上の画面・ほかのアラート）は、せめて読み上げで伝える
-            guard canPresentAlert, noteTarget == nil else {
-                // 出せないときは読み上げで伝える（上に別の画面を積んだ回は鳴らさない）
-                if onTop { announce(message) }
-                return
+        fail(.move, L("「\(name)」は項目が変わったため動かせませんでした。もう一度お試しください。",
+                      "\(name) couldn't be moved because the item changed. Please try again."))
+    }
+
+    // MARK: - 失敗の帯（2026-11-25 判断・人間工学の案 2・`TripPlanFailure`）
+
+    /// 失敗を下の帯に出す。送り直せる失敗は `retry` を「もう一度」に結ぶ。読み上げでも1回伝える
+    private func fail(_ kind: TripPlanFailure.Kind, _ detail: String, retry: (() -> Void)? = nil) {
+        let next = TripPlanFailure(kind: kind, detail: detail, serial: (failure?.serial ?? 0) + 1)
+        failureRetry = next.canRetry ? retry : nil
+        failureDrag = .zero
+        withAnimation(.easeOut(duration: 0.24)) { failure = next }
+        // 上に別の画面を積んでいる間は鳴らさない（戻ったら帯が見える）
+        if onTop { announce(next.spoken(offline: isOffline)) }
+    }
+
+    private func clearFailure() {
+        failureRetry = nil
+        failureDrag = .zero
+        withAnimation(.easeOut(duration: 0.2)) { failure = nil }
+    }
+
+    /// 「保存して戻る」。送れたら戻る。送れなければ下の帯に残し、「もう一度」で同じことをする
+    private func saveAndLeave() {
+        Task {
+            if await flush(force: true) {
+                clearFailure()
+                dismiss()
+            } else {
+                fail(.save, Self.problemText(problem, shared: plan?.share != nil), retry: { saveAndLeave() })
             }
-            moveError = message
+        }
+    }
+
+    /// 下の帯（デザインの板の「状態の帯」`JPStateBand`・黒地の上の札）。横か下へ払うと閉じる
+    @ViewBuilder
+    private var failureBand: some View {
+        if let failure {
+            JPStateBand(kind: isOffline && failure.canRetry ? .offline : .partial,
+                        title: failure.title, message: failure.message(offline: isOffline),
+                        actionTitle: failure.actionTitle,
+                        isBusy: failure.canRetry && model.busy != nil,
+                        actionIdentifier: "tripPlan.failure.action") {
+                if failure.canRetry, let retry = failureRetry {
+                    clearFailure()
+                    retry()
+                } else {
+                    clearFailure()
+                }
+            }
+            .accessibilityIdentifier("tripPlan.failure")
+            .offset(x: failureDrag.width, y: max(0, failureDrag.height))
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { failureDrag = $0.translation }
+                    .onEnded { value in
+                        if TripPlanFailure.swipeCloses(dx: Double(value.translation.width),
+                                                       dy: Double(value.translation.height)) {
+                            clearFailure()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { failureDrag = .zero }
+                        }
+                    }
+            )
+            .padding(.horizontal, JPSpace.gutter)
+            .padding(.bottom, JPSpace.xs)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .id(failure.serial)
         }
     }
 
@@ -2037,7 +2009,8 @@ struct TripPlanDetailView: View {
             members = detail.members
             await model.load(environment: environment)
         } catch {
-            shareError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください。", "Please try again.")
+            fail(.share, (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください。", "Please try again."),
+                 retry: { Task { await share(with: peer) } })
         }
     }
 
@@ -2110,6 +2083,18 @@ struct TripPlanDetailView: View {
 
     // MARK: - 削除
 
+    /// 削除（抜ける）を送る。断られたら下の帯の「もう一度」で送り直す（2026-11-25 判断・窓をやめた）
+    private func removePlan() {
+        Task {
+            if await model.remove(planId, environment: environment) {
+                dismiss()
+            } else {
+                fail(.delete, model.errorMessage ?? L("もう一度お試しください", "Please try again."),
+                     retry: { removePlan() })
+            }
+        }
+    }
+
     /// **消す前に一度聞く。** 日程ごと消えるうえ、戻す手が無い（Web と同じ）。
     ///
     /// v2 の板 TripPlanDays: 一番下に `WebTheme.danger` の字の行を1つだけ（札で囲まない）。
@@ -2141,16 +2126,7 @@ struct TripPlanDetailView: View {
                                 confirmTitle: leaving ? L("抜ける", "Leave") : L("削除する", "Delete"),
                                 busy: model.busy != nil, identifier: "trip.delete") {
                     confirmingDelete = false
-                    Task {
-                        if await model.remove(planId, environment: environment) {
-                            dismiss()
-                        } else if canPresentAlert, noteTarget == nil {
-                            // 出せるときだけ（ほかのアラート・ひとことの欄が開いていない時）。
-                            // 出せない回は赤い行が残る（保存と違い、閉じてから出す控えは持たない）
-                            deleteError = model.errorMessage
-                                ?? L("もう一度お試しください", "Please try again.")
-                        }
-                    }
+                    removePlan()
                 } onCancel: {
                     confirmingDelete = false
                 }

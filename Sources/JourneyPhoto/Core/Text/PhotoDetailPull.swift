@@ -54,6 +54,15 @@ enum PhotoDetailPull {
         viewerAccepts(zoom: zoom, pinch: pinch) && starts(dx: dx, dy: dy, atTop: true)
     }
 
+    /// **AI に頼むの全画面**（`AskScreen`）で下へ引く指を受けるか（2026-11-25 判断・人間工学の案 1）。
+    /// 写真を大きく見る画面と同じく、閉じるのは左上の × だけだった。**答えの一覧がいちばん上にあって、下向きで、
+    /// 縦が横より大きいとき**だけ（`starts`）——読んでいる途中の送り・観光スポットの札の横の送りとはぶつけない。
+    /// **字を打っている間は始めない**: 下へ引く指はまずキーボードを下ろす（`scrollDismissesKeyboard(.interactively)`）。
+    /// もう一度引けば閉じる
+    static func askScreenStarts(dx: Double, dy: Double, atTop: Bool, typing: Bool) -> Bool {
+        !typing && starts(dx: dx, dy: dy, atTop: atTop)
+    }
+
     /// 指を止めているとみなす時間（ms）。最後に量が変わってからこれより長く経って離した指は、速さ 0 として扱う。
     ///
     /// **2026-11-14 判断（Mac の回 1232 の値）**: 90pt ゆっくり引いて 1.5 秒止めて離した指で、UIKit のパン

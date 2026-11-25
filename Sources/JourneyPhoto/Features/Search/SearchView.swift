@@ -131,7 +131,7 @@ struct SearchView: View {
                         .padding(.horizontal, JPSpace.gutter)
                         .transition(.opacity)
                 }
-                searchField
+                // 2026-11-25 判断（人間工学の案 4）: 探すの欄は下（下のタブのすぐ上・`SearchBottomField`）。ここには置かない
                 // 2026-11-16 判断（A10）: 範囲のチップ（すべて・写真・人・タグ・撮影地）は**字を打ってから**出す。
                 // 打つ前に押しても効く中身が無い。選んでいる範囲があれば、外せるように残す（`SearchHeader.showsScopeChips`）
                 if SearchHeader.showsScopeChips(query: query, scopeIsAll: model.scope == .all) {
@@ -231,6 +231,11 @@ struct SearchView: View {
                 fieldFocused = true
             }
             }
+        }
+        // 2026-11-25 判断（人間工学の案 4）: 探すの欄を親指の届く下へ（iOS 26 の Apple のアプリと同じ所）。
+        // 打ち始めるとキーボードのすぐ上に乗る。曲の再生器が下にあれば、その上に積む（`SearchBottomField`）
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SearchBottomField(content: searchField)
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う

@@ -158,6 +158,8 @@ struct DetailPullFollow<Content: View>: View {
         case photo
         /// 写真の下（説明・コメント・入力欄）: 薄れて消える
         case rest
+        /// 画面まるごと（AI に頼むの全画面・2026-11-25 判断）: 縮めず、下へだけ指に付いて動く（シートを引く手ざわり）
+        case screen
     }
 
     @ObservedObject var drag: PhotoDetailPullDrag
@@ -179,6 +181,8 @@ struct DetailPullFollow<Content: View>: View {
                 .offset(x: shift.x, y: shift.y)
         case .rest:
             content.opacity(PhotoDetailPull.restOpacity(dy: dy))
+        case .screen:
+            content.offset(y: PhotoDetailPull.offset(dx: dx, dy: dy).y)
         }
     }
 }

@@ -6146,6 +6146,46 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertTrue(spine.waitForExistence(timeout: 10), "「戻る」で棚へ戻らない")
     }
 
+    /// **本棚の背は、押して・ずらして・離して開く**（2026-11-25・人間工学の案 3）。1冊目を押さえ、離さずに隣の背へずらして
+    /// 離すと、隣の一冊が開く（押した背ではない）。開いた一冊の題（上の帯）で見分ける
+    func testErgo1125ShelfSlideOpensNeighbor() {
+        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
+        let spines = app.descendants(matching: .any).matching(identifier: "trips.book")
+        guard spines.firstMatch.waitForExistence(timeout: 20) else { return XCTFail("背表紙が無い") }
+        var pushes = 0
+        while !spines.element(boundBy: 1).isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        let first = spines.element(boundBy: 0), second = spines.element(boundBy: 1)
+        guard first.isHittable, second.isHittable else { return XCTFail("背表紙を押せない") }
+        guard abs(first.frame.maxY - second.frame.maxY) < 1 else { return XCTFail("1冊目と2冊目が同じ段に無い") }
+        // 読み上げ「旅、題、年月、枚数」の2つ目が題（開いた一冊の上の帯の題と同じ）
+        func title(_ spine: XCUIElement) -> String {
+            let parts = spine.label.components(separatedBy: "、")
+            return parts.count > 1 ? parts[1] : spine.label
+        }
+        let firstTitle = title(first), secondTitle = title(second)
+        print("measured shelfSlide first=\(first.frame) \(firstTitle) second=\(second.frame) \(secondTitle)")
+        // 押さえて（0.3 秒・長押しのメニューより短い）、隣の背の真ん中へずらして離す
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            .press(forDuration: 0.3, thenDragTo: second.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+                   withVelocity: .slow, thenHoldForDuration: 0.2)
+        let share = app.buttons["trips.share"].firstMatch
+        guard share.waitForExistence(timeout: 15) else { return XCTFail("押さえてずらして離しても一冊が開かない") }
+        if firstTitle != secondTitle {
+            let bar = app.navigationBars.firstMatch
+            XCTAssertTrue(bar.staticTexts[secondTitle].firstMatch.waitForExistence(timeout: 5)
+                          || bar.identifier == secondTitle,
+                          "ずらした先（\(secondTitle)）ではない一冊が開いた（押した背 \(firstTitle)）")
+            XCTAssertFalse(bar.staticTexts[firstTitle].firstMatch.exists, "押した背（\(firstTitle)）が開いた")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "Ergo1125-旅の一冊（ずらして隣を開いた）")
+    }
+
     /// 旅の記録のタブを選ぶ（マイページ → 旅の記録）
     private func openTripShelf(_ app: XCUIApplication) -> Bool {
         let tabBar = app.tabBars.firstMatch
@@ -8441,11 +8481,27 @@ final class ScreenshotTests: JPUITestCase {
             XCTFail("上へ引いただけで再生器が消えた")
             return
         }
+        // 2026-11-25（人間工学の案 4）: 探すの欄は下。いちばん上の再生器は欄にかぶらない（欄より上か下）
         if field.exists {
-            XCTAssertGreaterThanOrEqual(bar.frame.minY, field.frame.maxY, "いちばん上で探すの入力欄にかぶる")
+            XCTAssertTrue(bar.frame.maxY <= field.frame.minY + 1 || bar.frame.minY >= field.frame.maxY - 1,
+                          "いちばん上で探すの入力欄にかぶる（再生器 \(bar.frame)・欄 \(field.frame)）")
         }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "10m-探す（再生器・いちばん上）")
+
+        // 2026-11-25（人間工学の案 4）: 再生器をいちばん下へ戻すと、探すの欄は再生器の上に積む（重ならない）
+        if bar.exists {
+            bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.97)),
+                       withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 1.5)
+            if bar.exists, field.exists {
+                print("measured searchFieldOverPlayer field=\(field.frame) bar=\(bar.frame)")
+                XCTAssertLessThanOrEqual(field.frame.maxY, bar.frame.minY + 1,
+                                         "いちばん下の再生器に探すの欄がかぶる（欄 \(field.frame)・再生器 \(bar.frame)）")
+                shoot(app, "10m-探す（再生器・いちばん下・欄は上に積む）")
+            }
+        }
 
         // 停止ボタンのタップは引きとぶつからない（引きの始まりは 12pt 動いてから・`MiniPlayerBar.dragStartDistance`）
         let stop = bar.buttons["止める"].firstMatch
