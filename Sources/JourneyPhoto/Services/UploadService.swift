@@ -80,13 +80,24 @@ struct UploadService {
 
     // MARK: - 2. S3 に置く
 
+    /// S3 への PUT の要求を作る。**写真・サムネ・差し替え・ストーリーの画像と動画はみなここを通る**
+    /// （`put` → 前面の URLSession でも背景の転送でも、この要求をそのまま運ぶ）。
+    ///
+    /// - `Content-Type` は presign が返した値と完全に同じ文字列（署名対象。違うと 403）
+    /// - `Cache-Control` は `UploadCacheControl.photo`（下の注記）
+    static func putRequest(url: URL, contentType: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(UploadCacheControl.photo, forHTTPHeaderField: "Cache-Control")
+        return request
+    }
+
     func put(data: Data, to presigned: PresignResponse) async throws {
         guard let url = URL(string: presigned.presignedUrl) else {
             throw APIError.decoding("署名付き URL を読めませんでした")
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue(presigned.contentType, forHTTPHeaderField: "Content-Type")
+        let request = Self.putRequest(url: url, contentType: presigned.contentType)
 
         let response: URLResponse
         do {
@@ -255,6 +266,26 @@ struct UploadService {
         let thumb = await stageThumbnail(data: prepared.thumbnail, fileName: prepared.thumbnailFileName)
         return Staged(main: main, thumb: thumb)
     }
+}
+
+/// S3 に PUT するときに付ける `Cache-Control`。**値はここだけで決める。**
+///
+/// ⚠️ **2026-11-25 判断: Web と同じ値を送る。** S3 は PUT の見出しの `Cache-Control` を
+/// その実体の見出しとして覚え、CloudFront とブラウザはそれを見て覚えておく時間を決める。
+/// iOS はこれまで付けておらず、iOS から上げた写真だけ指定が無かった（SEO の見直しで見つかった）。
+///
+/// - `photo`: Web の `lib/utils/uploadToS3.ts`（`presignAndPut`）・`app/user/upload/page.tsx`（サムネ）・
+///   `StoryViewer.tsx` と同じ `max-age=31536000`（1年）。投稿の鍵は毎回新しい（`uploads/<uid>/<uuid>.<ext>`）ので、
+///   同じ URL の中身が変わることはなく、長く覚えさせてよい
+/// - `profileImage`: Web の `app/user/profile/page.tsx` と同じ `no-store`。アイコンとカバーは鍵が固定
+///   （`profiles/<uid>`）で上書きするので、覚えさせると変更が届かない
+///
+/// 🔴 **サーバーの署名には入れない（入っていない）。** api-user の presign（`upload.ts`・`profile.ts`）は
+/// `signableHeaders` に `content-type`（と `content-length`）だけを渡していて、`cache-control` は署名対象の外。
+/// だから付けても付けなくても署名は合う。署名に入れて縛ると、付けていない古い版のアプリが 403 で上げられなくなる
+enum UploadCacheControl {
+    static let photo = "max-age=31536000"
+    static let profileImage = "no-store"
 }
 
 /// 投稿の下書き。画面が組み立てて UploadService に渡す。

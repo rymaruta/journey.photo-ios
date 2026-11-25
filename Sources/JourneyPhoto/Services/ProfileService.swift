@@ -107,19 +107,27 @@ struct ProfileService {
         )
     }
 
+    /// アイコン／カバーの PUT の要求。`Content-Type` は presign が返した値（署名対象）、
+    /// `Cache-Control` は `UploadCacheControl.profileImage`（`no-store`・署名対象の外）
+    static func imagePutRequest(url: URL, contentType: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(UploadCacheControl.profileImage, forHTTPHeaderField: "Cache-Control")
+        return request
+    }
+
     /// アイコン／カバーを差し替える。
     ///
     /// **キーは固定**（`profiles/<uid>`）なので、上書きすると即座に全員へ届く。
     /// だからサーバーもアップロードも `no-store` を付けている——控えると
-    /// 変更が永久に届かない。
+    /// 変更が永久に届かない。iOS の PUT は 2026-11-25 まで付けていなかった（`UploadCacheControl`）。
     func uploadProfileImage(kind: ImageKind, jpeg: Data) async throws {
         let presigned = try await imagePresign(kind: kind, fileType: "image/jpeg")
         guard let url = URL(string: presigned.presignedUrl) else {
             throw APIError.decoding("署名付き URL を読めませんでした")
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue(presigned.contentType, forHTTPHeaderField: "Content-Type")
+        let request = Self.imagePutRequest(url: url, contentType: presigned.contentType)
 
         let response: URLResponse
         do {
