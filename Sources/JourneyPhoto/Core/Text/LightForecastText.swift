@@ -343,6 +343,9 @@ enum LightForecastText {
           "Weather comes from an outside forecast; sun times are calculated in the app. Estimates calculated by Journey Photo from Apple Weather data. Chances are a guide and can be wrong.")
     }
 
+    /// 天気の法的な出典のリンクの字（2026-11-25 審査 5.2.5・札 #604）。Apple Weather の印の右に置く
+    static var legalLink: String { L("天気データの法的な出典", "Legal attribution for weather data") }
+
     /// 画面の注記。**英語の端末にはサーバーの日本語を出さない**（サーバーは日本語だけ返す）
     static func note(_ forecast: LightForecast) -> String {
         guard Locale.preferredAppLanguage != "en", let note = forecast.note, !note.isEmpty else { return defaultNote }

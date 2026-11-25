@@ -23,8 +23,7 @@ struct DeviceTripSection: View {
             if PhotoLibrary.canRead(store.status) {
                 status
             } else if store.status == .notDetermined && !store.introDismissed {
-                DeviceTripIntroCard(onAllow: { Task { await store.requestAccess() } },
-                                    onLater: { store.dismissIntro() })
+                DeviceTripIntroCard(onAllow: { Task { await store.requestAccess() } })
             }
         }
         // 棚が出たら（まだなら）読み始める。設定アプリで許可して戻ってきたときも
@@ -99,7 +98,6 @@ enum DeviceTripText {}
 struct DeviceTripIntroCard: View {
 
     let onAllow: () -> Void
-    let onLater: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
@@ -132,14 +130,9 @@ struct DeviceTripIntroCard: View {
             .buttonStyle(.plain)
             .padding(.top, JPSpace.xxs)
             .accessibilityIdentifier("trips.deviceAllow")
-            Button(action: onLater) {
-                Text(L("今はしない", "Not now"))
-                    .font(.callout)
-                    .foregroundStyle(WebTheme.text2)
-                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            // 2026-11-25 判断（審査 5.1.1(iv) の差し戻し・札 #604）: 「今はしない」を外した。許可の前の説明に、
+            // iOS の確認を先送りする道を置かない。前に「今はしない」で閉じた人には、今までどおり札を出さない
+            // （`DeviceTripShelfStore.introDismissed`）
         }
         .padding(JPSpace.m)
         .jpCardFace()

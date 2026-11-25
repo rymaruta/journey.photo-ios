@@ -13,7 +13,8 @@ import SwiftUI
 /// - 注記（12・板の文言）
 ///
 /// 板に無くて足したもの:
-/// - **Apple Weather の出典**（Apple が表示を求めている）。注記の下に、応答の出典のリンク（真鍮・外へ出るリンク）
+/// - **Apple Weather の印と法的な出典**（Apple が表示を求めている）。一覧の頭に、印（白）と出典のリンク（真鍮・外へ出るリンク）。
+///   2026-11-25 に注記の下の字のリンクから移した（審査 5.2.5・`attributionRow`）
 /// - 札を押すと、その場所の7日（朝焼け・夕焼け・夜景）を札の中に開く（応答は7日ぶん持っている）。
 ///   開閉の印（› 閉じている / ⌄ 開いている）を右端に置く（2026-10-11・押せると分からなかった）
 /// - 開いた中に「スポットを見る」（撮影スポットの頁）と「経路」（Apple のマップ）の行（2026-10-11・
@@ -56,6 +57,8 @@ struct LightForecastView: View {
     @State private var directionsTask: Task<Void, Never>?
     /// 画面が出ているか（「経路」を探している間に離れたら開かない。「スポットを見る」で積んだときも離れた扱い）
     @State private var onScreen = false
+    /// Apple Weather の印（出典の口から読んだもの・読めなければ nil のまま字の印）
+    @State private var weatherMarks: WeatherAttributionMarks?
 
     var body: some View {
         ScrollView {
@@ -103,6 +106,9 @@ struct LightForecastView: View {
         case .failed(let failure):
             failureView(failure)
         case .loaded(let forecast):
+            // Apple Weather の印と法的な出典は**一覧の頭**に出す（2026-11-25 審査 5.2.5 の差し戻し・札 #604）。
+            // 前は一覧の下の注記の後ろに字のリンクだけで、審査で「 Weather の印と法的な出典のリンクをはっきり出す」と言われた
+            attributionRow(forecast)
             if forecast.places.isEmpty {
                 emptyView(LightForecastText.empty(wishlist: wishlist.spotIds))
             } else {
@@ -293,26 +299,64 @@ struct LightForecastView: View {
 
     // MARK: - 注記・出典
 
-    private func footer(_ forecast: LightForecast) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(LightForecastText.note(forecast))
-                .font(JPFont.caption)
-                .lineSpacing(3)
-                .foregroundStyle(WebTheme.text3)
-                .fixedSize(horizontal: false, vertical: true)
-            // Apple Weather の出典（Apple が表示を求めている）。黒地の上の外へ出るリンクは真鍮（CLAUDE.md）
+    /// Apple Weather の印（左・白・高さ 14）と法的な出典のリンク（右・真鍮・外へ出る）。WeatherKit の表示の決まり
+    /// （印と法的な出典のリンクを天気の近くに出す）。印の画像は出典の口から読む（`WeatherAttribution`）。
+    /// 読めない間は字の印。黒地の上の外へ出るリンクは真鍮（CLAUDE.md・板 LightAlert の出典のリンクと同じ 12・下線）
+    private func attributionRow(_ forecast: LightForecast) -> some View {
+        HStack(spacing: JPSpace.s) {
+            appleWeatherMark
+            Spacer(minLength: JPSpace.xs)
             Link(destination: forecast.attribution.legalURL) {
-                Text(L("天気: \(forecast.attribution.serviceName)\u{2002}データの出典",
-                       "Weather: \(forecast.attribution.serviceName)\u{2002}Data sources"))
+                Text(LightForecastText.legalLink)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.accent)
                     .underline()
-                    .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    .frame(minHeight: WebTheme.minTapTarget, alignment: .trailing)
                     .contentShape(Rectangle())
             }
             .accessibilityIdentifier("lightForecast.attribution")
         }
-        .padding(.top, 4)
+        .task { weatherMarks = await WeatherAttribution.load() }
+    }
+
+    /// 印の画像（読めたら）か、字の印（読めない間・読めないとき）。読み上げは「Apple Weather」
+    @ViewBuilder
+    private var appleWeatherMark: some View {
+        if let url = weatherMarks?.darkMark, StoreDemo.allowsImage(url) {
+            // 画像は 3x（高さ 42px）。高さ 14pt の枠に縦横比のまま収める
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fit)
+                default:
+                    textMark
+                }
+            }
+            .frame(height: WeatherAttributionMarks.markHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(weatherMarks?.serviceName ?? "Apple Weather")
+            .accessibilityIdentifier("lightForecast.appleWeather")
+        } else {
+            textMark
+                .accessibilityLabel("Apple Weather")
+                .accessibilityIdentifier("lightForecast.appleWeather")
+        }
+    }
+
+    private var textMark: some View {
+        Text(WeatherAttribution.textMark)
+            .font(JPFont.footnote.weight(.semibold))
+            .foregroundStyle(WebTheme.text)
+            .fixedSize()
+    }
+
+    private func footer(_ forecast: LightForecast) -> some View {
+        Text(LightForecastText.note(forecast))
+            .font(JPFont.caption)
+            .lineSpacing(3)
+            .foregroundStyle(WebTheme.text3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 4)
     }
 
     // MARK: - 空・読めない

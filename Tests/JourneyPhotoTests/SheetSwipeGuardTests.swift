@@ -74,8 +74,9 @@ final class SheetSwipeGuardTests: XCTestCase {
             guarded += text.components(separatedBy: ".sheetSwipeGuard(").count - 1
         }
         XCTAssertEqual(direct, [], "払って閉じるのを直に止めている")
-        // 投稿・戻るの確かめ・✕ の確かめ（2）と、送っている最中だけ止めるシート（11）
-        XCTAssertEqual(guarded, 14, "払う止め方の数が変わった（増えたなら、払ったときの確かめを渡しているか見る）")
+        // 投稿・戻るの確かめ・✕ の確かめ（2）と、送っている最中だけ止めるシート（11）と、
+        // 通知の説明（いつも止める・2026-11-25 審査 5.1.1(iv)「説明のあとは必ず iOS の確認へ」・`PushPrimerView`）
+        XCTAssertEqual(guarded, 15, "払う止め方の数が変わった（増えたなら、払ったときの確かめを渡しているか見る）")
     }
 
     /// どの画面が確かめを出すか: 書きかけの確かめを持つ画面は、払ったときに **✕・戻ると同じ手** を渡す

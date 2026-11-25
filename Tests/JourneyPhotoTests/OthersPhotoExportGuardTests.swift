@@ -225,6 +225,8 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Services/OfficialSpotService.swift": "観光スポットの JSON・本文",
         "Services/SpotWantsService.swift": "みんなの行きたいの JSON",
         "Core/Networking/PreviewBackend.swift": "Debug の見本",
+        // 2026-11-25（審査 5.2.5・札 #604）: Apple の公開の出典の口の JSON。印の画像は画面が見せるだけ（人の写真ではない）
+        "Services/WeatherAttribution.swift": "Apple Weather の印の置き場の JSON（weatherkit.apple.com の公開の出典の口）",
     ]
 
     func testImageFetchOnlyInRegisteredFiles() throws {

@@ -569,14 +569,15 @@ final class ActivityPushBannerTests: XCTestCase {
         XCTAssertTrue(view.contains(".accessibilityLabel(banner.action)"), "読み上げが押す所の文字でない")
     }
 
-    /// 初めての投稿のあとの説明: 承認された言い方（「オンにする」「あとで」）
+    /// 初めての投稿のあとの説明: 承認された言い方。2026-11-25（審査 5.1.1(iv)）から主ボタンは「続ける」だけ（「あとで」は外した）
     func testPrimerUsesApprovedCopy() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let primer = try String(contentsOf: root.appendingPathComponent(
             "Sources/JourneyPhoto/Features/Settings/PushPrimerView.swift"), encoding: .utf8)
         XCTAssertTrue(primer.contains("いいね、コメントが届いたらお知らせしますか？"))
-        XCTAssertTrue(primer.contains(#"Text(L("オンにする", "Turn on"))"#))
-        XCTAssertTrue(primer.contains(#"Text(L("あとで", "Not now"))"#))
+        XCTAssertTrue(primer.contains("Text(PushPrimerText.proceed)"))
+        XCTAssertEqual(PushPrimerText.proceed, "続ける")
+        XCTAssertFalse(primer.contains(#"Text(L("あとで", "Not now"))"#))
     }
 }
