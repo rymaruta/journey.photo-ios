@@ -34,6 +34,12 @@ packages:
     url: https://github.com/google/GoogleSignIn-iOS
     minVersion: 7.1.0
     maxVersion: 100.0.0
+  # aws-crt-swift は **0.64.5 以上**（札 #733・2026-11-25）。どのターゲットにも足さない（版の下限を決めるためだけ）。
+  # 下限が無いと、Mac の控え（SourcePackages）に残った 0.64.3 がそのまま使われ続け、新しい版で組めるかが分からない
+  # （run 1807 は Amplify 2.64.0 でも 0.64.3 のままだった）。上は縛らない
+  AwsCrtSwift:
+    url: https://github.com/awslabs/aws-crt-swift
+    from: 0.64.5
 
 targets:
   JourneyPhoto:
