@@ -254,20 +254,9 @@ struct SpineSlideHost: UIViewRepresentable {
             guard let scroll = view as? UIScrollView else { detach(); return }
             guard scroll !== host || hold.view !== scroll else { return }
             detach()
-            // UI テストの事実取りだけ（Debug・`-JPShelfCatcherOff hold|tap|both`）: 長押しのメニューを止めているのがどちらの部品かを、
-            // 部品を外した姿で比べる（2026-11-25・main では出るメニューが、この枝では出ない）。Release では必ず両方を付ける
-            let off = Self.debugOff
-            if off != "hold" && off != "both" { scroll.addGestureRecognizer(hold) }
-            if off != "tap" && off != "both" { scroll.addGestureRecognizer(tap) }
+            scroll.addGestureRecognizer(hold)
+            scroll.addGestureRecognizer(tap)
             host = scroll
-        }
-
-        private static var debugOff: String {
-            #if DEBUG
-            return UserDefaults.standard.string(forKey: "JPShelfCatcherOff") ?? ""
-            #else
-            return ""
-            #endif
         }
 
         func detach() {
