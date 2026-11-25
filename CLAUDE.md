@@ -166,7 +166,13 @@ owner「テスト長すぎていやだ」「長くても30分に絶対に収ま�
   本番の PR をすぐ出してマージ・デプロイまで進める。develop と staging での確認を待たない。
   develop へは同じ直しを別に入れておく（次の本番で消えないように）
 - 本番に出したら、本番で直ったことを確かめて（curl・配られたもので）から報告する
-- 新しい機能の本番も聞かずに出してよい。**データベースの変更・新しい GSI・費用が増えるもの・Maintenance の apply=true は今までどおり承認を取る**
+- 新しい機能の本番も聞かずに出してよい。**データベースの変更・新しい GSI・費用が増えるものは今までどおり承認を取る**
+- **Maintenance の apply=true は、戻せてデータを消さない作業ならこちらで押してよい（2026-11-25 owner「たのむ」）。**
+  例: トリガーやクライアントの設定を付ける・外す（`attach-custom-message`・`attach-post-confirmation`・`allow-custom-auth` など、remove で戻せるもの）、鍵を SSM に写す、CDN の設定を足す。
+  先に下見（apply なし）を流して中身を読み、apply のあとは本番で効いたことを確かめて報告する。記録は札に残す。
+  **今までどおり owner が押すもの:** 消す作業（`purge-*`・`restore-account` など）、データを書き換える作業（`backfill-*`・`normalize-*`・`geocode-*`・`grant-*`・`set-verified` など）、
+  データベースの変更・新しい GSI（`*-index`・`users-ttl`）、費用が増えるもの（`enable-cdn-logs` など）。迷ったら owner に聞く
+- 本番の AWS の鍵はこの環境に置かない（Actions の短い鍵だけを使う）。本番を変えるのは、いつもワークフローを通す
 
 ## iOS 版のデザインとストーリー機能は妥協しない（2026-10-16 owner のルール）
 
