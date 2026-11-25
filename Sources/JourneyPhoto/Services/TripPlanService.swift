@@ -17,9 +17,8 @@ struct TripPlanService {
         self.api = api
     }
 
-    /// 上限。**サーバーと対**（`TRIPS_MAX` ほか）。超えるとサーバーが
+    /// 題の長さの上限。**サーバーと対**。超えるとサーバーが
     /// 403 で**断る**（古い方を黙って落とさない）。画面はその言い分をそのまま出す
-    static let plansMax = 50
     static let titleMax = 100
 
     /// 作るときに送る題。**サーバーと同じく UTF-16 の単位で数えて、字の途中では切らない**
@@ -87,7 +86,7 @@ struct TripPlanService {
     }
 
     /// 作る。**日程・日付も同じ1回で送る**——作ってから別に送ると、2回目で落ちた回に
-    /// 空のプランが残る（行きたい場所から作る下書き・`TripPickerDraftView`）
+    /// 空のプランが残る（作る流れの下書き・`TripCreateModel`）
     func create(title: String, days: [TripDay]? = nil,
                 startDate: String? = nil, endDate: String? = nil) async throws -> TripPlanList {
         if TripPlanFixture.isOn {

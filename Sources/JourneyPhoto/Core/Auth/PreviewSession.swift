@@ -213,11 +213,6 @@ enum PreviewSession {
         #endif
     }
 
-    /// UI テストで、起動直後の動きの記録（`PerfRecorder`）を取り、見えない要素 `perf.probe` に出す（Debug のみ・2026-11-04・札 #435 / #429）。
-    /// `-JPPreviewPerfProbe YES`。下のタブを書いた場所と時刻・起動後の `.task` の始めと終わり・メインスレッドの停止・
-    /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）
-    /// UI テストの事実取りだけ: ホームの写真の札の「手に取って運ぶ」の身振りを付けない（`-JPPreviewNoLift YES`・Debug のみ・
-    /// 2026-11-12 run 1171 で、ホームを払っても一覧が動かなかった件を、身振りの有り無しで比べるため）
     /// UI テストの事実取りだけ: マイページの札の行・中身の横の払いを、どの指の操作が受けたか（UIKit のパンの始まり・終わりと
     /// 移動量・速さ、留まった札の払い、横に送る札の行の送りの位置、選んだ札の替わり）を見えない要素 `mypage.tabs.probe` に出す
     /// （`-JPPreviewTabSwipeProbe YES`・Debug のみ・2026-11-13 #187 Mac run 1227・`ProfileTabSwipeLog`）。Release では必ず false
@@ -264,14 +259,9 @@ enum PreviewSession {
         #endif
     }
 
-    static var noLift: Bool {
-        #if DEBUG
-        return UserDefaults.standard.bool(forKey: "JPPreviewNoLift")
-        #else
-        return false
-        #endif
-    }
-
+    /// UI テストで、起動直後の動きの記録（`PerfRecorder`）を取り、見えない要素 `perf.probe` に出す（Debug のみ・2026-11-04・札 #435 / #429）。
+    /// `-JPPreviewPerfProbe YES`。下のタブを書いた場所と時刻・起動後の `.task` の始めと終わり・メインスレッドの停止・
+    /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）
     static let perfProbeKey = "JPPreviewPerfProbe"
 
     static var perfProbe: Bool {
@@ -698,7 +688,6 @@ enum PreviewSession {
         return []
         #endif
     }
-
 
     /// UI テストで、起動のときに「はじめての硬貨」の案内を1回出す（Debug のみ・2026-10-18）。`-JPPreviewTrunkWelcome YES`
     /// で 10 枚、`-JPPreviewTrunkWelcome 3` で上限に当たって 3 枚だけ増えた姿。**サーバーには何も送らない**

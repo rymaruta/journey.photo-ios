@@ -39,12 +39,6 @@ enum TrunkFragmentTicket {
         return left + right.reversed()
     }
 
-    /// i 番目の切れ端の左右の端（1片だけ描くときの箱）
-    static func pieceBounds(_ i: Int) -> (minX: Double, maxX: Double) {
-        let xs = piece(i).map(\.x)
-        return (xs.min() ?? 0, xs.max() ?? width)
-    }
-
     /// 埋まっている切れ端の数（0〜5）
     static func filled(_ fragments: Int) -> Int { TrunkPartsBoxText.filledFragments(fragments) }
 
