@@ -56,6 +56,14 @@ extension View {
     }
 }
 
+/// `jpForm()` の行の決まり（テストで見張る）
+enum JPFormLayout {
+    /// 行の左右の余白＝画面の端（板 16）。**0 にしない**——0 だと欄が節の端に付き、節の角で欠ける（2026-11-25）
+    static let sideInset: CGFloat = JPSpace.gutter
+    /// 行の上下の余白
+    static let rowGap: CGFloat = 8
+}
+
 /// 入力欄の見本の字（placeholder）。**白 50%（`WebTheme.placeholder`）**——入力欄の地 #161617 の上で 5.24:1。
 ///
 /// 2026-11-14 判断（点検「画面と手ざわり」・直すべき）: `WebTheme.placeholder` は定義してあったのに、
@@ -229,14 +237,27 @@ enum JPOutlineTone: Equatable {
 
 extension View {
 
+    /// JPField を並べる `Form` の形（`jpFormRow` と組で使う）。**角の丸い札の形（insetGrouped）にしない。**
+    ///
+    /// 2026-11-25 判断（owner の実機の画面写真・パスワードを変える）: `Form` の既定は角の丸い札の形で、
+    /// 節の最初の行の上の角と、最後の行の下の角を、**地を透かしていても丸く切り抜く**。
+    /// 行の左右の余白を 0 にして欄を節の端まで出していたので、節の最初の欄の名前の頭
+    /// （「いまのパスワード」の「い」の左の画）と、節の最後の欄の下の縁の両端が角で欠けていた。
+    /// 角の無い形（grouped）にして、左右の端 16 は行の余白で取る（`JPFormLayout.sideInset`）
+    func jpForm() -> some View {
+        self.listStyle(.grouped)
+    }
+
     /// `Form` の行に JPField を置くときの行の作法（板は左右 16・区切り線なし）。
-    /// **行の内側の余白を消す**——消さないと、同じ画面の札より欄が左右 20pt 狭く、
-    /// 端が揃わない。**区切り線も消す**（`listRowBackground(.clear)` では消えない）
-    func jpFormRow() -> some View {
+    /// 左右の端は `JPFormLayout.sideInset`（画面の端 16）——`jpForm()` の角の無い形は節が画面の幅いっぱいなので、
+    /// 行の余白で端を取る。**区切り線も消す**（`listRowBackground(.clear)` では消えない。節の上下の線も）
+    func jpFormRow(top: CGFloat = JPFormLayout.rowGap, bottom: CGFloat = JPFormLayout.rowGap) -> some View {
         self
-            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+            .listRowInsets(EdgeInsets(top: top, leading: JPFormLayout.sideInset,
+                                      bottom: bottom, trailing: JPFormLayout.sideInset))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+            .listSectionSeparator(.hidden)
     }
 
     /// - Parameter height: 高さを揃えたいときだけ渡す。**同じ場所で主ボタンと線のボタンが

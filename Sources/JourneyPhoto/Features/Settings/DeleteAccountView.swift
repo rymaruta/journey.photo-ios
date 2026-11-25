@@ -83,16 +83,13 @@ struct DeleteAccountView: View {
                     .strokeBorder(WebTheme.danger.opacity(DeleteAccountText.warningBorderOpacity), lineWidth: JPStroke.hairline))
                 .accessibilityElement(children: .combine)
             }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
+            .jpFormRow(top: 0, bottom: 0)
 
             // 2026-10-11 判断: App Store の定期購入は退会しても止まらない（アプリからは解約できない）。
             // 黙っていると、退会した人に請求が続く。サーバーも App Store も「入っていない」ときだけ出さない
             if ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: profile?.isPro, appStore: store.subscription) {
                 Section { subscriptionNotice }
-                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    .jpFormRow(top: 12, bottom: 0)
             }
 
             Section {
@@ -111,6 +108,8 @@ struct DeleteAccountView: View {
             }
 
         }
+        // 角の丸い札の形にしない（`jpForm`・2026-11-25）: 警告の札の角と確かめの欄の名前・下の縁が節の角で欠ける
+        .jpForm()
         .webScreen()
         // 板は下に固定した赤い大きいボタン（スクロールしても見える）
         .safeAreaInset(edge: .bottom) { deleteBar }
