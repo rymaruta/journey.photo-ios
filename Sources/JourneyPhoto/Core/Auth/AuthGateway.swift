@@ -19,7 +19,12 @@ enum AuthGateway {
     /// `private` にしない: 試験が「未設定の起動」を作るため。Xcode の試験はアプリの中で
     /// 走り、アプリが起動時に `configure()` を済ませているので、放っておくと
     /// 未設定の状態を試せない（本物の Cognito にログインしに行っていた・TestFlight run 163）
-    static var isConfigured = false
+    /// 起動の段と試験の両方から触るので、ロックの中に置く（`Locked`・2026-11-25 Swift 6）
+    static var isConfigured: Bool {
+        get { isConfiguredBox.value }
+        set { isConfiguredBox.value = newValue }
+    }
+    private static let isConfiguredBox = Locked(false)
 
     /// 🔴 **設定に失敗した起動では Amplify を呼ばない。** `configure()` が投げても起動は
     /// 続ける（公開の画面は出せる）が、その後 `restore()` などが Amplify を呼ぶと、
@@ -37,7 +42,11 @@ enum AuthGateway {
     }
 
     /// 起動したときに鍵束がまだ開いておらず、設定を後に回した（`configureWhenKeychainOpens`）
-    static var waitsForKeychain = false
+    static var waitsForKeychain: Bool {
+        get { waitsForKeychainBox.value }
+        set { waitsForKeychainBox.value = newValue }
+    }
+    private static let waitsForKeychainBox = Locked(false)
 
     /// アプリ起動時に一度だけ呼ぶ。
     ///

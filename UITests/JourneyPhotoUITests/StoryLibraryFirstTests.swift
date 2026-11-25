@@ -23,7 +23,8 @@ final class StoryLibraryFirstTests: JPUITestCase {
     override func setUp() {
         continueAfterFailure = true
         // 前の回が許可を残していても、許可の前から始める
-        XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
+        // `setUp` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶので、そこで XCUIApplication を触る（2026-11-25 Swift 6）
+        MainActor.assumeIsolated { XCUIApplication.jp().resetAuthorizationStatus(for: .photos) }
         addTeardownBlock {
             XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
         }

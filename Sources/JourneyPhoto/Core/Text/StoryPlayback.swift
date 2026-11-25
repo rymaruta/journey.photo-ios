@@ -786,24 +786,24 @@ enum StoryPlayback {
 
     /// **書式器は使い回す。** ハイライトの足元は閲覧画面が描き直されるたびに
     /// 呼ばれるので、呼ぶたびに作ると重い
-    private static var formatters: [String: DateFormatter] = [:]
-    private static let formattersLock = NSLock()
+    /// 控えはロックの中（`Locked`・2026-11-25 Swift 6）。書式器を使うのもロックの中で済ませる
+    private static let formatters = Locked<[String: DateFormatter]>([:])
 
     private static func format(_ date: Date, _ pattern: String, locale: String, _ timeZone: TimeZone) -> String {
         let key = "\(pattern)|\(locale)|\(timeZone.identifier)"
-        formattersLock.lock()
-        defer { formattersLock.unlock() }
-        let f: DateFormatter
-        if let cached = formatters[key] {
-            f = cached
-        } else {
-            f = DateFormatter()
-            f.locale = Locale(identifier: locale)
-            f.timeZone = timeZone
-            f.dateFormat = pattern
-            formatters[key] = f
+        return formatters.withLock { formatters in
+            let f: DateFormatter
+            if let cached = formatters[key] {
+                f = cached
+            } else {
+                f = DateFormatter()
+                f.locale = Locale(identifier: locale)
+                f.timeZone = timeZone
+                f.dateFormat = pattern
+                formatters[key] = f
+            }
+            return f.string(from: date)
         }
-        return f.string(from: date)
     }
 
     /// サーバーは `toISOString()`（小数秒つき）だが、小数秒の無い ISO8601 も

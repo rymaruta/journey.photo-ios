@@ -165,6 +165,7 @@ final class TrunkPerfMeter: @unchecked Sendable {
 }
 
 /// 主スレッドの表示の刻みの間隔を `TrunkPerfMeter` の `Main` に渡す（数える起動のときだけ始める）
+@MainActor  // 画面の刻み・画面の操作からだけ触る（2026-11-25 Swift 6）
 final class TrunkFrameWatcher: NSObject {
     static let shared = TrunkFrameWatcher()
 
@@ -269,7 +270,8 @@ final class TrunkSpinFrameMeter: NSObject, SCNSceneRendererDelegate, @unchecked 
 /// `skip` はふだんは空（外さない）
 enum TrunkRasterProbe {
     /// いま外している部品（`grain` 粒・`stripes` 縞・`spots` しみと光・`art` 絵・`nodg` 胴の drawingGroup・`noshadow` 胴の影）
-    static var skip: Set<String> = []
+    /// 画面の描画（メインアクタ）と `run` だけが触る（2026-11-25 Swift 6）
+    @MainActor static var skip: Set<String> = []
 
     @MainActor
     static func run(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?, parts: TrunkEquipped,

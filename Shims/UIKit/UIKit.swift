@@ -2,6 +2,7 @@
 @_exported import SwiftUI
 import ImageIO
 
+@MainActor
 open class UIViewController {
     /// 本物と同じく外から作れる（色選びを出す見えない元・2026-10-16）
     public init() {}
@@ -14,13 +15,15 @@ open class UIViewController {
 }
 
 /// 画面の場。本物は `UIResponder`（NSObject）の子なので Set に入る
+@MainActor
 open class UIScene: Hashable {
-    public static func == (lhs: UIScene, rhs: UIScene) -> Bool { lhs === rhs }
-    public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+    nonisolated public static func == (lhs: UIScene, rhs: UIScene) -> Bool { lhs === rhs }
+    nonisolated public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 }
 open class UIWindowScene: UIScene {
     public var windows: [UIWindow] { [] }
 }
+@MainActor
 open class UIWindow {
     public var isKeyWindow: Bool { false }
     public var rootViewController: UIViewController?
@@ -42,6 +45,7 @@ public struct UIEdgeInsets: Equatable {
 }
 
 /// `@UIApplicationDelegateAdaptor` で繋ぐ側の模型。
+@MainActor
 public protocol UIApplicationDelegate: NSObjectProtocolShim {}
 public extension UIApplicationDelegate {
     func application(_ application: UIApplication,
@@ -56,6 +60,7 @@ public extension UIApplicationDelegate {
                      completionHandler: @escaping () -> Void) {}
 }
 
+@MainActor
 open class UIApplication {
     /// 本物と同じ型を使う。**`[AnyHashable: Any]` で受けると別の関数になり、
     /// iOS では呼ばれないまま（コンパイルは通る）**——模型を緩く作ると、
@@ -146,6 +151,7 @@ open class UIActivityViewController: UIViewController {
     public init(activityItems: [Any], applicationActivities: [Any]?) {}
 }
 
+@MainActor
 public protocol UIViewControllerRepresentable: View {
     associatedtype UIViewControllerType: UIViewController
     associatedtype Coordinator = Void

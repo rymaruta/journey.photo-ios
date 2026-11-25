@@ -19,9 +19,12 @@ enum AppConfig {
     /// `AppConfig` を触る型を検査するために要る。
     /// **本番値のフォールバックではない**——nil のままなら今までどおり、
     /// 値が欠けていれば落ちる。
-    /// （`nonisolated(unsafe)` は付けない——構文解析器がまだ読めず、
-    /// Swift 5 モードでは付けなくても通る。Swift 6 モードへ上げるときに足す）
-    static var testOverrides: [String: String]?
+    /// 試験はどのスレッドからも差し替えるので、ロックの中に置く（`Locked`・2026-11-25 Swift 6）
+    static var testOverrides: [String: String]? {
+        get { testOverridesBox.value }
+        set { testOverridesBox.value = newValue }
+    }
+    private static let testOverridesBox = Locked<[String: String]?>(nil)
 
     /// Info.plist から必須の文字列を読む。無ければ設定ミスなので即座に落とす。
     private static func require(_ key: String) -> String {

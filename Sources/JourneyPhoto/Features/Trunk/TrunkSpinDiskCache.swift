@@ -146,14 +146,10 @@ enum TrunkSpinDiskCache {
     // MARK: 書く列
 
     private static let writer = DispatchQueue(label: "trunk-spin-disk", qos: .utility)
-    private static let lock = NSLock()
-    private static var generationValue = 0
+    /// 世代の数はロックの中（`Locked`・2026-11-25 Swift 6）
+    private static let generationBox = Locked(0)
 
-    private static var generation: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return generationValue
-    }
+    private static var generation: Int { generationBox.value }
 
     /// 今の札（`removeAll` のたびに変わる）。回す画面を開いたときに取り、書くときに渡す
     static func ticket() -> Int {
@@ -186,9 +182,7 @@ enum TrunkSpinDiskCache {
 
     /// 全部消す（退会・測定）。これより前に頼まれた書き込みは書かない
     static func removeAll(in dir: URL? = directory) {
-        lock.lock()
-        generationValue += 1
-        lock.unlock()
+        generationBox.withLock { $0 += 1 }
         guard let dir else { return }
         writer.async { try? FileManager.default.removeItem(at: dir) }
     }
