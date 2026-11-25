@@ -11,6 +11,7 @@ import SwiftUI
 final class TripPlanReviewFixTests: XCTestCase {
 
     /// 開くまで待たせる門（送っている最中を作る）
+    @MainActor  // 試験（メインアクタ）と、並べて走らせる仕事から触る（2026-11-25 Swift 6）
     private final class Gate {
         private var waiting: CheckedContinuation<Void, Never>?
         private var opened = false
@@ -127,6 +128,7 @@ final class TripPlanReviewFixTests: XCTestCase {
 final class TripAutosaveFlushOnceTests: XCTestCase {
 
     /// 送る1回ぶんを真似る: 直しがあれば読み直し（待つ）→ 書き込む。走っている本数の最大と書き込みの回数を数える
+    @MainActor  // 試験（メインアクタ）と、並べて走らせる仕事から触る（2026-11-25 Swift 6）
     private final class FakeScreen {
         var dirty = true
         var running = 0

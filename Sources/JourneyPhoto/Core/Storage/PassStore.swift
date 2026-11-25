@@ -155,8 +155,8 @@ final class PassStore: ObservableObject {
         var next = settings
         change(&next)
         next.note = Self.keptNote(next.note)
-        next.originLabel = next.originLabel.flatMap(Self.keptLabel)
-        next.destinationLabel = next.destinationLabel.flatMap(Self.keptLabel)
+        next.originLabel = next.originLabel.flatMap { Self.keptLabel($0) }
+        next.destinationLabel = next.destinationLabel.flatMap { Self.keptLabel($0) }
         guard next != settings else { return }
         let previous = settings
         settings = next

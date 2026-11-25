@@ -30,7 +30,9 @@ struct StoryCameraView: View {
 }
 
 #if canImport(Darwin)
-import AVFoundation
+// 2026-11-25 判断（Swift 6）: AVFoundation の撮影の型（`AVCaptureSession` など）は Sendable と書かれていない。
+// 撮影の場は専用の列でだけ触る決まりで使っている。外の部品が対応するまで @preconcurrency で読む
+@preconcurrency import AVFoundation
 import Photos
 
 /// ストーリーのカメラ（札 #500・デザイナーのモック A 案「iPhone 型」）。
@@ -976,7 +978,12 @@ final class StoryCameraModel: NSObject, ObservableObject {
     /// 画面が閉じた（`stop` を呼んだ）。始めている途中の録画を、閉じたあとに始めない（`startsAfterPermission`）
     private(set) var isClosed = false
     private var photoContinuation: CheckedContinuation<Data?, Never>?
-    private var interruptionObserver: NSObjectProtocol?
+    /// 中断の見張りの札。deinit（アクタに属さない）からも外すので、ロックの箱に置く（2026-11-25 Swift 6）
+    private let interruptionObserverBox = Locked<NSObjectProtocol?>(nil)
+    private var interruptionObserver: NSObjectProtocol? {
+        get { interruptionObserverBox.value }
+        set { interruptionObserverBox.value = newValue }
+    }
 
     // MARK: 始める・止める
 
@@ -1017,7 +1024,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
     }
 
     deinit {
-        if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+        if let observer = interruptionObserverBox.value { NotificationCenter.default.removeObserver(observer) }
     }
 
     func stop() {

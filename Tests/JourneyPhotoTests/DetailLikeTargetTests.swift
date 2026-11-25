@@ -26,7 +26,7 @@ final class DetailLikeTargetTests: XCTestCase {
         SocialService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
                                      tokenProvider: StubTokenProvider(token: "t"),
                                      session: session,
-                                     beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } }))
+                                     beforeRequest: gates.map { gates in { @Sendable (request: URLRequest) async in await gates.wait(for: request) } }))
     }
 
     /// 🔴 画面の1枚（p2）と画面の持ち主（まだ p1）が食い違う間は、**何も送らない**

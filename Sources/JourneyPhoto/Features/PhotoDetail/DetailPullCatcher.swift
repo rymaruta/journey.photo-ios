@@ -61,9 +61,10 @@ final class PhotoDetailPullHolder: ObservableObject {
 /// - `moves`: 最後の指で量が変わった回数（`.changed` で縦の量が前と違った回）
 /// - `moveAgeMs`: 最後に量が変わってから離すまでの時間（ms）。止めてから離したのに速さが残っていれば、ここが大きく `endVy` も大きい
 /// - `peakVy`: 最後の指で動いている間の縦の速さの最大
+@MainActor  // 指の操作の受け手（メインスレッド）からだけ書く（2026-11-25 Swift 6）
 final class DetailPullProbe: ObservableObject {
     static let shared = DetailPullProbe()
-    static let identifier = "detail.pull.probe"
+    nonisolated static let identifier = "detail.pull.probe"
 
     @Published private(set) var value = "began=0;ended=0;closes=0;cancels=0;pullMax=0;dropWhilePull=0;dropMax=0"
 

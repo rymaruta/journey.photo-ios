@@ -82,18 +82,25 @@ enum TrunkSpinDiskCache {
     }
 
     /// OS の版（iOS の版。合図に入れる）
+    ///
+    /// 2026-11-25（Swift 6）: `UIDevice`・`UIAccessibility` はメインアクタ。合図は回す画面を開くとき（メインスレッド）に作るので、
+    /// メインスレッドではそのまま読む。ほかの糸から呼ばれたときは、OS の版は `ProcessInfo` から同じ形（"18.1"・"18.1.1"）で作る
     static var systemVersion: String {
         #if os(iOS)
-        return UIDevice.current.systemVersion
+        if Thread.isMainThread { return MainActor.assumeIsolated { UIDevice.current.systemVersion } }
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return v.patchVersion > 0 ? "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)" : "\(v.majorVersion).\(v.minorVersion)"
         #else
         return ProcessInfo.processInfo.operatingSystemVersionString
         #endif
     }
 
     /// 文字を太くする設定（アクセシビリティ）。絵に効くかは `TrunkBoldProbe` で測った（合図に入れておく）
+    /// （メインスレッドの外では読めないので false・上の `systemVersion` の注記）
     static var boldText: Bool {
         #if os(iOS)
-        return UIAccessibility.isBoldTextEnabled
+        guard Thread.isMainThread else { return false }
+        return MainActor.assumeIsolated { UIAccessibility.isBoldTextEnabled }
         #else
         return false
         #endif

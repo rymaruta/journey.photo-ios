@@ -3,6 +3,7 @@ import XCTest
 
 /// ストーリーを作る画面で、付けた曲をその場で流す（Issue #403・owner「インスタみたいにこの時点で流れるように」）。
 /// 音は模型なので鳴らない——見るのは「いつ鳴らす・止める・流し直すか」の決まりと、画面がそれを使っていること
+@MainActor  // 画面とメインアクタの物を試す（2026-11-25 Swift 6）
 final class StoryComposerSongTests: XCTestCase {
 
     private func song(start: Int? = nil, preview: String = "https://audio-ssl.itunes.apple.com/a.m4a") -> Photo.Song {
@@ -18,7 +19,7 @@ final class StoryComposerSongTests: XCTestCase {
     // MARK: - 鳴らす中身
 
     /// 流し始めから、表示秒数ぶん（見る人に流れる部分と同じ）
-    func testCueIsStartPlusDuration() throws {
+    func testCueIsStartPlusDuration() async throws {
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 12), durationSec: 10))
         XCTAssertEqual(cue.start, 12)
         XCTAssertEqual(cue.length, 10)
@@ -26,13 +27,13 @@ final class StoryComposerSongTests: XCTestCase {
     }
 
     /// 流し始めが表示秒数に収まらないときは、送る値（`fitting`）と同じ所まで引き戻す
-    func testCueStartFitsWindow() throws {
+    func testCueStartFitsWindow() async throws {
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 29), durationSec: 15))
         XCTAssertEqual(cue.start, Double(Photo.Song.maxStart(window: 15)))
     }
 
     /// 曲が無い・試聴の URL が読めない・配信元が試聴のホストでない → 黙って鳴らさない
-    func testNoCueForMissingOrForeignPreview() {
+    func testNoCueForMissingOrForeignPreview() async {
         XCTAssertNil(StoryComposerSong.cue(song: nil, durationSec: 5))
         XCTAssertNil(StoryComposerSong.cue(song: song(preview: ""), durationSec: 5))
         XCTAssertNil(StoryComposerSong.cue(song: song(preview: "https://evil.example.com/a.m4a"), durationSec: 5))
@@ -41,14 +42,14 @@ final class StoryComposerSongTests: XCTestCase {
 
     // MARK: - いつ鳴らす・止めるか
 
-    func testAttachPlaysFromStart() throws {
+    func testAttachPlaysFromStart() async throws {
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 3), durationSec: 5))
         XCTAssertEqual(StoryComposerSong.action(cue: cue, played: nil, owns: false, paused: false, held: false),
                        .play(cue))
     }
 
     /// 替えた・流し始めを直した・表示秒数を直した → 鳴っていても流し直す
-    func testChangedCueReplays() throws {
+    func testChangedCueReplays() async throws {
         let old = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 3), durationSec: 5))
         let moved = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 8), durationSec: 5))
         let longer = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 3), durationSec: 10))
@@ -61,14 +62,14 @@ final class StoryComposerSongTests: XCTestCase {
     }
 
     /// 外した → 自分の回だけ止める（ほかの画面が鳴らした曲は止めない）
-    func testRemoveStopsOnlyOwnSong() throws {
+    func testRemoveStopsOnlyOwnSong() async throws {
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(), durationSec: 5))
         XCTAssertEqual(StoryComposerSong.action(cue: nil, played: cue, owns: true, paused: false, held: false), .stop)
         XCTAssertEqual(StoryComposerSong.action(cue: nil, played: cue, owns: false, paused: false, held: false), .none)
     }
 
     /// 覆われた・裏に回った → 一時停止。覆いの間は鳴らし始めない
-    func testHeldPauses() throws {
+    func testHeldPauses() async throws {
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(), durationSec: 5))
         XCTAssertEqual(StoryComposerSong.action(cue: cue, played: cue, owns: true, paused: false, held: true), .pause)
         XCTAssertEqual(StoryComposerSong.action(cue: cue, played: cue, owns: true, paused: true, held: true), .none)
@@ -77,7 +78,7 @@ final class StoryComposerSongTests: XCTestCase {
     }
 
     /// 覆いが外れた → まだ自分の回なら続きから。シートの試し聴きに替わっていたら流し始めから
-    func testUncoverResumesOrReplays() throws {
+    func testUncoverResumesOrReplays() async throws {
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 4), durationSec: 5))
         XCTAssertEqual(StoryComposerSong.action(cue: cue, played: cue, owns: true, paused: true, held: false), .resume)
         XCTAssertEqual(StoryComposerSong.action(cue: cue, played: cue, owns: false, paused: false, held: false),
@@ -86,7 +87,7 @@ final class StoryComposerSongTests: XCTestCase {
 
     // MARK: - 繰り返す幅
 
-    func testLoopEnd() {
+    func testLoopEnd() async {
         XCTAssertEqual(MusicPreviewPlayer.loopEnd(loops: true, start: 10, length: 5), 15)
         XCTAssertNil(MusicPreviewPlayer.loopEnd(loops: true, start: 0, length: nil), "幅が無ければ試聴の終わりまで")
         XCTAssertNil(MusicPreviewPlayer.loopEnd(loops: false, start: 0, length: 5), "繰り返さないなら区切らない")
@@ -95,7 +96,7 @@ final class StoryComposerSongTests: XCTestCase {
 
     /// 繰り返しを実際に仕掛ける: 項目の終わり（`forwardPlaybackEndTime`）を流し始め＋表示秒数にする。
     /// そこで鳴り終わりの知らせが来て、流し始めへ戻る
-    func testPlaySetsItemEndAtWindow() throws {
+    func testPlaySetsItemEndAtWindow() async throws {
         let owner = StoryComposerSong.Owner()
         let cue = try XCTUnwrap(StoryComposerSong.cue(song: song(start: 10), durationSec: 5))
         owner.play(cue)
@@ -111,7 +112,7 @@ final class StoryComposerSongTests: XCTestCase {
     // MARK: - 鳴らした回の係
 
     /// 開いたときにほかで鳴っている曲（BGM の試聴など）を止める。自分の回は止めない
-    func testStopOthersOnOpen() throws {
+    func testStopOthersOnOpen() async throws {
         let player = MusicPreviewPlayer.shared
         let owner = StoryComposerSong.Owner()
         player.play(URL(fileURLWithPath: "/nonexistent/bgm.m4a"))
@@ -124,7 +125,7 @@ final class StoryComposerSongTests: XCTestCase {
     }
 
     /// 自分の回だけ止める。ほかの画面が鳴らし直した曲は止めない
-    func testOwnerStopsOnlyOwnSession() throws {
+    func testOwnerStopsOnlyOwnSession() async throws {
         let player = MusicPreviewPlayer.shared
         let owner = StoryComposerSong.Owner()
         owner.play(try XCTUnwrap(StoryComposerSong.cue(song: song(), durationSec: 5)))
@@ -135,7 +136,7 @@ final class StoryComposerSongTests: XCTestCase {
     }
 
     /// 係が消えたら（カメラを開いたまま作る画面ごと閉じられた）自分の回を止める
-    func testOwnerStopsWhenReleased() throws {
+    func testOwnerStopsWhenReleased() async throws {
         var owner: StoryComposerSong.Owner? = StoryComposerSong.Owner()
         owner?.play(try XCTUnwrap(StoryComposerSong.cue(song: song(), durationSec: 5)))
         XCTAssertNotNil(MusicPreviewPlayer.shared.playingURL)
@@ -151,7 +152,7 @@ final class StoryComposerSongTests: XCTestCase {
     }
 
     /// 作る画面が決まりを使い、覆い・写真が無い間・裏では止め、閉じたら止める（カメラを開いたときは止めない）
-    func testComposerWiresSongPlayback() throws {
+    func testComposerWiresSongPlayback() async throws {
         let view = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(view.contains("StoryComposerSong.action("), "作る画面が曲を鳴らしていない")
         XCTAssertTrue(view.contains("@StateObject private var songOwner = StoryComposerSong.Owner()"))

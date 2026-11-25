@@ -57,7 +57,7 @@ final class QuietFailuresTests: XCTestCase {
         XCTAssertTrue(view.contains("StripThumb.image(for: prepared)"), "投稿の帯と同じ縮め方を使っていない")
         // 選んだ写真・下書きから戻した写真の両方で作る
         XCTAssertTrue(view.contains("startThumb(for: shot)"))
-        XCTAssertTrue(view.contains("shots.forEach(startThumb(for:))"))
+        XCTAssertTrue(view.contains("shots.forEach { startThumb(for: $0) }"))
     }
 
     /// 縮める元は一覧用のサムネ（あれば）。作るのは渡した口（投稿の帯と同じ）

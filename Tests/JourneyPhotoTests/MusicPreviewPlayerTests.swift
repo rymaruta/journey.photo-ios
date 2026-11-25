@@ -4,21 +4,25 @@ import AVFoundation
 
 /// 試聴の再生器（`MusicPreviewPlayer`）の状態。音は模型なので鳴らない——
 /// 見るのは「再生中の表示」と「自分が鳴らした回か」の決まりだけ
+@MainActor  // 画面とメインアクタの物を試す（2026-11-25 Swift 6）
 final class MusicPreviewPlayerTests: XCTestCase {
 
     /// 通信しない URL（シミュレータで本物の AVPlayer が読みに行かないように）
     private let url = URL(fileURLWithPath: "/nonexistent/a.m4a")
     private let tokens = [UUID(), UUID()]
 
+    // `tearDown` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶ（2026-11-25 Swift 6）
     override func tearDown() {
-        let player = MusicPreviewPlayer.shared
-        player.stop(releaseSession: false)
-        for token in tokens { player.endStoryViewing(token) }
+        MainActor.assumeIsolated {
+            let player = MusicPreviewPlayer.shared
+            player.stop(releaseSession: false)
+            for token in tokens { player.endStoryViewing(token) }
+        }
         super.tearDown()
     }
 
     /// 鳴らすたびに回の番号が進む（同じ曲でも。前の画面の後始末が新しい方を止めない）
-    func testSessionAdvancesOnEveryPlay() {
+    func testSessionAdvancesOnEveryPlay() async {
         let player = MusicPreviewPlayer.shared
         let first = player.play(url)
         let second = player.play(url)
@@ -27,7 +31,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
 
     /// どこで鳴らしたかを覚え、止めたら忘れる。`play` はふつうの画面の扱い
     /// （曲選びの試し聴きだけを全体のバーから外すため）
-    func testOriginFollowsWhoPlayed() {
+    func testOriginFollowsWhoPlayed() async {
         let player = MusicPreviewPlayer.shared
         player.toggle(url, origin: .songPicker)
         XCTAssertEqual(player.origin, .songPicker)
@@ -44,7 +48,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
 
     /// **途中で途切れたら止まる。** 鳴り終わりの知らせしか見ていなかったので、
     /// 回線が切れて落ちるとボタンが ⏸ のまま固まり、場も返さなかった
-    func testFailureMidwayStopsPlayback() {
+    func testFailureMidwayStopsPlayback() async {
         let player = MusicPreviewPlayer.shared
         player.play(url)
         let item = player.currentItem
@@ -57,14 +61,14 @@ final class MusicPreviewPlayerTests: XCTestCase {
             }
         }
         poll()
-        wait(for: [stopped], timeout: 2)
+        await fulfillment(of: [stopped], timeout: 2)
         XCTAssertFalse(player.isPlaying(url))
         XCTAssertTrue(player.hasPendingRelease, "奪った場を返す予約を入れる")
     }
 
     /// **電話などで音が中断されたら「一時停止」に揃える**（無音なのに「再生中」の表示が残り、
     /// ▶ を2回押さないと鳴らなかった）
-    func testInterruptionMarksPaused() {
+    func testInterruptionMarksPaused() async {
         let player = MusicPreviewPlayer.shared
         player.play(url)
         XCTAssertTrue(player.isPlaying(url))
@@ -75,14 +79,14 @@ final class MusicPreviewPlayerTests: XCTestCase {
             if player.isPaused { paused.fulfill() } else { DispatchQueue.main.async { poll() } }
         }
         poll()
-        wait(for: [paused], timeout: 2)
+        await fulfillment(of: [paused], timeout: 2)
         XCTAssertFalse(player.isPlaying(url))
         player.toggle(url)
         XCTAssertTrue(player.isPlaying(url), "▶ 1回で鳴らない")
     }
 
     /// 一時停止中は「再生中」と言わない（ほかの画面の ▶ が ⏸ のままになる）
-    func testPausedIsNotPlaying() {
+    func testPausedIsNotPlaying() async {
         let player = MusicPreviewPlayer.shared
         player.play(url)
         XCTAssertTrue(player.isPlaying(url))
@@ -93,7 +97,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
     }
 
     /// 一時停止中の同じ曲の ▶ を押したら鳴らす（止めると押しても何も起きない）
-    func testToggleWhilePausedPlays() {
+    func testToggleWhilePausedPlays() async {
         let player = MusicPreviewPlayer.shared
         let before = player.play(url)
         player.pause()
@@ -106,7 +110,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
 
     /// 閲覧画面が開いている間は場を返さない（動画の音を切らない）。返すのは
     /// **最後の1つ**が閉じたとき——作り直しで新旧が前後しても崩れない
-    func testSessionIsReleasedOnlyAfterLastViewerCloses() {
+    func testSessionIsReleasedOnlyAfterLastViewerCloses() async {
         let player = MusicPreviewPlayer.shared
         let (old, new) = (tokens[0], tokens[1])
         player.beginStoryViewing(old)
@@ -124,7 +128,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
     }
 
     /// onAppear が2回来ても数がずれない（ずれると永久に場を返さない）
-    func testRepeatedAppearDoesNotLeakViewer() {
+    func testRepeatedAppearDoesNotLeakViewer() async {
         let player = MusicPreviewPlayer.shared
         let token = tokens[0]
         player.beginStoryViewing(token)
@@ -135,7 +139,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
     }
 
     /// 開いたら、直前に止めた曲の返す予約を取り消す
-    func testOpeningViewerCancelsPendingRelease() {
+    func testOpeningViewerCancelsPendingRelease() async {
         let player = MusicPreviewPlayer.shared
         player.play(url)
         player.stop()

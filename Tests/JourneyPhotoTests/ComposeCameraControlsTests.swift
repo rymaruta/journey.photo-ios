@@ -352,7 +352,9 @@ final class ComposeCameraControlsTests: XCTestCase {
         XCTAssertTrue(stopBody.contains("subjectObserver = nil"))
         let deinitBody = try XCTUnwrap(camera.components(separatedBy: "deinit {").dropFirst().first?
             .components(separatedBy: "\n    }").first)
-        XCTAssertTrue(deinitBody.contains("NotificationCenter.default.removeObserver(subjectObserver)"))
+        // deinit はアクタに属さないので、札はロックの箱から読んで外す（2026-11-25 Swift 6）
+        XCTAssertTrue(deinitBody.contains("subjectObserverBox.value"))
+        XCTAssertTrue(deinitBody.contains("NotificationCenter.default.removeObserver(observer)"))
         // 流し始める前に 1× の倍率（開いた瞬間に 0.5× を見せない）
         let configure = try XCTUnwrap(camera.components(separatedBy: "session.addOutput(output)").dropFirst().first)
         let beforeRun = try XCTUnwrap(configure.components(separatedBy: "session.startRunning()").first)

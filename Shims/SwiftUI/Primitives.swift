@@ -193,21 +193,21 @@ public enum ColorScheme { case light, dark }
 
 public struct Color: View, ShapeStyle, Hashable {
     // `ShapeStyle` の静的プロパティから作るので、アクタに属さない init が要る
-    public static let white = Color()
-    public static let black = Color()
-    public static let clear = Color()
-    public static let red = Color()
-    public static let pink = Color()
-    public static let yellow = Color()
-    public static let orange = Color()
-    public static let primary = Color()
-    public static let secondary = Color()
-    public static let accentColor = Color()
+    nonisolated public static let white = Color()
+    nonisolated public static let black = Color()
+    nonisolated public static let clear = Color()
+    nonisolated public static let red = Color()
+    nonisolated public static let pink = Color()
+    nonisolated public static let yellow = Color()
+    nonisolated public static let orange = Color()
+    nonisolated public static let primary = Color()
+    nonisolated public static let secondary = Color()
+    nonisolated public static let accentColor = Color()
     nonisolated public init() {}
     nonisolated public init(_ name: String) {}
     nonisolated public init(_ ui: UIColorShim) {}
     nonisolated public init(red: Double, green: Double, blue: Double) {}
-    public static let gray = Color()
+    nonisolated public static let gray = Color()
     nonisolated public func opacity(_ v: Double) -> Color { self }
     public var body: Never { fatalError("模型") }
 }

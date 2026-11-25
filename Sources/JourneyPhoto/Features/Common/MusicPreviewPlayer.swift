@@ -9,10 +9,11 @@ import AVFoundation
 /// **1つだけ鳴らす。** 画面を送るたびに増えると重なって鳴る。
 /// アプリ全体で1つのプレイヤーを使い回す。
 ///
-/// **`@MainActor` を付けない。** 付けると `shared` も MainActor に縛られ、
-/// `@ObservedObject private var player = MusicPreviewPlayer.shared` という
-/// View のプロパティ初期化子（isolation を持たない）から触れなくなる。
-/// 触るのは画面からだけなので、実際には常にメインスレッドで動く。
+/// **メインアクタに置く**（2026-11-25 判断・Swift 6）。触るのは画面からだけで、前から常にメインスレッドで動いていた。
+/// 前は `@ObservedObject private var player = MusicPreviewPlayer.shared` という View のプロパティの初期値から
+/// 触れなくなるので付けていなかったが、Swift 6 では画面（`View`）の初期値もメインアクタの上で作られるので触れる。
+/// OS の知らせ（`queue: .main`）の受け手は、メインスレッドで呼ばれるので `MainActor.assumeIsolated` で中に入る
+@MainActor
 final class MusicPreviewPlayer: ObservableObject {
 
     static let shared = MusicPreviewPlayer()
@@ -67,7 +68,7 @@ final class MusicPreviewPlayer: ObservableObject {
     private var loadObservations: [NSKeyValueObservation] = []
 
     /// 読み込みの状態を決める（画面を持たない・単体テスト用）。失敗が先、次に待っているか
-    static func previewLoad(itemFailed: Bool, waiting: Bool, playing: Bool) -> PreviewLoad {
+    nonisolated static func previewLoad(itemFailed: Bool, waiting: Bool, playing: Bool) -> PreviewLoad {
         if itemFailed { return .failed }
         guard playing else { return .idle }
         return waiting ? .loading : .ready
@@ -114,7 +115,7 @@ final class MusicPreviewPlayer: ObservableObject {
             let type = note.userInfo?["AVAudioSessionInterruptionTypeKey"] as? UInt
             // 1 = 始まり（`AVAudioSession.InterruptionType.began`）
             guard type == 1 else { return }
-            self?.markInterrupted()
+            MainActor.assumeIsolated { self?.markInterrupted() }
         }
         // 🔴 **イヤホン・Bluetooth が外れたら「一時停止」に揃える**(2026-11-07)。OS はプレイヤーを止めるが、
         // 中断の通知(上)は来ないので、こちらの状態は「再生中」のまま残っていた(無音なのに ▶ が再生中の表示)
@@ -122,8 +123,10 @@ final class MusicPreviewPlayer: ObservableObject {
             forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
         ) { [weak self] note in
             let reason = note.userInfo?["AVAudioSessionRouteChangeReasonKey"] as? UInt
-            guard Self.pausesOnRouteChange(reason: reason) else { return }
-            self?.markInterrupted()
+            MainActor.assumeIsolated {
+                guard Self.pausesOnRouteChange(reason: reason) else { return }
+                self?.markInterrupted()
+            }
         }
     }
 
@@ -140,7 +143,8 @@ final class MusicPreviewPlayer: ObservableObject {
         update(\.isPaused, true)
     }
 
-    deinit { removeEndObserver() }
+    // deinit は置かない（2026-11-25 Swift 6）。作るのは `shared` の1つだけ（`private init`）で、アプリの終わりまで消えない。
+    // deinit はアクタに属さず、知らせの受け手の控え（`endObservers`）に触れない
 
     private func removeEndObserver() {
         for observer in endObservers {
@@ -163,7 +167,7 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     /// 試聴の長さ（秒）。曲の長さがまだ読めないときの分母
-    static let previewSeconds: Double = 30
+    nonisolated static let previewSeconds: Double = 30
 
     /// 試聴の進み（0〜1）。**`@Published` にしない**——毎フレーム publish すると、
     /// この再生器を見ている画面（マイページ全体・ミニプレイヤー）が毎回描き直される。
@@ -185,7 +189,7 @@ final class MusicPreviewPlayer: ObservableObject {
 
     /// 進みの計算（画面を持たない・単体テスト用）。いつも 0〜1 に収める。
     /// 長さが読めない（nil・NaN・無限・0 以下）なら 30 秒で割る。今の位置が NaN なら 0
-    static func previewProgress(current: Double, duration: Double?) -> Double {
+    nonisolated static func previewProgress(current: Double, duration: Double?) -> Double {
         guard current.isFinite, current > 0 else { return 0 }
         var total = previewSeconds
         if let duration, duration.isFinite, duration > 0 { total = duration }
@@ -221,7 +225,7 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     /// 繰り返す幅の終わり（秒）。繰り返さない・幅が無い・0 以下なら nil（試聴の終わりまで）
-    static func loopEnd(loops: Bool, start: Double, length: Double?) -> Double? {
+    nonisolated static func loopEnd(loops: Bool, start: Double, length: Double?) -> Double? {
         guard loops, let length, length > 0, length.isFinite else { return nil }
         return max(0, start) + length
     }
@@ -273,7 +277,7 @@ final class MusicPreviewPlayer: ObservableObject {
         removeEndObserver()
         // 読み込みの状態を見張る（2026-11-12）。項目の失敗（圏外）は鳴り終わり・失敗の知らせでは来ないので、
         // `status` を直に見張る。待っている間（`timeControlStatus`）も同じ
-        let reportLoad: (AVPlayer) -> Void = { [weak self] observed in
+        let reportLoad: @Sendable (AVPlayer) -> Void = { [weak self] observed in
             let failed = observed.currentItem?.status == .failed
             let waiting = observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
             DispatchQueue.main.async { self?.noteLoad(itemFailed: failed, waiting: waiting, from: observed) }
@@ -291,7 +295,7 @@ final class MusicPreviewPlayer: ObservableObject {
                 player.seek(to: startTime)
                 player.play()
             } else {
-                self?.stop()
+                MainActor.assumeIsolated { self?.stop() }
             }
         })
         // **途中で再生に失敗したときも止める。** そのときは
@@ -305,7 +309,7 @@ final class MusicPreviewPlayer: ObservableObject {
             object: player.currentItem,
             queue: .main
         ) { [weak self] _ in
-            self?.stop()
+            MainActor.assumeIsolated { self?.stop() }
         })
         if startSeconds > 0 {
             // 🔴 **読み込む前の頭出しは捨てられることがある**（Web の `seekWhenReady` と同じ心配）。
@@ -316,9 +320,11 @@ final class MusicPreviewPlayer: ObservableObject {
             ) { [weak self, weak player] time in
                 guard let player, time.seconds > 0 else { return }
                 if time.seconds < startSeconds - 1 { player.seek(to: startTime) }
-                // 外すのは**このプレイヤーの見張りだけ**（間に次の曲が始まっていたら、その見張りを外さない）
+                // 外すのは**このプレイヤーの見張りだけ**（間に次の曲が始まっていたら、その見張りを外さない）。
+                // 弱い参照は1度読んでから渡す（つかんだ変数を別の糸で読まない・2026-11-25 Swift 6）
+                let owner = self
                 DispatchQueue.main.async {
-                    guard let self, self.startSeeker?.player === player else { return }
+                    guard let self = owner, self.startSeeker?.player === player else { return }
                     self.removeStartSeeker()
                 }
             }

@@ -173,7 +173,7 @@ struct CompositionPicker: View {
     }
 
     /// 札の高さと小さな絵（3:4 を 44 の枠に）。板は 60 だが、右に作例写真（64）を置くので 72（2026-10-17）
-    static let rowHeight: CGFloat = 72
+    nonisolated static let rowHeight: CGFloat = 72
     static let thumbBox: CGFloat = 44
     static let thumbSize = (width: CGFloat(33), height: CGFloat(44))
 

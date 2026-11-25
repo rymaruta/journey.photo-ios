@@ -45,7 +45,8 @@ public struct UIEdgeInsets: Equatable {
 }
 
 /// `@UIApplicationDelegateAdaptor` で繋ぐ側の模型。
-@MainActor
+// 本物はメインアクタだが、模型では付けない（`NSObjectProtocolShim` の `init()` の約束がアクタに属さず、
+// 本物の NSObject の init のような「アクタに属さない init」を模型では書けないため・2026-11-25）
 public protocol UIApplicationDelegate: NSObjectProtocolShim {}
 public extension UIApplicationDelegate {
     func application(_ application: UIApplication,

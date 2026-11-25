@@ -14,21 +14,28 @@ enum AsyncTimeout {
     /// では時間切れが効かない。呼んだ側が取り消されたときも、すぐ nil を返す。
     ///
     /// **先に答えが来たら、時間を計る側も止める**（止めないと、答えのあとも上限時間ぶん眠り続ける）
-    static func firstWithin<T>(seconds: Double, _ operation: @escaping () async -> T?) async -> T? {
-        await firstWithin(seconds: seconds, sleep: { try await Task.sleep(nanoseconds: $0) }, operation)
+    ///
+    /// 2026-11-25（Swift 6）: `operation` は**呼んだ側のアクタの上で**始める（`isolation`）。呼び手は画面の持ち物
+    /// （読み込みの関数など・Sendable でない）をつかんだ閉包を渡すので、別の糸へ送らない。中で待つ読み込みは
+    /// 今までどおり、それぞれの糸で走る
+    static func firstWithin<T: Sendable>(seconds: Double, isolation: isolated (any Actor)? = #isolation,
+                                         _ operation: @escaping () async -> T?) async -> T? {
+        await firstWithin(seconds: seconds, sleep: { try await Task.sleep(nanoseconds: $0) }, isolation: isolation, operation)
     }
 
     /// 眠り方を差し替えられる形（試験で、時間を計る側が止められたかを見る）。
     /// `betweenTimeoutSteps` は時間切れの「門を閉める」と「処理を止める」の間に呼ぶ（試験で順番を見るためだけ）
-    static func firstWithin<T>(seconds: Double, sleep: @escaping @Sendable (UInt64) async throws -> Void,
-                               betweenTimeoutSteps: (@Sendable () -> Void)? = nil,
-                               _ operation: @escaping () async -> T?) async -> T? {
+    static func firstWithin<T: Sendable>(seconds: Double, sleep: @escaping @Sendable (UInt64) async throws -> Void,
+                                         betweenTimeoutSteps: (@Sendable () -> Void)? = nil,
+                                         isolation: isolated (any Actor)? = #isolation,
+                                         _ operation: @escaping () async -> T?) async -> T? {
         let gate = FirstResultGate<T>()
         let nanos = UInt64(max(0, seconds) * 1_000_000_000)
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
                 gate.start(continuation)
                 let work = Task {
+                    _ = isolation  // 呼んだ側のアクタの上で始める（上の注記）
                     gate.finish(await operation())
                 }
                 gate.timer = Task {
@@ -51,7 +58,7 @@ enum AsyncTimeout {
 }
 
 /// `firstWithin` の「先に来た1回だけ返す」門
-private final class FirstResultGate<T>: @unchecked Sendable {
+private final class FirstResultGate<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<T?, Never>?
     private var done = false

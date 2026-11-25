@@ -3,15 +3,16 @@
 import Dispatch
 import Foundation
 
-public struct NWPath {
-    public enum Status: Equatable { case satisfied, unsatisfied, requiresConnection }
+public struct NWPath: Sendable {
+    public enum Status: Equatable, Sendable { case satisfied, unsatisfied, requiresConnection }
     public let status: Status
     public init(status: Status) { self.status = status }
 }
 
-public final class NWPathMonitor {
+/// 本物と同じく Sendable（2026-11-25・知らせの受け手も `@Sendable`）
+public final class NWPathMonitor: @unchecked Sendable {
     public init() {}
-    public var pathUpdateHandler: ((NWPath) -> Void)?
+    public var pathUpdateHandler: (@Sendable (NWPath) -> Void)?
     public var currentPath: NWPath { NWPath(status: .satisfied) }
     public func start(queue: DispatchQueue) {}
     public func cancel() {}

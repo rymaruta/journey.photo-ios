@@ -171,7 +171,7 @@ final class AccountLocalDataTests: XCTestCase {
 @MainActor
 final class PushReleaseTests: XCTestCase {
 
-    private func center(_ defaults: UserDefaults, released: @escaping () -> Void) -> PushCenter {
+    private func center(_ defaults: UserDefaults, released: @escaping @MainActor () -> Void) -> PushCenter {
         PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
                                                             tokenProvider: StubTokenProvider(token: nil))) },
                    defaults: defaults, releaseDevice: released)
@@ -288,7 +288,7 @@ final class PushReleaseTests: XCTestCase {
         }
     }
 
-    private func interruptedCenter(_ defaults: UserDefaults, released: @escaping () -> Void,
+    private func interruptedCenter(_ defaults: UserDefaults, released: @escaping @MainActor () -> Void,
                                    interrupt: @escaping @MainActor () async -> Void) -> PushCenter {
         PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
                                                          tokenProvider: InterruptingTokenProvider(interrupt: interrupt))) },

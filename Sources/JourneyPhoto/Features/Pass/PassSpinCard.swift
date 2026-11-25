@@ -17,7 +17,8 @@ struct PassSpinTicket: View, Animatable {
     /// 写真を押した（束の画面: 全面で見る）。nil なら写真も裏返しの一部
     var onPhotoTap: (() -> Void)? = nil
 
-    var animatableData: Double {
+    // 動きの値は描く糸の外からも読み書きされる（`Animatable` はアクタに属さない約束・2026-11-25 Swift 6）
+    nonisolated var animatableData: Double {
         get { yaw }
         set { yaw = newValue }
     }

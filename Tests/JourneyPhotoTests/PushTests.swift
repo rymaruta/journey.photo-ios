@@ -495,7 +495,7 @@ final class PushTakeoverTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: "photo-gallery-push-registered-owner"))
     }
 
-    private func failingCenter(_ defaults: UserDefaults, released: @escaping () -> Void) -> PushCenter {
+    private func failingCenter(_ defaults: UserDefaults, released: @escaping @MainActor () -> Void) -> PushCenter {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)

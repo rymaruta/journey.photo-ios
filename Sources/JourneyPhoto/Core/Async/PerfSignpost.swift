@@ -57,7 +57,7 @@ enum PerfSignpost {
     }
 
     #if canImport(os)
-    nonisolated(unsafe) private static let signposter = OSSignposter(subsystem: subsystem, category: category)
+    private static let signposter = OSSignposter(subsystem: subsystem, category: category)
     #endif
 
     /// 区間を始める。`OSSignposter` は名前に `StaticString` しか取らないので、名前ごとに書き分ける

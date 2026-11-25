@@ -53,7 +53,7 @@ enum StoryViewerMetrics {
     /// 撮影地・曲の行の白（板 `rgba(255,255,255,.88)`）。**写真の上なので白の透過**
     static let metaOpacity = 0.88
     /// ひとことの明朝（板 StoryViewer 30・HighlightPlayer 28）。**作る画面の 30 と揃える**（`StoryComposerView.captionSize`）
-    static let captionSize: Double = 30
+    nonisolated static let captionSize: Double = 30
     static let highlightCaptionSize: Double = 28
     /// ハイライトの日付の行（板 `rgba(255,255,255,.82)`・13 の等幅数字）
     static let highlightDateOpacity = 0.82

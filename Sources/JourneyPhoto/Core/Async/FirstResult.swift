@@ -31,7 +31,7 @@ enum FirstResult {
     ///   - pause: 待ち(試験が差し替える)
     static func run<T: Sendable>(timeout: TimeInterval, fallback: T,
                                  pause: @escaping @Sendable (TimeInterval) async -> Void = FirstResult.sleep,
-                                 work: @escaping @MainActor () async -> T) async -> T {
+                                 work: @escaping @MainActor @Sendable () async -> T) async -> T {  // 別の仕事（Task）へ渡すので @Sendable（2026-11-25 Swift 6）
         await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
             let once = Once(continuation)
             Task { @MainActor in once.fire(await work()) }

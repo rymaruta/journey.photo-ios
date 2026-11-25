@@ -61,7 +61,7 @@ struct StoryService {
     ///    断られたら、その鍵を行が使っている（前の回に出せていた）ので送ったことにする。
     ///    掃除が行ごと消したあとは見分けられず、上げ直す
     func post(_ job: StoryUploadCenter.Job, ownerId: String,
-              record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
+              record: @escaping @MainActor @Sendable (UploadedMedia?) -> Void) async throws {  // 送る糸から渡して呼ぶ（2026-11-25 Swift 6）
         let media: UploadedMedia
         if let uploaded = job.uploaded {
             // **目印があれば、古くても先に一覧で探す**（期限内の1本がまだ出ていれば

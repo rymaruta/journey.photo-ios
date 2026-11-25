@@ -40,7 +40,12 @@ final class TrunkViewModel: ObservableObject {
     @Published private(set) var showingSaved = false
 
     /// 硬貨が増えた知らせ（はじめての硬貨・`Notification.Name.trunkCoinsChanged`）の見張り
-    private var coinsObserver: NSObjectProtocol?
+    /// deinit（アクタに属さない）からも外すので、ロックの箱に置く（2026-11-25 Swift 6）
+    private let coinsObserverBox = Locked<NSObjectProtocol?>(nil)
+    private var coinsObserver: NSObjectProtocol? {
+        get { coinsObserverBox.value }
+        set { coinsObserverBox.value = newValue }
+    }
     private let center: NotificationCenter
 
     init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
@@ -62,7 +67,7 @@ final class TrunkViewModel: ObservableObject {
     }
 
     deinit {
-        if let coinsObserver { center.removeObserver(coinsObserver) }
+        if let observer = coinsObserverBox.value { center.removeObserver(observer) }
     }
 
     /// サーバーで硬貨が増えた（はじめての硬貨）。**読めている画面だけ**読み直す（まだ読んでいない画面は開いたときに読む）。

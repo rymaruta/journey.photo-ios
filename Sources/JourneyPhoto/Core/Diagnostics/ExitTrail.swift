@@ -196,7 +196,8 @@ enum ExitTrail {
         return iso.string(from: date)
     }
 
-    private static let iso: ISO8601DateFormatter = {
+    // 2026-11-25 判断（Swift 6）: ISO8601DateFormatter は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。作った後は設定を変えないので `nonisolated(unsafe)` にする
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter

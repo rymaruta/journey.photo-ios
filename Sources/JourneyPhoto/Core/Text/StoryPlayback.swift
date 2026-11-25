@@ -812,13 +812,15 @@ enum StoryPlayback {
         fractional.date(from: iso) ?? plain.date(from: iso)
     }
 
-    private static let fractional: ISO8601DateFormatter = {
+    // 2026-11-25 判断（Swift 6）: ISO8601DateFormatter は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。作った後は設定を変えないので `nonisolated(unsafe)` にする
+    nonisolated(unsafe) private static let fractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
-    private static let plain: ISO8601DateFormatter = {
+    // 2026-11-25 判断（Swift 6）: ISO8601DateFormatter は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。作った後は設定を変えないので `nonisolated(unsafe)` にする
+    nonisolated(unsafe) private static let plain: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter

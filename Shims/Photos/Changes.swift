@@ -4,7 +4,7 @@ import Foundation
 
 extension PHPhotoLibrary {
     /// 変更をまとめて行う。本物は完了の受け手つきの口が async に橋渡しされたもの（失敗は投げる）
-    public func performChanges(_ changeBlock: @escaping () -> Void) async throws {}
+    public func performChanges(_ changeBlock: @escaping @Sendable () -> Void) async throws {}  // 本物と同じく @Sendable（2026-11-25）
 }
 
 open class PHAssetChangeRequest: NSObject {}

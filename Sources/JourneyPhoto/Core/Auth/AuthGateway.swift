@@ -360,7 +360,9 @@ enum AuthGateway {
 
     /// 上の流れの本体（試験が Amplify の代わりの `attempt` を渡す）。
     /// - Parameter attempt: 1回ログアウトを頼み、端末から消せたら true
-    static func signOut(attempt: () async -> Bool, latch: SignOutLatch) async -> SignOutOutcome {
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。渡す閉包を別の糸へ送らない
+    static func signOut(isolation: isolated (any Actor)? = #isolation,
+                        attempt: () async -> Bool, latch: SignOutLatch) async -> SignOutOutcome {
         for _ in 0..<2 {
             if await attempt() {
                 latch.clear()

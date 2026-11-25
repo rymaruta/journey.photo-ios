@@ -311,15 +311,7 @@ struct ProfileEditView: View {
                     .overlay(alignment: .bottomTrailing) {
                         PhotosPicker(selection: $coverItem, matching: .images) {
                             // 板 50: 候補（下の「カバーにする写真」）のほかの写真から選ぶ口
-                            Label(L("ほかの写真から", "Other photos"), systemImage: "photo")
-                                .font(JPFont.footnote.weight(.semibold))
-                                .foregroundStyle(WebTheme.foreground)
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: JPHeight.inlineButton)
-                                .jpGlass(in: Capsule())
-                                // 見た目は 36pt、押せる高さは 44pt
-                                .padding(.vertical, ProfileV2.tapSlack(visible: JPHeight.inlineButton))
-                                .contentShape(Rectangle())
+                            CoverGlassLabel(title: L("ほかの写真から", "Other photos"), systemImage: "photo")
                         }
                         // **行の中に押せるものが2つある。** 既定の形だと行全体が
                         // 1つのボタンになり、押した方と違う選択が開く（`ThemeColorField` と同じ手当て）
@@ -381,20 +373,15 @@ struct ProfileEditView: View {
     /// 切り抜いたあとの絵で、元の写真は手元に無い（`coverSource` の注記）
     @ViewBuilder
     private var adjustCoverButton: some View {
-        let label = Label(L("位置を調整", "Adjust"), systemImage: "crop")
-            .font(JPFont.footnote.weight(.semibold))
-            .foregroundStyle(WebTheme.foreground)
-            .padding(.horizontal, 14)
-            .frame(minHeight: JPHeight.inlineButton)
-            .jpGlass(in: Capsule())
-            // 見た目は 36pt、押せる高さは 44pt
-            .padding(.vertical, ProfileV2.tapSlack(visible: JPHeight.inlineButton))
-            .contentShape(Rectangle())
         Group {
             if let coverSource {
-                Button { coverCrop = coverSource } label: { label }
+                Button { coverCrop = coverSource } label: {
+                    CoverGlassLabel(title: L("位置を調整", "Adjust"), systemImage: "crop")
+                }
             } else {
-                PhotosPicker(selection: $coverItem, matching: .images) { label }
+                PhotosPicker(selection: $coverItem, matching: .images) {
+                    CoverGlassLabel(title: L("位置を調整", "Adjust"), systemImage: "crop")
+                }
                     .accessibilityHint(L("写真を選び直して、帯に映る範囲を合わせます",
                                          "Choose the photo again to set what shows in the cover"))
             }
@@ -772,5 +759,26 @@ struct ProfileEditView: View {
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を準備できませんでした", "Couldn't prepare the image")
         }
+    }
+}
+
+
+/// 写真の上に置く、ガラスに白の字の小さな札（カバーの「ほかの写真から」「位置を調整」）。
+/// 2026-11-25（Swift 6）: Xcode 27 の `PhotosPicker` は見出しの閉包をメインアクタの外で作るので、
+/// ガラス（`jpGlass`・メインアクタ）は body で組む。見た目は前と同じ
+private struct CoverGlassLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(JPFont.footnote.weight(.semibold))
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, 14)
+            .frame(minHeight: JPHeight.inlineButton)
+            .jpGlass(in: Capsule())
+            // 見た目は 36pt、押せる高さは 44pt
+            .padding(.vertical, ProfileV2.tapSlack(visible: JPHeight.inlineButton))
+            .contentShape(Rectangle())
     }
 }

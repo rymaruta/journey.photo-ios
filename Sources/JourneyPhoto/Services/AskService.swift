@@ -160,7 +160,8 @@ struct AskService {
         return Array((help + spots.map { Source($0, season: season) }).prefix(maxSources))
     }
 
-    private func call<T: Decodable>(_ body: any Encodable, as type: T.Type) async throws -> T {
+    // 答えは API の actor から戻るので Sendable（2026-11-25 Swift 6）
+    private func call<T: Decodable & Sendable>(_ body: any Encodable & Sendable, as type: T.Type) async throws -> T {
         guard let api else { throw Failure.unavailable }
         let sink = APIErrorBody()
         do {

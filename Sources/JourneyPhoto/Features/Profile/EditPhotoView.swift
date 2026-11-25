@@ -325,8 +325,8 @@ struct EditPhotoView: View {
                     busyLine(L("写真を読み込んでいます…", "Loading the photo…"))
                 } else {
                     PhotosPicker(selection: $replaceItem, matching: .images) {
-                        Label(L("写真を差し替える", "Replace the photo"), systemImage: "arrow.triangle.2.circlepath")
-                            .jpPillButton(.outline)
+                        JPPillPickerLabel(title: L("写真を差し替える", "Replace the photo"),
+                                          systemImage: "arrow.triangle.2.circlepath", style: .outline)
                     }
                     .buttonStyle(.plain)
                     // 保存の途中は差し替えさせない（保存ボタンと同じ門）

@@ -94,7 +94,7 @@ private func waitCancelled() -> Error { CancellationError() }
 
 /// 待っている側を**1回だけ**起こす（答えと取り消しの先に来た方）。
 /// 取り消しが `install` より先に来たら、入れた途端に取り消しで起こす
-final class CancellableWaiter<Value>: @unchecked Sendable {
+final class CancellableWaiter<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Error>?
     private var early: Result<Value, Error>?

@@ -77,12 +77,14 @@ let package = Package(
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"],
-            swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
+            swiftSettings: [.unsafeFlags(["-swift-version", "6"])]
         ),
         .testTarget(
             name: "JourneyPhotoTests",
             dependencies: ["JourneyPhoto"],
             path: "Tests/JourneyPhotoTests",
+            // 試験は言語の版 5 のまま厳しい確かめ（Linux の XCTest は非同期の setUp・tearDown がアクタに属さず、
+            // Apple の XCTest と違う警告が出るため・2026-11-25）。版 6 での確かめは Mac の回
             swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
     ]

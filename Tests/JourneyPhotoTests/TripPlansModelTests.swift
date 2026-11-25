@@ -38,7 +38,7 @@ final class TripPlansModelTests: XCTestCase {
         )
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: tokens, session: session,
-                            beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
+                            beforeRequest: gates.map { gates in { @Sendable (request: URLRequest) async in await gates.wait(for: request) } })
         return AppEnvironment(tokenProvider: tokens, gallery: gallery, spots: index,
                               trips: TripPlanService(api: api))
     }

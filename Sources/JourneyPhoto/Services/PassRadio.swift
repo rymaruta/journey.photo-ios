@@ -1,5 +1,7 @@
 import Foundation
-import CoreBluetooth
+// 2026-11-25 判断（Swift 6）: CoreBluetooth は並行処理の印がまだ無い（`CBUUID` などが Sendable と書かれていない）。
+// 外の部品が対応するまで @preconcurrency で読む
+@preconcurrency import CoreBluetooth
 import Combine
 import CoreLocation
 
@@ -32,37 +34,42 @@ import CoreLocation
 /// - 起こされたアプリが使えるのはおよそ 10 秒（文書）。読むのは特性1つで、綴じるのは端末の中だけ
 /// - **利用者がアプリを上へ払って終わらせると、Bluetooth の出来事で起こされない**（TN3115）。次に開くまで交換しない
 /// - 画面が消えている（ロック中）は背景と同じ扱い。帳はロック中にも書ける保護にしてある（`PassStore.save`）
+///
+/// 2026-11-25（Swift 6）: **メインアクタに置く。** 電波の管理役は `queue: nil` で作るので、受け手の呼び出しはみな
+/// メインスレッドに来る。受け手の約束（`CBCentralManagerDelegate` など）はアクタに属さない形なので、
+/// `@preconcurrency` の適合にして、呼ばれたときにメインアクタの上かを実行時に確かめる
+@MainActor
 final class PassRadio: NSObject, ObservableObject {
 
     static let shared = PassRadio()
 
     /// アプリ固有のサービス（**変えると前の版と見つけ合えなくなる**）
-    static let serviceUUID = CBUUID(string: "6A3E2C1B-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    nonisolated static let serviceUUID = CBUUID(string: "6A3E2C1B-7F44-4D0B-9C3E-1B5A0D2F8E61")
     /// 版 1 の中身の特性（前のアプリが読む・ひとことまで）
-    static let characteristicUUID = CBUUID(string: "6A3E2C1C-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    nonisolated static let characteristicUUID = CBUUID(string: "6A3E2C1C-7F44-4D0B-9C3E-1B5A0D2F8E61")
     /// 版 2 の中身の特性（発・着の字つき・2026-10-16）。**版 1 と並べて出す**——前のアプリとも交換できる
-    static let characteristicV2UUID = CBUUID(string: "6A3E2C1D-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    nonisolated static let characteristicV2UUID = CBUUID(string: "6A3E2C1D-7F44-4D0B-9C3E-1B5A0D2F8E61")
     /// 版 3 の中身の特性（券面の番号つき・2026-10-17）。**版 1・2 と並べて出す**——版 2 までの前のアプリとも交換できる
-    static let characteristicV3UUID = CBUUID(string: "6A3E2C1E-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    nonisolated static let characteristicV3UUID = CBUUID(string: "6A3E2C1E-7F44-4D0B-9C3E-1B5A0D2F8E61")
 
     /// 読む特性を選ぶ: **版 3 があれば版 3、無ければ版 2、無ければ版 1**（前のアプリの端末は版 2 か 1 だけを出している）
-    static func characteristicToRead(_ uuids: [CBUUID]) -> CBUUID? {
+    nonisolated static func characteristicToRead(_ uuids: [CBUUID]) -> CBUUID? {
         if uuids.contains(characteristicV3UUID) { return characteristicV3UUID }
         if uuids.contains(characteristicV2UUID) { return characteristicV2UUID }
         if uuids.contains(characteristicUUID) { return characteristicUUID }
         return nil
     }
-    static let centralRestoreId = "photo.journey.pass.central"
-    static let peripheralRestoreId = "photo.journey.pass.peripheral"
+    nonisolated static let centralRestoreId = "photo.journey.pass.central"
+    nonisolated static let peripheralRestoreId = "photo.journey.pass.peripheral"
 
     /// 読めた端末に繋ぎ直すまでの間
-    static let retryInterval: TimeInterval = 10 * 60
+    nonisolated static let retryInterval: TimeInterval = 10 * 60
     /// 読めなかった端末に、`retryInterval` の間に試してよい回数
-    static let maxFailures = 3
+    nonisolated static let maxFailures = 3
     /// 繋いでから読み終えるまで待つ長さ（過ぎたら切る）
-    static let connectTimeout: TimeInterval = 10
+    nonisolated static let connectTimeout: TimeInterval = 10
     /// 同時に繋ぐ数
-    static let maxConnections = 3
+    nonisolated static let maxConnections = 3
 
     /// 端末ごとの記録（読めた時・読めなかった時）
     struct PeerRecord: Equatable {
@@ -92,7 +99,7 @@ final class PassRadio: NSObject, ObservableObject {
     private var retriedPayload: Data?
     /// 古い記録を最後に掃除した時（前面の重ねて受ける知らせは多いので、数秒に1回に間引く）
     private var lastPrune = Date.distantPast
-    static let pruneInterval: TimeInterval = 5
+    nonisolated static let pruneInterval: TimeInterval = 5
     /// 前面か（前面だけ同じ端末の知らせを重ねて受け、読めなかった相手を拾い直す）
     private var foreground = false
     private var connecting: [UUID: CBPeripheral] = [:]
@@ -109,7 +116,7 @@ final class PassRadio: NSObject, ObservableObject {
     @Combine.Published private(set) var powerState: CBManagerState = .unknown
 
     /// 設定の画面に「Bluetooth がオフです」を出すか。すれちがいをオンにしていて、電源が切れているときだけ
-    static func showsPowerOffNotice(enabled: Bool, state: CBManagerState) -> Bool {
+    nonisolated static func showsPowerOffNotice(enabled: Bool, state: CBManagerState) -> Bool {
         enabled && state == .poweredOff
     }
 
@@ -204,7 +211,7 @@ final class PassRadio: NSObject, ObservableObject {
     }
 
     /// 繋ぐか: 同時の数に空きがある・最近読めた端末ではない・読めなかった回数が上限に達していない
-    static func shouldConnect(_ record: PeerRecord?, connecting: Int, now: Date) -> Bool {
+    nonisolated static func shouldConnect(_ record: PeerRecord?, connecting: Int, now: Date) -> Bool {
         guard connecting < maxConnections else { return false }
         guard let record else { return true }
         if let success = record.lastSuccess, now.timeIntervalSince(success) < retryInterval { return false }
@@ -212,12 +219,12 @@ final class PassRadio: NSObject, ObservableObject {
     }
 
     /// `connectTimeout` を過ぎた接続待ち。**背景では遅らせた処理が走らないことがある**ので、知らせが来るたびに見る
-    static func staleConnections(_ started: [UUID: Date], now: Date) -> [UUID] {
+    nonisolated static func staleConnections(_ started: [UUID: Date], now: Date) -> [UUID] {
         started.filter { now.timeIntervalSince($0.value) >= connectTimeout }.map(\.key)
     }
 
     /// 古い記録を掃除する（見送りの間を過ぎたものは要らない）
-    static func pruned(_ peers: [UUID: PeerRecord], now: Date) -> [UUID: PeerRecord] {
+    nonisolated static func pruned(_ peers: [UUID: PeerRecord], now: Date) -> [UUID: PeerRecord] {
         peers.compactMapValues { record in
             var r = record
             r.failures = r.failures.filter { now.timeIntervalSince($0) < retryInterval }
@@ -271,9 +278,9 @@ final class PassRadio: NSObject, ObservableObject {
     }
 
     /// 足せなかったときに足し直すまでの間
-    static let addRetryDelay: TimeInterval = 3
+    nonisolated static let addRetryDelay: TimeInterval = 3
 
-    static func followUp(_ published: Published, alreadyRetried: Bool) -> AddFollowUp {
+    nonisolated static func followUp(_ published: Published, alreadyRetried: Bool) -> AddFollowUp {
         switch published {
         case .keep: return .none
         case .set: return .advertise
@@ -283,7 +290,7 @@ final class PassRadio: NSObject, ObservableObject {
 
     /// `didAdd` の答えを、足した順の先頭の中身の答えとして読む。**いま載せる中身の答えだけで決める**——
     /// 続けて2回変えたとき、前の中身の答えを後の中身の答えと取り違えない（2026-10-16 の読み直し）
-    static func afterAdd(pending: [Data], current: Data?, failed: Bool) -> (pending: [Data], published: Published) {
+    nonisolated static func afterAdd(pending: [Data], current: Data?, failed: Bool) -> (pending: [Data], published: Published) {
         var rest = pending
         guard !rest.isEmpty else { return (rest, .keep) }
         let added = rest.removeFirst()
@@ -330,7 +337,7 @@ final class PassRadio: NSObject, ObservableObject {
     }
 }
 
-extension PassRadio: CBCentralManagerDelegate {
+extension PassRadio: @preconcurrency CBCentralManagerDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         // 許可を尋ねるためだけに作った管理者（`requestAuthorization`）は、答えが来たら手放す
@@ -390,7 +397,7 @@ extension PassRadio: CBCentralManagerDelegate {
     }
 }
 
-extension PassRadio: CBPeripheralDelegate {
+extension PassRadio: @preconcurrency CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
@@ -421,7 +428,7 @@ extension PassRadio: CBPeripheralDelegate {
     }
 }
 
-extension PassRadio: CBPeripheralManagerDelegate {
+extension PassRadio: @preconcurrency CBPeripheralManagerDelegate {
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         if peripheral.state == .poweredOn {

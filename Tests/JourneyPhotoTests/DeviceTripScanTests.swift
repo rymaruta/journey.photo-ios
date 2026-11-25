@@ -535,7 +535,7 @@ final class FakeTripSource: DeviceTripSource, @unchecked Sendable {
     }
 
     func assets(ids: [String]) async -> any DeviceTripAssets {
-        lock.lock(); _idsLookups += ids.count; lock.unlock()
+        lock.withLock { _idsLookups += ids.count }
         let wanted = Set(ids)
         return FakeTripAssets(items: items.filter { wanted.contains($0.shot.id) }, source: self)
     }

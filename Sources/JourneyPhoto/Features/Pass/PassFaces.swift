@@ -224,7 +224,7 @@ struct PassFaceRoute: View {
     let arrow: Color
     var shadows: [PassFaceTextShadow] = []
 
-    static let maxSize = 24.5
+    nonisolated static let maxSize = 24.5
 
     var body: some View {
         let route = PassCardStyle.routeLayout(origin: face.origin, destination: face.destination,

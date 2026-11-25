@@ -225,7 +225,8 @@ enum SongStickerPainter {
     }
 
     /// 作った絵の控え（札を動かすたびに描き直さない）。数は少ないので上限は小さく
-    private static let cache: NSCache<NSString, Box> = {
+    // 2026-11-25 判断（Swift 6）: NSCache は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。中身の出し入れだけなので `nonisolated(unsafe)` にする
+    nonisolated(unsafe) private static let cache: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>()
         cache.countLimit = 24
         return cache

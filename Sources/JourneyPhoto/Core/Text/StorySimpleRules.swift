@@ -93,7 +93,7 @@ enum StorySimpleRules {
     ///
     /// - Returns: 読めなかった（時間切れ・失敗・取り消し）枚数
     @MainActor
-    static func readPicks<Item>(_ items: [Item], timeout: TimeInterval = pickLoadTimeout,
+    static func readPicks<Item: Sendable>(_ items: [Item], timeout: TimeInterval = pickLoadTimeout,  // 1件は読みの糸へ渡す（2026-11-25 Swift 6）
                                 read: @escaping (Item) async throws -> Data?,
                                 accept: (Data) async -> Void) async -> Int {
         var failed = 0

@@ -3,6 +3,7 @@ import XCTest
 
 /// 全体の再生器を指で動かす決まり（`MiniPlayerPlacement`・2026-10-28 owner「再生中の音楽自由に動かせるといいね」）。
 /// 端への寄せ・範囲に収める計算・払って消す判定
+@MainActor  // 画面とメインアクタの物を試す（2026-11-25 Swift 6）
 final class MiniPlayerPlacementTests: XCTestCase {
 
     /// iPhone 15 の安全領域の内側に近い枠
@@ -20,7 +21,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 全幅にしない（全幅だと左右へ寄せられない）。狭い枠では端の間を残して縮める
-    func testBarIsNarrowerThanScreen() {
+    func testBarIsNarrowerThanScreen() async {
         XCTAssertEqual(MiniPlayerPlacement.barWidth(container: container), 280)
         XCTAssertLessThan(MiniPlayerPlacement.barWidth(container: container), container.width - 24)
         XCTAssertEqual(MiniPlayerPlacement.barWidth(container: CGSize(width: 300, height: 600)), 276)
@@ -28,14 +29,14 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 初めは右下・タブバーのすぐ上（前の全幅のバーと同じ高さ）
-    func testInitialSpotIsBottomTrailing() {
+    func testInitialSpotIsBottomTrailing() async {
         let point = center(.initial)
         XCTAssertEqual(point.x, 390 - 12 - 140)
         XCTAssertEqual(point.y + 30, container.height - MiniPlayerPlacement.bottomReserved, "下端がタブバーの上")
     }
 
     /// 離したら、左右の近い端へ寄せる。縦は離した所
-    func testSnapsToNearestEdgeKeepingHeight() {
+    func testSnapsToNearestEdgeKeepingHeight() async {
         // 左へ少し（中央を越えない）→ 右のまま
         guard case .place(let stay) = settle(CGSize(width: -40, height: -200)) else { return XCTFail("消えた") }
         XCTAssertEqual(stay.side, .trailing)
@@ -48,7 +49,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 速く払ったら、離した所が中央の手前でも払った向きの端へ
-    func testFlingDecidesSide() {
+    func testFlingDecidesSide() async {
         guard case .place(let spot) = settle(CGSize(width: -30, height: -100),
                                              predicted: CGSize(width: -400, height: -120)) else {
             return XCTFail("消えた")
@@ -58,7 +59,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 上の見出し・下のタブバーに重ならない範囲に収める
-    func testClampsInsideHeaderAndTabBar() {
+    func testClampsInsideHeaderAndTabBar() async {
         guard case .place(let top) = settle(CGSize(width: 0, height: -2000)) else { return XCTFail("消えた") }
         XCTAssertEqual(top.height, 1)
         XCTAssertEqual(center(top).y - 30, MiniPlayerPlacement.topReserved, accuracy: 0.001, "上端が見出しの下")
@@ -75,7 +76,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 狭すぎる枠ではいちばん下に揃える（範囲が逆さにならない）
-    func testTinyContainerDoesNotInvertRange() {
+    func testTinyContainerDoesNotInvertRange() async {
         let tiny = CGSize(width: 320, height: 120)
         let range = MiniPlayerPlacement.verticalRange(container: tiny, barHeight: 60)
         XCTAssertLessThanOrEqual(range.lowerBound, range.upperBound)
@@ -83,7 +84,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 下へ素早く払って外へ出したら消す。ゆっくり・横向き・少しだけでは消さない
-    func testFlingDownDismisses() {
+    func testFlingDownDismisses() async {
         // 離した所が範囲の下端より再生器半分（30）以上外・勢い 200
         XCTAssertEqual(settle(CGSize(width: 0, height: 70), predicted: CGSize(width: 0, height: 270)), .dismiss)
         // 勢いが下限（160）に届かない
@@ -100,7 +101,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 🔴 **範囲の中で離したら、勢いがあっても止めない**（確かめ役の指摘: 下へ引き下ろしただけで止まった）
-    func testReleaseInsideRangeNeverDismisses() {
+    func testReleaseInsideRangeNeverDismisses() async {
         // 範囲の下端（再生器の下端がタブバーの上）から少しだけ下で離し、強く払った
         XCTAssertNotEqual(settle(CGSize(width: 0, height: 20), predicted: CGSize(width: 0, height: 900)), .dismiss)
         // 上の方から下端の手前まで勢いよく引き下ろした
@@ -114,20 +115,20 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 読み上げの「左の端へ」「右の端へ」は高さを変えない
-    func testAccessibilitySideMoves() {
+    func testAccessibilitySideMoves() async {
         let spot = MiniPlayerPlacement.Spot(side: .trailing, height: 0.5)
         XCTAssertEqual(MiniPlayerPlacement.moved(spot, to: .leading), .init(side: .leading, height: 0.5))
         XCTAssertEqual(MiniPlayerPlacement.moved(spot, to: .trailing), spot)
     }
 
     /// いちばん上でも、上の見出しとその下の1段（探すの入力欄など）にかぶらない
-    func testTopLeavesHeaderAndFirstRow() {
+    func testTopLeavesHeaderAndFirstRow() async {
         // 探すの入力欄の下端は安全領域の上から 154pt（run 736 の実測）
         XCTAssertGreaterThanOrEqual(MiniPlayerPlacement.topReserved, 154, "探すの入力欄にかぶる")
     }
 
     /// 読み上げの「上へ移す／下へ移す」は範囲の中で動く
-    func testAccessibilityMoves() {
+    func testAccessibilityMoves() async {
         var spot = MiniPlayerPlacement.Spot.initial
         spot = MiniPlayerPlacement.moved(spot, up: false)
         XCTAssertEqual(spot.height, 0, "いちばん下より下へは行かない")
@@ -139,7 +140,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     }
 
     /// 置き場所は再生の間覚える（同じ1つの入れ物）
-    func testPlacementIsShared() {
+    func testPlacementIsShared() async {
         let store = MiniPlayerPlacementStore.shared
         let before = store.spot
         defer { store.spot = before }
@@ -164,7 +165,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     /// ぼかし無し・黒 20〜35%・白 10〜15% の縁・曲名と歌手名と停止ボタンに黒 60% 前後の縁の影と後光・
     /// 置いている間は外の影なし（スクロール中に軽く）・曲選びの中は不透明の面のまま。
     /// 停止は 44pt・読み上げに移動の代わりの操作・**長押しせずに引けば動く**（owner 実機で動かせなかった）
-    func testBarIsGlassAndAccessible() throws {
+    func testBarIsGlassAndAccessible() async throws {
         let bar = try source("Sources/JourneyPhoto/Features/Common/MiniPlayerBar.swift")
         XCTAssertTrue(bar.contains("shape.fill(Color.black.opacity(Self.glassTint))"), "全体のバーの地が薄い黒でない")
         XCTAssertTrue(bar.contains("shape.strokeBorder(Color.white.opacity(Self.glassBorder), lineWidth: 1)"),

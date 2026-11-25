@@ -231,8 +231,9 @@ enum PreviewBackend {
                       signinMethods: String? = nil,
                       followNone: Bool = false,
                       commentNotice: Bool = false,
-                      publicFeed: () async -> [[String: Any]] = { [] },
-                      publicLikes: (String) async -> Int?) async -> Reply {
+                      // 2026-11-25（Swift 6）: 呼んだ側（試験はメインアクタ）から別の糸へ渡すので @Sendable
+                      publicFeed: @Sendable () async -> [[String: Any]] = { [] },
+                      publicLikes: @Sendable (String) async -> Int?) async -> Reply {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
         let uid = userId ?? "preview"
         let stamp = ISO8601DateFormatter().string(from: now)
@@ -821,7 +822,10 @@ enum PreviewBackend {
 
 #if DEBUG
 /// 見本の通信の答え手（`PreviewBackend`）。見本の鍵・見本の置き場の要求だけを引き受ける
-final class PreviewBackendProtocol: URLProtocol {
+///
+/// 2026-11-25 判断（Swift 6）: 答えを作る `Task` が自分（`self`）を弱くつかむ。URLProtocol は Sendable と書かれていないが、
+/// `stopped`・`client` を触るのは `startLoading` を受けた糸だけ（`HomeLoop` で戻してから触る・上の注記）なので @unchecked Sendable
+final class PreviewBackendProtocol: URLProtocol, @unchecked Sendable {
 
     private var work: Task<Void, Never>?
     /// 止められた（`stopLoading`）。読み書きは `startLoading` を受けたスレッドだけ

@@ -5,16 +5,16 @@
 // 本物で Sendable と分かっている型だけを並べる。分からない型は足さない（本物で出る警告を隠さないため）
 extension Font: @unchecked Sendable {}
 extension Font.Weight: @unchecked Sendable {}
-extension Font.TextStyle: Sendable {}
+extension Font.TextStyle: @unchecked Sendable {}
 extension Color: @unchecked Sendable {}
 extension UIImageShim: @unchecked Sendable {}
 extension UIColorShim: @unchecked Sendable {}
-extension DynamicTypeSize: Sendable {}
-extension ColorScheme: Sendable {}
-extension ScenePhase: Sendable {}
-extension ContentMode: Sendable {}
-extension Axis: Sendable {}
-extension TextAlignment: Sendable {}
+extension DynamicTypeSize: @unchecked Sendable {}
+extension ColorScheme: @unchecked Sendable {}
+extension ScenePhase: @unchecked Sendable {}
+extension ContentMode: @unchecked Sendable {}
+extension Axis: @unchecked Sendable {}
+extension TextAlignment: @unchecked Sendable {}
 extension Alignment: @unchecked Sendable {}
 extension HorizontalAlignment: @unchecked Sendable {}
 extension VerticalAlignment: @unchecked Sendable {}
@@ -22,4 +22,8 @@ extension Edge: @unchecked Sendable {}
 extension Animation: @unchecked Sendable {}
 extension Angle: @unchecked Sendable {}
 extension EdgeInsets: @unchecked Sendable {}
-extension Font.Design: Sendable {}
+extension Font.Design: @unchecked Sendable {}
+
+// Apple の Dispatch では Sendable（Linux の Dispatch では書かれていない）。模型の側でそろえる
+import Dispatch
+extension DispatchSpecificKey: @unchecked @retroactive Sendable {}

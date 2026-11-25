@@ -205,7 +205,8 @@ private struct TravelRouteCanvas: View, Animatable {
     let haloScale: Double
     let haloOpacity: Double
 
-    var animatableData: Double {
+    // 動きの値は描く糸の外からも読み書きされる（`Animatable` はアクタに属さない約束・2026-11-25 Swift 6）
+    nonisolated var animatableData: Double {
         get { progress }
         set { progress = newValue }
     }

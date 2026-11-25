@@ -309,9 +309,9 @@ struct StoryRepliesSheet: View {
     /// 顔（板 36）
     static let avatarSize: CGFloat = 36
     /// シートの上端（板の画面 844 のうち上から 160）と、それをシートの高さの割合にしたもの
-    static let boardTop: CGFloat = 160
-    static let boardScreenHeight: CGFloat = 844
-    static let detentFraction: CGFloat = 1 - boardTop / boardScreenHeight
+    nonisolated static let boardTop: CGFloat = 160
+    nonisolated static let boardScreenHeight: CGFloat = 844
+    nonisolated static let detentFraction: CGFloat = 1 - boardTop / boardScreenHeight
 }
 
 /// 返信の「…」に何を出すか（画面を持たない決まり・テストで見張る）。2026-10-16

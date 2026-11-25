@@ -391,7 +391,7 @@ final class ProfileQRTests: XCTestCase {
 
     @MainActor
     func testScanFlowOutcomes() async {
-        let now: () -> String? = { "A" }
+        let now: @MainActor () -> String? = { "A" }
         let open = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid,
                                                    source: FakeSource(.success("someone")), currentCode: now)
         XCTAssertEqual(open, .open("someone"))

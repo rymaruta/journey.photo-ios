@@ -11,6 +11,9 @@ import Foundation
 /// - 端末の中だけの旅は iPhone の印、自分だけの旅は鍵の印（色だけで言わない）
 enum TripBookshelf {
 
+    /// 棚の座標の名前（`TripBookshelfView`）。寸法を測る閉包（@Sendable）からも読むので、総称の画面の外に置く（2026-11-25 Swift 6）
+    static let coordinateSpace = "trips.bookshelf"
+
     /// 棚の1冊
     struct Book: Identifiable, Hashable {
         enum Source {

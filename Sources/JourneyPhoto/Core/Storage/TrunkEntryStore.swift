@@ -49,7 +49,12 @@ final class TrunkEntryStore: ObservableObject {
     /// （マイページの札 `TrunkProfileChip` は撤去済み・2026-11-22 に部品も消した。試験が知らせを受けたかをこれで見る）
     @Published private(set) var coinsChanged = 0
     /// 硬貨が変わった知らせの見張り
-    private var coinsObserver: NSObjectProtocol?
+    /// deinit（アクタに属さない）からも外すので、ロックの箱に置く（2026-11-25 Swift 6）
+    private let coinsObserverBox = Locked<NSObjectProtocol?>(nil)
+    private var coinsObserver: NSObjectProtocol? {
+        get { coinsObserverBox.value }
+        set { coinsObserverBox.value = newValue }
+    }
     private let center: NotificationCenter
 
     /// 2026-10-18 判断: 硬貨が変わった知らせ（はじめての硬貨・`TrunkWelcome` が流す）は**ここで受ける**。
@@ -64,7 +69,7 @@ final class TrunkEntryStore: ObservableObject {
     }
 
     deinit {
-        if let coinsObserver { center.removeObserver(coinsObserver) }
+        if let observer = coinsObserverBox.value { center.removeObserver(observer) }
     }
 
     /// トランクの中身が変わったかもしれない（トランクの画面から戻った・投稿した）。次の `refresh` で読み直す

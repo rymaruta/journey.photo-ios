@@ -449,7 +449,7 @@ struct StoryViewerView: View {
     /// 帯（足元の返信欄・`StoryViewerMetrics.footerHeight`。下の札・道具の帯と同じく大きくできない帯）だけ。そこで押せる字には
     /// 長押しで大きく見せる仕組み（`accessibilityShowsLargeContentViewer`）を付けた。「…」のシートと削除の確認は
     /// ボタンなので上限を外した（`menuSheet`・`deleteConfirm`）
-    static let chromeTypeLimit = DynamicTypeSize.xxLarge
+    nonisolated static let chromeTypeLimit = DynamicTypeSize.xxLarge
 
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
     private static let footerHeight: CGFloat = StoryViewerMetrics.footerHeight

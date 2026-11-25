@@ -30,8 +30,13 @@ final class TrunkWelcomeTests: XCTestCase {
     private struct Boom: Error {}
 
     /// 呼んだ回数を数える口
-    private final class Counter {
-        var calls = 0
+    /// 並べて走らせる仕事からも数えるので、数はロックの箱に置く（2026-11-25 Swift 6）
+    private final class Counter: Sendable {
+        private let box = Locked(0)
+        var calls: Int {
+            get { box.value }
+            set { box.value = newValue }
+        }
     }
 
     // MARK: 呼ぶ条件
@@ -58,8 +63,9 @@ final class TrunkWelcomeTests: XCTestCase {
     /// granted=false（既に配った・対象外）: 案内は出さず、その人では以後呼ばない（次の起動でも）
     func testNotGrantedMarksDoneAndStaysQuiet() async {
         let welcome = gate()
-        var posted = 0
-        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { _ in posted += 1 }
+        // 知らせの受け手は別の糸から呼ばれうる（@Sendable）ので、数はロックの箱に入れる（2026-11-25 Swift 6）
+        let posted = Locked(0)
+        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { _ in posted.withLock { $0 += 1 } }
         defer { center.removeObserver(token) }
         let grant = await welcome.claim(userId: "u1", available: true) {
             TrunkWelcomeResult(granted: false, added: 0, coins: 5)
@@ -67,7 +73,7 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertNil(grant)
         XCTAssertFalse(welcome.hasPending, "配っていないのに案内を出す")
         XCTAssertEqual(welcome.requests, 0)
-        XCTAssertEqual(posted, 0, "配っていないのに硬貨の読み直しを頼んだ")
+        XCTAssertEqual(posted.value, 0, "配っていないのに硬貨の読み直しを頼んだ")
         XCTAssertTrue(welcome.isDone("u1"), "granted=false で印を残していない")
         // 次の起動（新しい係・同じ端末の覚え）でも呼ばない
         XCTAssertFalse(gate().shouldClaim(userId: "u1", available: true), "次の起動でまた呼ぶ")
@@ -78,9 +84,10 @@ final class TrunkWelcomeTests: XCTestCase {
     /// granted=true: 案内を1回出す・印を残す・硬貨の数の読み直しを頼む（増えたあとの数を添える）
     func testGrantedPresentsOnceAndNotifiesCoins() async {
         let welcome = gate()
-        var coins: [Int] = []
+        // 知らせの受け手は別の糸から呼ばれうる（@Sendable）ので、数はロックの箱に入れる（2026-11-25 Swift 6）
+        let coins = Locked<[Int]>([])
         let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { note in
-            if let n = note.userInfo?["coins"] as? Int { coins.append(n) }
+            if let n = note.userInfo?["coins"] as? Int { coins.withLock { $0.append(n) } }
         }
         defer { center.removeObserver(token) }
         let grant = await welcome.claim(userId: "u1", available: true) {
@@ -89,7 +96,7 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertEqual(grant, TrunkWelcome.Grant(added: 10, coins: 12))
         XCTAssertEqual(welcome.requests, 1)
         XCTAssertTrue(welcome.isDone("u1"))
-        XCTAssertEqual(coins, [12], "硬貨の数を見せている画面に知らせていない")
+        XCTAssertEqual(coins.value, [12], "硬貨の数を見せている画面に知らせていない")
         XCTAssertEqual(welcome.consume(), TrunkWelcome.Grant(added: 10, coins: 12))
         XCTAssertNil(welcome.consume(), "案内を二度出す")
         XCTAssertFalse(welcome.shouldClaim(userId: "u1", available: true), "配ったあとにまた呼ぶ")
@@ -248,16 +255,18 @@ final class TrunkWelcomeTests: XCTestCase {
     /// 待つ間に人が替わった: いまの人には出さず知らせも流さない。配った人が次に開いたときに出す
     func testSwitchedUserGetsNoNoticeButOwnerSeesItLater() async {
         let welcome = gate()
-        var notes: [[AnyHashable: Any]] = []
+        // 知らせの受け手は別の糸から呼ばれうる（@Sendable）ので、数はロックの箱に入れる（2026-11-25 Swift 6）
+        let notes = Locked<[[AnyHashable: Any]]>([])
         let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { note in
-            notes.append(note.userInfo ?? [:])
+            let info = note.userInfo ?? [:]
+            notes.withLock { $0.append(info) }
         }
         defer { center.removeObserver(token) }
         _ = await welcome.claim(userId: "A", available: true) {
             welcome.noteUser("B")
             return TrunkWelcomeResult(granted: true, added: 10, coins: 10)
         }
-        XCTAssertTrue(notes.isEmpty, "人が替わったあとに前の人の硬貨の知らせを流した")
+        XCTAssertTrue(notes.value.isEmpty, "人が替わったあとに前の人の硬貨の知らせを流した")
         XCTAssertFalse(welcome.restore(userId: "B"), "次の人に前の人の案内を出す")
         XCTAssertFalse(welcome.hasPending)
         // A さんが入り直した
@@ -266,8 +275,8 @@ final class TrunkWelcomeTests: XCTestCase {
         // 知らせには配った人が入る
         let other = gate()
         _ = await other.claim(userId: "C", available: true) { TrunkWelcomeResult(granted: true, added: 10, coins: 15) }
-        XCTAssertEqual(notes.last?["userId"] as? String, "C")
-        XCTAssertEqual(notes.last?["coins"] as? Int, 15)
+        XCTAssertEqual(notes.value.last?["userId"] as? String, "C")
+        XCTAssertEqual(notes.value.last?["coins"] as? Int, 15)
     }
 
     func testServicePostsToWelcomeAndThrowsOnMissingRoute() async throws {

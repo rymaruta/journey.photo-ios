@@ -124,7 +124,7 @@ struct AskEntryButton: View {
     /// 右の枠は ✦ の字つき 約90 ＋ メッセージ、お知らせ、メニューの 44×3 ＝ 約222。左右の余白 16×2 と枠の間 約16 を引くと、
     /// ロゴ（絵 19 ＋ 間 8 ＋「Journey Photo」22pt 約150、縮めて 0.8 で約147）に残るのは 375pt の iPhone SE で約105、
     /// 390pt で約120 しかなく、ロゴが切れる。✦ だけ（44）なら 375pt でも約151 残る。400pt 以上（402、430、440）は字つき
-    static let labelMinWindowWidth: CGFloat = 400
+    nonisolated static let labelMinWindowWidth: CGFloat = 400  // 幅の決まりは画面の外の計算（`iconOnly`）でも読む（2026-11-25 Swift 6）
 
     /// 字を出さず ✦ だけにするか（大きな字のとき、狭い iPhone のとき）。窓の幅が読めなければ字を出す
     nonisolated static func iconOnly(largeText: Bool, windowWidth: CGFloat? = nil) -> Bool {

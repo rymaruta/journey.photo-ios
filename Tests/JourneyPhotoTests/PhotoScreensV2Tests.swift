@@ -204,7 +204,10 @@ final class PhotoScreensV2Tests: XCTestCase {
     func testEditPhotoButtons() throws {
         let edit = try source("Features/Profile/EditPhotoView.swift")
         let header = member("private var photoHeader", in: edit)
-        XCTAssertEqual(header.components(separatedBy: ".jpPillButton(.outline)").count - 1, 2)
+        // 写真選びの見出しは `JPPillPickerLabel`（中身は `.jpPillButton(style)`・2026-11-25 Swift 6）
+        XCTAssertEqual(header.components(separatedBy: ".jpPillButton(.outline)").count - 1
+                       + header.components(separatedBy: "JPPillPickerLabel(").count - 1, 2)
+        XCTAssertTrue(header.contains("style: .outline)"))
         XCTAssertTrue(header.contains(".accessibilityIdentifier(\"editPhoto.recolor\")"))
         XCTAssertFalse(header.contains("WebTheme.accent"), "写真のある画面の欄に真鍮のボタン")
         XCTAssertEqual(JPPillStyle.outline.height, WebTheme.minTapTarget)
