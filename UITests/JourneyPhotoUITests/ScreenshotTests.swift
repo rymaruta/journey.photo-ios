@@ -8684,20 +8684,7 @@ final class ScreenshotTests: JPUITestCase {
     /// 「ホーム」をもう一度押すと頭へ戻る、を確かめる。
     /// 🔴 写真が出ない・送れない・続きを読まない・頭へ戻らないときは**落とす**（黙って通らない）
     func testScrollsHomeSingleFeed() {
-        scrollsHomeSingleFeed(noLift: false)
-    }
-
-    /// 事実取り（2026-11-12・run 1171）: 写真の札の「手に取って運ぶ」の身振り（`HomeMosaic.liftGesture`）を外した版。
-    /// 外した版だけ送れれば、身振りが ScrollView の送りを奪っている（`-JPPreviewNoLift`・UI テストのときだけ）。
-    /// 前の `testSwipesHomeFeedTabsWithoutLift` を置き換えた
-    func testScrollsHomeSingleFeedWithoutLift() {
-        scrollsHomeSingleFeed(noLift: true)
-    }
-
-    private func scrollsHomeSingleFeed(noLift: Bool) {
         let app = XCUIApplication.jp()
-        if noLift { app.launchArguments += ["-JPPreviewNoLift", "YES"] }
-        XCTContext.runActivity(named: "ホームの1本の並びを送る: noLift=\(noLift)") { _ in }
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -11035,9 +11022,8 @@ final class ScreenshotTests: JPUITestCase {
     /// 地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
     ///
     /// 2026-11-13 判断: 前の `testCapturesLiftAndPinch` から「手に取って運ぶ」の段（右の半円へ運んで「取り消す」を撮る）を消した。
-    /// 1.1.84 からホームの札の身振りを使わない（`PhotoLift.homeGestureEnabled = false`・fb5c8d3c3）ので、
-    /// その段は毎回落ちていた（run 1201「運んだ後の「取り消す」 が出ない」）。身振りを戻すときは、消した段も戻す
-    /// （`YubiReviewTests.testHomeLiftIsOffIn1184` の注記）
+    /// 1.1.84 からホームの札の身振りを使わず、2026-11-25（札 #733）に身振りのコードも消した。
+    /// その段は毎回落ちていた（run 1201「運んだ後の「取り消す」 が出ない」）
     func testCapturesPinchToMap() {
         let app = launchTrunk([])
         let photo = app.buttons["feed.photo"].firstMatch
