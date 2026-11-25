@@ -37,3 +37,17 @@ description: photo-gallery（Web と API）の変更を staging → 本番に出
 ## 本番の DB・新しい GSI・有料サービス
 
 owner の明示の承認が要る。先に影響と費用を書いて確認を取る。
+
+## 部品の版の上げ（dependabot の PR・2026-11-25）
+
+journey.photo-web は dependabot が毎週月曜に develop 向けの PR を出す（小さい版はまとめて1本、大きい版は部品ごと）。
+
+- 小さい版のまとめ（npm-minor-patch）と Actions のまとめ: Checks と Stack size が緑なら develop へマージしてよい。
+  本番へは次の本番の反映にまとめて載せる。部品の上げだけのために本番を出さない
+- 大きい版の上げ: 公式のリリースノートの「壊れる点」を読み、当たる所を探してからマージする。
+  落ちたら古い版に戻さず、同じ枝でこちらを直す。時間がかかるものは札にして PR を残す
+- next・react・eslint-config-next・tailwindcss・serverless・esbuild・@aws-sdk の大きい版は、Checks が緑でも
+  本番の build と実ブラウザのスモーク（Deploy Site の段）を見てから本番に出す
+- TypeScript は2本立て（`typescript` = 6、`@typescript/native` = 7。CI の `tsc` は 7）。
+  7 の JS の API が出て typescript-eslint と Next が対応したら、2本立てをやめる
+- 版を止めるときは ignore に入れ、理由と外す条件を dependabot.yml に書く
