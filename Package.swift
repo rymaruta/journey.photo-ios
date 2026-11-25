@@ -76,12 +76,14 @@ let package = Package(
                 "AuthenticationServices", "CryptoKit",
             ],
             path: "Sources/JourneyPhoto",
-            exclude: ["Resources", "Assets.xcassets"]
+            exclude: ["Resources", "Assets.xcassets"],
+            swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
         .testTarget(
             name: "JourneyPhotoTests",
             dependencies: ["JourneyPhoto"],
-            path: "Tests/JourneyPhotoTests"
+            path: "Tests/JourneyPhotoTests",
+            swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
     ]
 )
