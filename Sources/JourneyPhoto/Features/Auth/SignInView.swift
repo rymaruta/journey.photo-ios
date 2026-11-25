@@ -606,6 +606,9 @@ struct SignInView: View {
         .disabled(auth.isWorking || appleNonce != nil)
         .opacity(auth.isWorking || appleNonce != nil ? 0.4 : 1)
         .accessibilityIdentifier("signin.apple")
+        // 2026-11-25 判断（札 #730・Mac run 1808）: Apple のボタンの字は作ったときの値のまま残る（UIKit のボタンを包んだ部品で、
+        // 字を後から替えない）。登録とログインを切り替えたら作り直して、字を「Appleで登録」⇄「Appleでサインイン」に替える
+        .id(mode == .signUp)
     }
 
     /// 「Google でログイン」（札 #715・2026-11-23）。Apple のボタンの下（札の決まり: Apple が上）。
