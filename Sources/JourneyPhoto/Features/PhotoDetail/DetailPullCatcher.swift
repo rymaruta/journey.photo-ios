@@ -61,9 +61,10 @@ final class PhotoDetailPullHolder: ObservableObject {
 /// - `moves`: 最後の指で量が変わった回数（`.changed` で縦の量が前と違った回）
 /// - `moveAgeMs`: 最後に量が変わってから離すまでの時間（ms）。止めてから離したのに速さが残っていれば、ここが大きく `endVy` も大きい
 /// - `peakVy`: 最後の指で動いている間の縦の速さの最大
+@MainActor  // 指の操作の受け手（メインスレッド）からだけ書く（2026-11-25 Swift 6）
 final class DetailPullProbe: ObservableObject {
     static let shared = DetailPullProbe()
-    static let identifier = "detail.pull.probe"
+    nonisolated static let identifier = "detail.pull.probe"
 
     @Published private(set) var value = "began=0;ended=0;closes=0;cancels=0;pullMax=0;dropWhilePull=0;dropMax=0"
 
@@ -158,6 +159,8 @@ struct DetailPullFollow<Content: View>: View {
         case photo
         /// 写真の下（説明・コメント・入力欄）: 薄れて消える
         case rest
+        /// 画面まるごと（AI に頼むの全画面・2026-11-25 判断）: 縮めず、下へだけ指に付いて動く（シートを引く手ざわり）
+        case screen
     }
 
     @ObservedObject var drag: PhotoDetailPullDrag
@@ -179,6 +182,8 @@ struct DetailPullFollow<Content: View>: View {
                 .offset(x: shift.x, y: shift.y)
         case .rest:
             content.opacity(PhotoDetailPull.restOpacity(dy: dy))
+        case .screen:
+            content.offset(y: PhotoDetailPull.offset(dx: dx, dy: dy).y)
         }
     }
 }
@@ -360,7 +365,8 @@ struct DetailPullPanHost: UIViewRepresentable {
                     lastMoveY = nil
                     if PreviewSession.pullProbe { DetailPullProbe.shared.pullBegan() }
                 }
-                if move.y != lastMoveY {
+                // 1pt 未満の揺れは動きに数えない（止めて離した指に古い速さを足さない・`PhotoDetailPull.movedEnough`）
+                if PhotoDetailPull.movedEnough(from: lastMoveY.map(Double.init), to: Double(move.y)) {
                     lastMoveY = move.y
                     lastMoveTime = CACurrentMediaTime()
                     if PreviewSession.pullProbe { DetailPullProbe.shared.moved(velocityY: Double(pan.velocity(in: nil).y)) }

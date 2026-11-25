@@ -81,7 +81,8 @@ final class StoryUploadCenter: ObservableObject {
     }
 
     /// 1本を送る手順。2つ目の引数で「上げ終えた画像」を係に覚えさせる（nil で忘れる）
-    typealias Send = (Job, @escaping @MainActor (StoryService.UploadedMedia?) -> Void) async throws -> Void
+    // 控えに書く口は送る糸へ渡すので @Sendable（2026-11-25 Swift 6）
+    typealias Send = (Job, @escaping @MainActor @Sendable (StoryService.UploadedMedia?) -> Void) async throws -> Void
 
     enum Phase: Equatable {
         case idle

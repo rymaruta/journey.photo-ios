@@ -79,7 +79,7 @@ struct AskWideSpotCard: View {
                     .accessibilityIdentifier("search.ask.spot")
                     if let region = spot.regionLabel {
                         Text(region)
-                            .font(.system(size: 13))
+                            .jpSystemFont(13, relativeTo: .footnote)
                             .foregroundStyle(WebTheme.text2)
                             .lineLimit(1)
                     }
@@ -92,7 +92,7 @@ struct AskWideSpotCard: View {
                                 .padding(.bottom, 2)
                             ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                                 Text(line)
-                                    .font(.system(size: 14))
+                                    .jpSystemFont(14, relativeTo: .subheadline)
                                     .foregroundStyle(WebTheme.text)
                                     .lineLimit(2)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -437,7 +437,7 @@ struct AskActsRow: View {
                 if act == .openPlan {
                     // 主ボタン（写真の無い画面: 真鍮の塗りに墨）
                     Text(act.label)
-                        .font(.system(size: 15, weight: .semibold))
+                        .jpSystemFont(15, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(WebTheme.accentText)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .background(WebTheme.accentFill, in: Capsule())
@@ -445,10 +445,10 @@ struct AskActsRow: View {
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: act.systemImage)
-                            .font(.system(size: 14, weight: .semibold))
+                            .jpSystemFont(14, weight: .semibold, relativeTo: .subheadline)
                             .accessibilityHidden(true)
                         Text(act.label)
-                            .font(.system(size: 14, weight: .semibold))
+                            .jpSystemFont(14, weight: .semibold, relativeTo: .subheadline)
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
                     }
@@ -505,7 +505,7 @@ struct AskFoldRow: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(question)
-                        .font(.system(size: 14, weight: .semibold))
+                        .jpSystemFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(1)
                     Text(summary)
@@ -515,7 +515,7 @@ struct AskFoldRow: View {
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 13, weight: .semibold))
+                    .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
             }
@@ -621,7 +621,7 @@ struct AskActFlow: ViewModifier {
         let text = links.map { "\($0.name) \($0.url.absoluteString)" }.joined(separator: "\n")
         let actions: [SendSheetAction] = links.count == 1 ? [.copyLink(links[0].url), .otherAppsText(text)] : [.otherAppsText(text)]
         let what = Text(AskShareLinks.what(links.map(\.name)))
-            .font(.system(size: 13))
+            .jpSystemFont(13, relativeTo: .footnote)
             .foregroundStyle(WebTheme.text2)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)

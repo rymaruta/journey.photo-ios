@@ -66,6 +66,9 @@ enum StoryComposerSong {
 
     /// この画面が鳴らした回を持つ係（作る画面の `@StateObject`）。**画面が消えたら（どの道で閉じても）自分の回を止める**
     /// ——カメラを開いている間は onDisappear で止めないので、そのまま外から閉じられても鳴り残らないように
+    ///
+    /// 2026-11-25（Swift 6）: 全体の再生器（メインアクタ）を触るのでメインアクタに置く
+    @MainActor
     final class Owner: ObservableObject {
         /// この画面が鳴らした回（`MusicPreviewPlayer.session`）と中身
         private(set) var session: Int?
@@ -74,7 +77,21 @@ enum StoryComposerSong {
 
         init(player: MusicPreviewPlayer = .shared) { self.player = player }
 
-        deinit { stop() }
+        /// 消えるときは `stop()` と同じく、自分の回だけ止める。deinit はアクタに属さないので、
+        /// メインスレッドならその場で、ほかの糸ならメインアクタへ渡して止める（2026-11-25 Swift 6）
+        deinit {
+            let player = player
+            let session = session
+            let stopMine: @MainActor @Sendable () -> Void = {
+                guard session != nil, session == player.session, player.playingURL != nil else { return }
+                player.stop()
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { stopMine() }
+            } else {
+                Task { @MainActor in stopMine() }
+            }
+        }
 
         /// いま鳴っているのがこの画面の鳴らした回か（見る画面の `ownsSong` と同じ見分け）
         var owns: Bool {

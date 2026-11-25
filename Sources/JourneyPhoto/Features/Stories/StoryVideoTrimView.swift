@@ -600,7 +600,12 @@ final class StoryTrimPlayback: ObservableObject {
 
     private var rangeStart: Double
     private var rangeEnd: Double
-    private var observer: Any?
+    /// 時刻の見張りの札。deinit（アクタに属さない）からも外すので、ロックの箱に置く（2026-11-25 Swift 6）
+    private let observerBox = Locked<Any?>(nil)
+    private var observer: Any? {
+        get { observerBox.value }
+        set { observerBox.value = newValue }
+    }
 
     private let url: URL
 
@@ -614,7 +619,7 @@ final class StoryTrimPlayback: ObservableObject {
     }
 
     deinit {
-        if let observer { player.removeTimeObserver(observer) }
+        if let observer = observerBox.value { player.removeTimeObserver(observer) }
     }
 
     /// 画面が出たとき: 範囲の頭へ置いて鳴らし始める。見張りは 1 つだけ

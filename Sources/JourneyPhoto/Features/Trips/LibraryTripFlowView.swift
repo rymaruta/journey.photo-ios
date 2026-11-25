@@ -137,7 +137,8 @@ final class LibraryTripModel: ObservableObject {
     }
 
     /// ライブラリを読んで旅を探す。**一度だけ**（一覧へ戻るたびに読み直さない）
-    func load(myPhotos: @escaping () async -> [Photo]) async {
+    // 自分の投稿は旅を探すのと並べて読む（`async let`・別の仕事）ので @Sendable（2026-11-25 Swift 6）
+    func load(myPhotos: @escaping @Sendable () async -> [Photo]) async {
         guard !loaded, !isLoading, PhotoLibrary.canRead(status) else { return }
         isLoading = true
         async let posted = myPhotos()

@@ -214,7 +214,7 @@ struct StoryInsightsView: View {
     nonisolated static var likedLabel: String { L("いいねしました", "Liked") }
     nonisolated static var repliedLabel: String { L("返信しました", "Replied") }
     /// 返信した人の印。閲覧画面の自分の足元の返信の丸と同じ記号
-    static let replySymbol = "message"
+    nonisolated static let replySymbol = "message"
 
     /// 3つの数を1枚の升目で（v2: 縁は白 8%・角 14・升の間も白 8% の線・数は SF 300 の 28）
     private var summary: some View {
@@ -352,7 +352,7 @@ struct StoryInsightsView: View {
     }
 
     /// 行（板 60）と顔（板 40）
-    static let rowHeight: CGFloat = 60
+    nonisolated static let rowHeight: CGFloat = 60
     static let avatarSize: CGFloat = 40
 
     // MARK: - 数え方

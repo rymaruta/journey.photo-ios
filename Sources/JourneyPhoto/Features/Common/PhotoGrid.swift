@@ -239,7 +239,7 @@ struct PhotoFrame: View {
     var corner: CGFloat = 12
 
     /// 縦横比の分からない写真は、この比（長い辺 ÷ 短い辺）までの形と見込んで読む（上限の 2048px で読まない）
-    static let assumedRatioLimit: CGFloat = 2
+    nonisolated static let assumedRatioLimit: CGFloat = 2
 
     var body: some View {
         Color.clear

@@ -244,7 +244,7 @@ final class OfficialSpotIndexTests: XCTestCase {
         let start = Date()
         let value: Int? = await AsyncTimeout.firstWithin(seconds: 0.05) {
             // 取り消しに応じない遅い処理（地図の検索の代わり）
-            await Task.detached { Thread.sleep(forTimeInterval: 1.0) }.value
+            await Task.detached { blockThread(1.0) }.value
             return 1
         }
         XCTAssertNil(value)
@@ -281,7 +281,7 @@ final class OfficialSpotIndexTests: XCTestCase {
     func testFirstWithinStopsWhenCancelled() async {
         let task = Task { () -> Int? in
             await AsyncTimeout.firstWithin(seconds: 5) {
-                await Task.detached { Thread.sleep(forTimeInterval: 1.0) }.value
+                await Task.detached { blockThread(1.0) }.value
                 return 1
             }
         }
@@ -293,3 +293,9 @@ final class OfficialSpotIndexTests: XCTestCase {
     }
 }
 
+
+
+/// 取り消しに応じない遅い処理の代わりに、糸を止める（2026-11-25 Swift 6: 非同期の中で `Thread.sleep` を直に呼べない）
+private func blockThread(_ seconds: TimeInterval) {
+    Thread.sleep(forTimeInterval: seconds)
+}

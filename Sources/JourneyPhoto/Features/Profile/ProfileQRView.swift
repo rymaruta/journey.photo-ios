@@ -1,4 +1,6 @@
-import AVFoundation
+// 2026-11-25 判断（Swift 6）: AVFoundation の撮影の型（`AVCaptureSession` など）は Sendable と書かれていない。
+// 撮影の場は専用の列でだけ触る決まりで使っている。外の部品が対応するまで @preconcurrency で読む
+@preconcurrency import AVFoundation
 import CoreImage
 import SwiftUI
 import UIKit

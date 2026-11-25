@@ -63,7 +63,7 @@ final class HomeFeedPagingTests: XCTestCase {
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: nil),
                             session: session,
-                            beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
+                            beforeRequest: gates.map { gates in { @Sendable (request: URLRequest) async in await gates.wait(for: request) } })
         lastGallery = gallery
         let model = GalleryViewModel(gallery: gallery, feed: PublicFeedService(api: api))
         return model

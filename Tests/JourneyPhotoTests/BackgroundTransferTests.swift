@@ -339,12 +339,15 @@ final class BackgroundTransferTests: XCTestCase {
             """),
             .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
         ]
-        var heldAtSave: Bool?
+        // 要求の手前（別の糸・@Sendable）から読むので、見る口はメインアクタの閉包に、答えはロックの箱に（2026-11-25 Swift 6）
+        let heldAtSave = Locked<Bool?>(nil)
+        let holding: @MainActor @Sendable () -> Bool = { [unowned self] in self.begun.count > self.ended.count }
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: "t"), session: session,
-                            beforeRequest: { [unowned self] request in
+                            beforeRequest: { request in
                                 guard request.url?.path == "/upload/save" else { return }
-                                await MainActor.run { heldAtSave = self.begun.count > self.ended.count }
+                                let held = await holding()
+                                heldAtSave.value = held
                             })
         let transfer = GatedTransfer()
         let model = UploadViewModel(uploads: UploadService(api: api, transfer: transfer),
@@ -367,7 +370,7 @@ final class BackgroundTransferTests: XCTestCase {
 
         XCTAssertTrue(model.items.isEmpty, "送り終えていない")
         XCTAssertNil(model.errorMessage)
-        XCTAssertEqual(heldAtSave, true, "猶予を取り直さずに save を送った（実機では送る前に止められる）")
+        XCTAssertEqual(heldAtSave.value, true, "猶予を取り直さずに save を送った（実機では送る前に止められる）")
         XCTAssertEqual(transfer.keys, ["uploads/u1/abc.jpg"], "本体を置き直した")
         let paths = ScriptedProtocol.calls.map(\.path)
         XCTAssertEqual(paths.filter { $0 == "/upload/presigned-url" }.count, 1)

@@ -22,104 +22,105 @@ import UIKit
 @MainActor
 enum WebTheme {
 
-    static let background = Color.black
-    static let foreground = Color.white
+    nonisolated static let background = Color.black
+    nonisolated static let foreground = Color.white
 
     /// 本文。`--fg`
-    static let text = Color.white.opacity(0.95)
+    nonisolated static let text = Color.white.opacity(0.95)
     /// 副次の文字。`--muted`
-    static let muted = Color.white.opacity(0.82)
+    nonisolated static let muted = Color.white.opacity(0.82)
     /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`。
     ///
     /// 🔴 **白の透過のまま持つ。** 写真の上（ストーリー・写真の詳細）でも使っていて、不透明の灰にすると
     /// 明るい写真の上で沈む（2026-10-14 のレビュー: 白地＋黒 65% の影で 4.56 → 3.53）。
     /// 黒地の上の v2 の灰は `text2`・`text3`
-    static let muted2 = Color.white.opacity(0.72)
-    static let faint = Color.white.opacity(0.6)
+    nonisolated static let muted2 = Color.white.opacity(0.72)
+    nonisolated static let faint = Color.white.opacity(0.6)
     /// **v2 の text-2（#B8B8B8・黒の上 10.6:1）。黒地・札の上だけ**——写真の上は `muted2`（透過）
-    static let text2 = rgb(BrandPalette.text2)
+    nonisolated static let text2 = rgb(BrandPalette.text2)
     /// **v2 の text-3（#9A9A9A・黒の上 7.46:1）。黒地・札の上だけ**——写真の上は `faint`（透過）
     /// 「コントラストを上げる」がオンなら text-2（`BrandPalette.IncreasedContrast`）
-    static let text3 = contrastAware(normal: (BrandPalette.text3, 1), increased: (BrandPalette.IncreasedContrast.text3, 1))
+    nonisolated static let text3 = contrastAware(normal: (BrandPalette.text3, 1), increased: (BrandPalette.IncreasedContrast.text3, 1))
     /// 未選択のチップの字（chip-text #D4D4D4・白 82%）。送るシートの行動の名前（札 #541）
-    static let chipText = rgb(BrandPalette.chipText)
+    nonisolated static let chipText = rgb(BrandPalette.chipText)
     /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
     /// 文字の線 4.5 に届かなかった）
     /// 「コントラストを上げる」がオンなら白 62%（`BrandPalette.IncreasedContrast`）
-    static let placeholder = contrastAware(normal: (0xFFFFFF, BrandPalette.IncreasedContrast.normalPlaceholderOpacity),
+    nonisolated static let placeholder = contrastAware(normal: (0xFFFFFF, BrandPalette.IncreasedContrast.normalPlaceholderOpacity),
                                            increased: (0xFFFFFF, BrandPalette.IncreasedContrast.placeholderOpacity))
 
     /// 境目（装飾の髪線）。**部品の縁には使わない**（黒の上で 1.27）
-    static let border = Color.white.opacity(0.12)
+    nonisolated static let border = Color.white.opacity(0.12)
     /// **v2 の区切り線（白 8%）。** 札の縁・札の中の行の間・画面の節の間
     /// 「コントラストを上げる」がオンなら白 20%（`BrandPalette.IncreasedContrast`）
-    static let hairline = contrastAware(normal: (0xFFFFFF, BrandPalette.IncreasedContrast.normalHairlineOpacity),
+    nonisolated static let hairline = contrastAware(normal: (0xFFFFFF, BrandPalette.IncreasedContrast.normalHairlineOpacity),
                                         increased: (0xFFFFFF, BrandPalette.IncreasedContrast.hairlineOpacity))
     /// **v2 の線（白 14%）。** 線のボタン（副ボタン・「もう一度」）の縁だけ。
     /// 押せることは字で分かるので、縁は 3:1 を要しない（入力欄の縁は `outline`）
-    static let line = Color.white.opacity(0.14)
+    nonisolated static let line = Color.white.opacity(0.14)
 
     /// **v2 の札の面（surface-1・#0E0E0F）。** `JPCard` の地。
     /// ⚠️ いまは同じ画面に白 7% の `surface` の札も残っている（マイページ・探す・投稿）。
     /// 画面ごとの作り替え（v2 の次の段）でこちらへそろえる
-    static let card = rgb(BrandPalette.surface)
+    nonisolated static let card = rgb(BrandPalette.surface)
     /// **v2 のシート・入力欄の地（surface-2・#161617）。** 通報のシートの地。
     /// この上の札は `card` だと沈んで見えるので、`JPCard(fill: surface)` で浮かせる
-    static let sheet = rgb(BrandPalette.surface2)
+    nonisolated static let sheet = rgb(BrandPalette.surface2)
     /// 入力欄・枠線ボタンの縁。部品の縁は 3:1 が要る（黒 3.66・入力欄 3.03）
-    static let outline = rgb(BrandPalette.outline)
+    nonisolated static let outline = rgb(BrandPalette.outline)
 
     // MARK: 面の段（`sheet` より上・値と使う所は `BrandPalette.surface3`〜`surface8`）
     //
     // ⚠️ `surface`（白 7% の透過）とは別物。こちらは不透明の灰の段（2026-10-14 判断: 散らばっていた値に名前を付けた）
 
     /// #1A1A1C（一段浮かせた小さな面・`RaisedTile`）
-    static let surface3 = rgb(BrandPalette.surface3)
+    nonisolated static let surface3 = rgb(BrandPalette.surface3)
     /// #1C1C1E（骨格の灰・返信欄を書いている間）
-    static let surface4 = rgb(BrandPalette.surface4)
+    nonisolated static let surface4 = rgb(BrandPalette.surface4)
     /// #1E1E20（ストーリーのメニューのシート）
-    static let surface5 = rgb(BrandPalette.surface5)
+    nonisolated static let surface5 = rgb(BrandPalette.surface5)
     /// #28282A（ストーリーの削除の確認）
-    static let surface6 = rgb(BrandPalette.surface6)
+    nonisolated static let surface6 = rgb(BrandPalette.surface6)
     /// #2A2A2C（投稿の写真の「外す」の丸）
-    static let surface7 = rgb(BrandPalette.surface7)
+    nonisolated static let surface7 = rgb(BrandPalette.surface7)
     /// #2C2C2E（投稿のセグメントの選んだ側）
-    static let surface8 = rgb(BrandPalette.surface8)
+    nonisolated static let surface8 = rgb(BrandPalette.surface8)
 
     // MARK: 真鍮（合図と手がかり）
 
     /// 文字・アイコン・未読の点・ストーリーの輪・リンク・眉ラベル。**黒か面の上だけ**
-    static let accent = rgb(BrandPalette.accent)
-    static let accentStrong = rgb(BrandPalette.accentStrong)
+    nonisolated static let accent = rgb(BrandPalette.accent)
+    nonisolated static let accentStrong = rgb(BrandPalette.accentStrong)
     /// 写真の無い画面の主ボタン（ログイン・送信）。**上の字は墨**（`accentText`）
-    static let accentFill = rgb(BrandPalette.accentFill)
+    nonisolated static let accentFill = rgb(BrandPalette.accentFill)
     /// 白を載せる暗い真鍮。トグルの軌道・地図の印
-    static let accentDeep = rgb(BrandPalette.accentDeep)
+    nonisolated static let accentDeep = rgb(BrandPalette.accentDeep)
     /// 案内の帯（今日のテーマ）。選択状態は担わない
-    static let accentSoft = rgb(BrandPalette.accentSoft)
+    nonisolated static let accentSoft = rgb(BrandPalette.accentSoft)
     /// 輪・メダル・Pro の印の金属の光（v2 の brass-hi → 真鍮 → brass-lo）。**字には使わない**
-    static let accentMetal = [rgb(BrandPalette.accentHighlight), accent, rgb(BrandPalette.accentShadow)]
+    /// 画面の外の計算（`PassTicketShine.stops`）からも読むので、アクタに属さない（2026-11-25 Swift 6）
+    nonisolated static let accentMetal = [rgb(BrandPalette.accentHighlight), rgb(BrandPalette.accent), rgb(BrandPalette.accentShadow)]
 
     // MARK: 段の色（板 04b・値と使う所は `BrandPalette.scale0`〜`scale3`）
 
     /// 0 回・無し（#1A1A1C）
-    static let scale0 = rgb(BrandPalette.scale0)
+    nonisolated static let scale0 = rgb(BrandPalette.scale0)
     /// 1 回（#705523）
-    static let scale1 = rgb(BrandPalette.scale1)
+    nonisolated static let scale1 = rgb(BrandPalette.scale1)
     /// 2 回（#B08E55）
-    static let scale2 = rgb(BrandPalette.scale2)
+    nonisolated static let scale2 = rgb(BrandPalette.scale2)
     /// 3 回以上（#F3DCA6）
-    static let scale3 = rgb(BrandPalette.scale3)
+    nonisolated static let scale3 = rgb(BrandPalette.scale3)
 
     // MARK: 意味の色
 
     /// 削除・通報・エラーの文字とアイコン（`.red` の代わり）
-    static let danger = rgb(BrandPalette.danger)
+    nonisolated static let danger = rgb(BrandPalette.danger)
     /// 「アカウントを削除」の確定ボタンだけ（白文字）
-    static let dangerFill = rgb(BrandPalette.dangerFill)
-    static let success = rgb(BrandPalette.success)
+    nonisolated static let dangerFill = rgb(BrandPalette.dangerFill)
+    nonisolated static let success = rgb(BrandPalette.success)
     /// 地図の現在地だけ
-    static let location = rgb(BrandPalette.location)
+    nonisolated static let location = rgb(BrandPalette.location)
 
     /// **端末の「コントラストを上げる」に付いてくる色**（2026-11-14・`BrandPalette.IncreasedContrast`）。
     ///
@@ -143,7 +144,7 @@ enum WebTheme {
         #endif
     }
 
-    private static func rgb(_ hex: UInt32) -> Color {
+    nonisolated private static func rgb(_ hex: UInt32) -> Color {
         Color(red: Double((hex >> 16) & 0xFF) / 255,
               green: Double((hex >> 8) & 0xFF) / 255,
               blue: Double(hex & 0xFF) / 255)
@@ -153,19 +154,19 @@ enum WebTheme {
     /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ。
     /// **v2 で 92% → 94%**（黒に重ねた値が `BrandPalette.primary`・比はそちらで見張る）
     nonisolated static let primaryFillOpacity = 0.94
-    static let accentBackground = Color.white.opacity(primaryFillOpacity)
-    static let accentText = rgb(BrandPalette.ink)
+    nonisolated static let accentBackground = Color.white.opacity(primaryFillOpacity)
+    nonisolated static let accentText = rgb(BrandPalette.ink)
 
     /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）。
     /// ⚠️ 札の地にも使っている所がある（`JPCard` は v2 の `card`）。次の段でそろえる
-    static let surface = Color.white.opacity(0.07)
+    nonisolated static let surface = Color.white.opacity(0.07)
     /// 少し浮かせる面（ピル・カード。`bg-black/30` ＋ `ring-white/10`）
-    static let raised = Color.white.opacity(0.10)
+    nonisolated static let raised = Color.white.opacity(0.10)
 
     /// 写真の格子の隙間。Web は `gap-1`（4px）で、角も丸めない
-    static let gridSpacing: CGFloat = 4
+    nonisolated static let gridSpacing: CGFloat = 4
     /// スマホの列数。Web は `grid-cols-2`（`sm:` 以上で3〜4列）
-    static let gridColumns = 2
+    nonisolated static let gridColumns = 2
 
     /// **押せるものは 44pt 以上。**
     ///
@@ -207,7 +208,7 @@ enum WebTheme {
     }
     /// 地図の右の操作（方位磁針・現在地・拡大縮小）の間隔。
     /// 8pt では丸いボタンどうしが接して見え、押し間違えやすかった
-    static let mapControlSpacing: CGFloat = 12
+    nonisolated static let mapControlSpacing: CGFloat = 12
 }
 
 /// 画面ぜんぶを黒地にする。

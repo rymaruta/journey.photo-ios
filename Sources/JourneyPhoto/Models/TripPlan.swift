@@ -175,6 +175,10 @@ struct Lenient<T: Decodable>: Decodable {
 /// 写真の行（`Photo`）に入れるため（`spotAuto`・`geoApprox`・2026-10-31）
 extension Lenient: Equatable where T: Equatable {}
 
+/// 中身が Sendable なら包みも Sendable（`Photo` を actor の境目で渡すため・2026-11-25 Swift 6）。
+/// 総称の型は Sendable が自動では付かない
+extension Lenient: Sendable where T: Sendable {}
+
 /// `{ "plans": [...] }`。**書き込みの応答も同じ形**（書いたあとの一覧）
 struct TripPlanList: Decodable {
     let plans: [TripPlan]

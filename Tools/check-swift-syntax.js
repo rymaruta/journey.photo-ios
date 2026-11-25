@@ -70,6 +70,9 @@ for (const root of roots) {
         // 意味を変えない範囲で落としてから読む
         const source = fs.readFileSync(file, "utf8")
             .replace(/\bnonisolated\(unsafe\)\s+/g, "")
+            // 呼んだ側のアクタを受け取る引数（`isolation: isolated (any Actor)? = #isolation`・Swift 6・2026-11-25）も
+            // 解析器が読めない。引数の形を残したまま、読める書き方に置き換える
+            .replace(/\bisolated \(any Actor\)\? = #isolation\b/g, "(any Actor)? = nil")
             // **条件付きコンパイルの行を落としてから読む。** `#if` で属性だけを
             // 囲む書き方（`#if !SWIFT_PACKAGE` + `@main`）を解析器が読めない。
             // 両方の枝を残すと意味は重複するが、見ているのは構文だけなので困らない

@@ -8,6 +8,9 @@
   「The following build commands failed:」の下の行を出す
 - `--annotate` を付けると、Markdown の代わりに先頭10件を GitHub の `::error file=…,line=…::` で出す
   （run の画面の注釈。注釈の命令は標準出力から読まれるので、要約とは別に呼ぶ）
+- `--warnings` を付けると、エラーの代わりに自分のコード（Sources・Tests・UITests）の `warning:` を数える。
+  ファイルごと・種類ごとの数と、全部の行を出す（2026-11-25 判断: Swift 6 へ移す前に、本物の SDK での
+  並行処理の警告の数を Mac のビルドだけの回で数えるため。Linux の模型では SDK 側の型の決まりが本物と違う）
 
 2026-11-18 判断: 担当が Mac の回を「試しに流す場所」に使い、1日 40 回中 24 回落ちた（うち3回はビルドの失敗）。
 落ちた理由を `gh run view --log-failed` の数千行から探さずに、job の要約だけで分かるようにする。
@@ -32,6 +35,47 @@ def relative(path):
     return path
 
 
+WARNED = re.compile(r"^(?P<path>/[^:\n]+?\.swift):(?P<line>\d+)(?::(?P<col>\d+))?: warning: (?P<msg>.*)$")
+WARN_LIMIT = 900
+
+
+def warnings(text):
+    """自分のコードの warning を、同じ行の重なりを除いて出す（Markdown）"""
+    found, seen = [], set()
+    for line in text.splitlines():
+        m = WARNED.match(line.strip())
+        if not m:
+            continue
+        if "/SourcePackages/" in m["path"] or "/checkouts/" in m["path"]:
+            continue  # 外の部品の警告は数えない
+        path = relative(m["path"])
+        if not path.startswith(("Sources/", "Tests/", "UITests/")):
+            continue  # 外の部品（SourcePackages）の警告は数えない
+        key = (path, m["line"], m["msg"].strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(key)
+    by_file, by_kind = {}, {}
+    for path, _, msg in found:
+        by_file[path] = by_file.get(path, 0) + 1
+        kind = re.sub(r"'[^']*'", "X", msg).split(";")[0]
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+    out = ["### 自分のコードの警告", f"{len(found)} 件（同じ行の重なりは除いた）・{len(by_file)} ファイル", ""]
+    out.append("#### 種類ごと")
+    for kind, n in sorted(by_kind.items(), key=lambda kv: -kv[1])[:40]:
+        out.append(f"- {n}: {kind}")
+    out += ["", "#### ファイルごと"]
+    for path, n in sorted(by_file.items(), key=lambda kv: -kv[1]):
+        out.append(f"- {n}: `{path}`")
+    out += ["", "#### 全部", "```"]
+    out += [f"{p}:{l}: {m}" for p, l, m in found[:WARN_LIMIT]]
+    if len(found) > WARN_LIMIT:
+        out.append(f"…ほか {len(found) - WARN_LIMIT} 件")
+    out.append("```")
+    return "\n".join(out)
+
+
 def main(argv):
     if not argv:
         print("使い方: compile-errors.py <xcodebuild の全文ログ> [--annotate]", file=sys.stderr)
@@ -39,6 +83,9 @@ def main(argv):
     log = Path(argv[0])
     annotate = "--annotate" in argv[1:]
     text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+    if "--warnings" in argv[1:]:
+        print(warnings(text))
+        return 0
     lines = text.splitlines()
 
     located, seen = [], set()

@@ -18,7 +18,8 @@ final class CreateFlowLibraryTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = true
-        XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
+        // `setUp` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶので、そこで XCUIApplication を触る（2026-11-25 Swift 6）
+        MainActor.assumeIsolated { XCUIApplication.jp().resetAuthorizationStatus(for: .photos) }
         addTeardownBlock {
             XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
         }

@@ -3236,7 +3236,8 @@ final class KeyboardShowWait {
 
     private var token: NSObjectProtocol?
 
-    func start(center: NotificationCenter = .default, _ action: @escaping @MainActor () -> Void) {
+    // 知らせの受け手（@Sendable）がつかむので、渡す動きも @Sendable（2026-11-25 Swift 6）
+    func start(center: NotificationCenter = .default, _ action: @escaping @MainActor @Sendable () -> Void) {
         // 受ける列は指定しない（UIKit はキーボードの合図を主の列で出すので、その場で動く）
         token = center.addObserver(forName: Self.didShow, object: nil, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated {

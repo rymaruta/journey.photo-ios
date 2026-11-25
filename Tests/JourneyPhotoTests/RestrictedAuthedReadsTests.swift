@@ -28,7 +28,7 @@ final class RestrictedAuthedReadsTests: XCTestCase {
         SocialService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
                                      tokenProvider: StubTokenProvider(token: token),
                                      session: session,
-                                     beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } }))
+                                     beforeRequest: gates.map { gates in { @Sendable (request: URLRequest) async in await gates.wait(for: request) } }))
     }
 
     /// API Gateway の「道が無い」404（新しい口がまだデプロイされていない）

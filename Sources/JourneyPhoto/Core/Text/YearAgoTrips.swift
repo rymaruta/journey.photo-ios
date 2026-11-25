@@ -200,7 +200,7 @@ final class YearAgoRingStore {
 /// 1回だけの読み込み（②「ストーリーに出す」の写真の本体）。**閉じたら取り消し、取り消した読みの結果は渡さない**
 /// （2026-11-12 確かめ役: 読んでいる途中で閉じると、閉じたあとに作る画面が開いていた）
 @MainActor
-final class CancellableLoad<Value> {
+final class CancellableLoad<Value: Sendable> {  // 値は読みの糸からメインアクタへ渡る（2026-11-25 Swift 6）
     private var task: Task<Void, Never>?
 
     var isLoading: Bool { task != nil }

@@ -16,12 +16,18 @@ import Darwin
 ///   （`measured [terminate]` の行を残す）。残っていれば今までどおり失敗にする（本当に固まったアプリは見逃さない）。
 ///   run 1681 では、自分の試験の終わりの `app.terminate()` で同じ失敗が出た。この扱いはその回も覆う
 /// - pid を調べられない（`kill` が ESRCH 以外で断る）ときは「残っている」と見て、今までどおり失敗にする（安全側）
+///
+/// 2026-11-25 判断（Swift 6）: **UI テストはメインアクタの上で書く。** Xcode 27 の XCTest は `XCUIApplication`・
+/// `XCUIElement` をメインアクタに置いた。XCTest は同期の試験をメインスレッドで走らせるので、試験のクラスを
+/// `@MainActor` にしても動きは変わらない。この基に付ければ、子の試験のクラスはみな同じになる。
+/// XCTestCase から受け継いだ口（`setUp`・`invokeTest`・`record`）は、元の宣言のとおりアクタに属さない
+@MainActor
 class JPUITestCase: XCTestCase {
 
     /// いま走っている試験（`XCUIApplication.jp()` が後始末を付ける先）
     nonisolated(unsafe) static weak var running: JPUITestCase?
 
-    override func invokeTest() {
+    nonisolated override func invokeTest() {
         JPUITestCase.running = self
         defer { if JPUITestCase.running === self { JPUITestCase.running = nil } }
         super.invokeTest()
@@ -32,7 +38,7 @@ class JPUITestCase: XCTestCase {
         addTeardownBlock { JPAppClose.close(app) }
     }
 
-    override func record(_ issue: XCTIssue) {
+    nonisolated override func record(_ issue: XCTIssue) {
         if let pid = JPAppClose.staleTerminatePid(issue.compactDescription) {
             if JPAppClose.waitGone(pid: pid, timeout: JPAppClose.goneTimeout) {
                 print("measured [terminate] pid=\(pid) XCTest は閉じられないと言ったが、アプリはもう無い。失敗にしない（札 #681）")
@@ -50,7 +56,8 @@ enum JPAppClose {
     /// 止まるのを待つ・消えたのを確かめる上限（秒）
     static let goneTimeout: TimeInterval = 15
 
-    /// 試験の終わりに閉じる。もう止まっていれば何もしない（XCTestCase と同じく isolation を持たない。試験の本文と同じ呼び方）
+    /// 試験の終わりに閉じる。もう止まっていれば何もしない（試験の本文・後始末の塊と同じくメインアクタの上で呼ぶ・2026-11-25 Swift 6）
+    @MainActor
     static func close(_ app: XCUIApplication) {
         switch app.state {
         case .notRunning, .unknown: return
@@ -76,6 +83,7 @@ enum JPAppClose {
     }
 
     /// アプリの pid（XCUIApplication の公にしていない値 `processID`）。持っていなければ nil（KVC で落とさないよう先に確かめる）
+    @MainActor
     static func processID(of app: XCUIApplication) -> pid_t? {
         guard app.responds(to: NSSelectorFromString("processID")),
               let value = app.value(forKey: "processID") as? NSNumber else { return nil }

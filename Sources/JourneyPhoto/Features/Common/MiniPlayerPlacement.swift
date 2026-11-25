@@ -114,6 +114,20 @@ enum MiniPlayerPlacement {
                            height: height(forCenterY: releasedY, container: container, barHeight: barSize.height)))
     }
 
+    /// 画面の下に置いた欄（探すの欄・2026-11-25 判断・人間工学の案 4）を、再生器の上へ積む量（pt）。
+    /// 欄と再生器の置いた所（画面全体の座標）が重なるときだけ、欄の下端が再生器の上端より `stackGap` 上に来るだけ持ち上げる。
+    /// 再生器が無い・重ならない（指で上へ動かした）なら 0。欄の位置は**持ち上げる前**の所で渡す（持ち上げた所で測ると揺れる）
+    static func clearance(field: CGRect, player: CGRect?) -> CGFloat {
+        guard let player, !player.isEmpty, !field.isEmpty else { return 0 }
+        let overlapsX = player.minX < field.maxX && player.maxX > field.minX
+        let overlapsY = player.minY < field.maxY && player.maxY > field.minY
+        guard overlapsX, overlapsY else { return 0 }
+        return max(0, field.maxY - player.minY + stackGap)
+    }
+
+    /// 積んだときの欄と再生器の間
+    static let stackGap: CGFloat = 8
+
     /// 読み上げの「上へ移す」「下へ移す」
     static func moved(_ spot: Spot, up: Bool) -> Spot {
         var next = spot
@@ -130,9 +144,13 @@ enum MiniPlayerPlacement {
 }
 
 /// 置き場所を**再生の間（アプリを閉じるまで）**覚える。保存はしない（2026-10-28 判断: 次に開いたら右下から）。
-/// `MusicPreviewPlayer` と同じく `@MainActor` を付けない（View のプロパティ初期化子から読むため）
+/// `MusicPreviewPlayer` と同じく**メインアクタに置く**（2026-11-25 判断・Swift 6。画面の初期値もメインアクタの上で作られる）
+@MainActor
 final class MiniPlayerPlacementStore: ObservableObject {
     static let shared = MiniPlayerPlacementStore()
     @Published var spot = MiniPlayerPlacement.Spot.initial
+    /// 全体の再生器を置いた所（画面全体の座標・引いている間の動きは入れない）。出ていないときは nil。
+    /// 画面の下に欄を置いた画面（探す）が、重ならないよう欄を上へ積むのに読む（`MiniPlayerPlacement.clearance`）
+    @Published var restingFrame: CGRect?
     private init() {}
 }

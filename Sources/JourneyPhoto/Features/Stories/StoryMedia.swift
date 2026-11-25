@@ -16,8 +16,9 @@ struct StoryMedia: View {
     var isMuted = false
     /// 止める。長押し・メニュー・シートの間、動画も止まる
     var isPaused = false
-    /// 動画が鳴り終わった（写真には来ない。写真は閲覧画面の時計が送る）
-    var onEnded: (() -> Void)? = nil
+    /// 動画が鳴り終わった（写真には来ない。写真は閲覧画面の時計が送る）。
+    /// OS の知らせの受け手（別の糸）から渡して呼ぶので、メインアクタの `@Sendable`（2026-11-25 Swift 6）
+    var onEnded: (@MainActor @Sendable () -> Void)? = nil
     /// 写真の読み込みが片付いた（出た＝true・出せない＝false）。
     /// 動画には出どころが無いので呼ばない
     var onSettled: ((Bool) -> Void)? = nil
@@ -26,7 +27,7 @@ struct StoryMedia: View {
     /// 頭から見直す合図（左を押した）。変わったら動画を 0 へ戻す。写真には効かない
     var restartToken = 0
     /// 動画の位置の知らせ（秒・長さ・再生中か）。**写真には来ない**。進行バーを伸ばすのに使う
-    var onVideoProgress: ((Double, Double, Bool) -> Void)? = nil
+    var onVideoProgress: (@MainActor @Sendable (Double, Double, Bool) -> Void)? = nil
 
     var body: some View {
         if story.isVideo, let url = story.imageURL {
@@ -55,9 +56,9 @@ private struct StoryVideo: View {
     var isMuted = false
     var isPaused = false
     var restartToken = 0
-    var onEnded: (() -> Void)? = nil
+    var onEnded: (@MainActor @Sendable () -> Void)? = nil
     /// 位置の知らせ（秒・長さ・再生中か）。0.5 秒ごとと、止める・再開するとき
-    var onProgress: ((Double, Double, Bool) -> Void)? = nil
+    var onProgress: (@MainActor @Sendable (Double, Double, Bool) -> Void)? = nil
 
     @State private var player: AVPlayer?
     /// 位置の見張り（`addPeriodicTimeObserver`）。外さないと画面を閉じたあとも知らせが飛ぶ
@@ -216,7 +217,7 @@ struct StoryVideoSurface: UIViewRepresentable {
     let player: AVPlayer?
 
     /// 敷き方。**切って埋める**（板の `object-fit: cover`）
-    static let gravity: AVLayerVideoGravity = .resizeAspectFill
+    nonisolated static let gravity: AVLayerVideoGravity = .resizeAspectFill
 
     func makeUIView(context: Context) -> SurfaceView {
         let view = SurfaceView()
@@ -245,14 +246,15 @@ struct StoryVideoSurface: UIViewRepresentable {
 /// **重くしすぎない。** 持つのは1つだけ（次を頼むと前のは捨てる）・先に読む長さは
 /// `bufferSeconds` 秒まで・鳴らさない（作るだけで `play()` しない）。閉じたら捨てる（`clear`）
 ///
-/// **`@MainActor` を付けない**（`MusicPreviewPlayer` と同じ）。触るのは画面（`onAppear`・`.task`）からだけで、
-/// 常にメインスレッドで動く
+/// **メインアクタに置く**（2026-11-25 判断・Swift 6。`MusicPreviewPlayer` と同じ）。触るのは画面（`onAppear`・`.task`）からだけで、
+/// 前から常にメインスレッドで動いていた
+@MainActor
 final class StoryVideoPreloader {
 
     static let shared = StoryVideoPreloader()
 
     /// 先に読んでおく長さ（秒）。受け取ったら 0（再生器に任せる）へ戻す
-    static let bufferSeconds: TimeInterval = 3
+    nonisolated static let bufferSeconds: TimeInterval = 3
 
     private(set) var url: URL?
     private var player: AVPlayer?

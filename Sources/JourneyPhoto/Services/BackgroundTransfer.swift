@@ -268,7 +268,9 @@ final class BackgroundTransfer: NSObject, PhotoTransfer, URLSessionTaskDelegate,
     /// 誰も受け取らなかった転送の鍵のうち、**いまログインしている人の鍵だけ**を片付ける
     /// （別の人の token で送ると 403 で断られ、その鍵を失う）。
     /// `discard` が false（圏外・401・503 など、確かめられなかった）を返した鍵は控えに残す
-    func discardOrphans(owner userId: String, _ discard: (String) async -> Bool) async {
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。渡す閉包を別の糸へ送らない
+    func discardOrphans(owner userId: String, isolation: isolated (any Actor)? = #isolation,
+                        _ discard: (String) async -> Bool) async {
         guard beginDiscarding() else { return }
         defer { endDiscarding() }
         for key in book.orphans(owner: userId) where await discard(key) {

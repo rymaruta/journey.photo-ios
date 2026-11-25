@@ -110,7 +110,8 @@ final class DirectMessageStartTests: XCTestCase {
     /// `-JPPreviewDM` のときだけフォロー中を答える（公開の新着の作者が先・見本の会話の相手が後ろ）。
     /// まだ会話の無い相手への1通目は承認待ちで返る
     func testPreviewBackendAnswersFollowingOnlyWithTheDMFlag() async throws {
-        let feed: [[String: Any]] = [
+        // 書き換えない見本の一覧。[String: Any] は Sendable でないので nonisolated(unsafe)（2026-11-25 判断・試験だけ）
+        nonisolated(unsafe) let feed: [[String: Any]] = [
             ["id": "p1", "src": "https://img.test/p1.jpg", "userId": "author-a", "displayName": "作者A"],
             ["id": "p2", "src": "https://img.test/p2.jpg", "userId": "author-a"],
             ["id": "p3", "src": "https://img.test/p3.jpg", "uploadedBy": "author-b"],

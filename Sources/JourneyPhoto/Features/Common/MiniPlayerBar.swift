@@ -187,7 +187,15 @@ struct MiniPlayerBar: View {
             let container = proxy.size
             let size = CGSize(width: MiniPlayerPlacement.barWidth(container: container), height: barHeight)
             let base = MiniPlayerPlacement.center(of: placement.spot, container: container, barSize: size)
+            // 置いた所（画面全体の座標）。探すの下の欄が重ならないよう読む（`MiniPlayerPlacement.clearance`・2026-11-25）
+            let origin = proxy.frame(in: .global).origin
+            let resting = CGRect(x: origin.x + base.x - size.width / 2, y: origin.y + base.y - size.height / 2,
+                                 width: size.width, height: size.height)
             bar(song)
+                .onChange(of: resting, initial: true) { _, frame in
+                    if placement.restingFrame != frame { placement.restingFrame = frame }
+                }
+                .onDisappear { placement.restingFrame = nil }
                 .frame(width: size.width)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { barHeight = $0 }
                 // 再生器全体を1つの入れ物にして道しるべを付ける（中の曲の札・停止ボタンは別々に読む）

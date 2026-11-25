@@ -1542,12 +1542,12 @@ struct StoryComposerView: View {
     }
 
     /// ひとことの大きさ（見る画面の `captionBlock` と同じ 30）・札の高さと地（v2 の板）
-    static let captionSize: Double = 30
+    nonisolated static let captionSize: Double = 30
     /// 「ひとことを書く」の案内の字の白さ（写真の上は白だけ。灰の既定は写真に溶けた・2026-10-21）
     static let captionHintOpacity: Double = 0.9
     /// 何も書いていない間だけ案内の下に敷く黒の薄い帯（写真を隠しすぎない薄さ）
     static let captionHintScrim: Double = 0.35
-    static let chipHeight: CGFloat = 30
+    nonisolated static let chipHeight: CGFloat = 30
     static let chipFill = 0.45
 
     /// 撮影地の候補（`StorySpotSuggestion`）。**押したときだけ**撮影地に入る。
@@ -2242,7 +2242,7 @@ struct StoryComposerView: View {
 
     /// 選ばれたぶんを、選んだ順のまま1件ずつ足す（写真と動画が混ざってもよい）。写真は `readPicks` を通す。
     /// 写真選びの1件（`PhotosPickerItem`）でも一覧のマス（`StoryLibraryRules.Item`）でも同じ決まりで読む
-    private func loadPicks<Item>(_ items: [Item], isVideo: (Item) -> Bool,
+    private func loadPicks<Item: Sendable>(_ items: [Item], isVideo: (Item) -> Bool,  // 1件は読みの糸へ渡す（2026-11-25 Swift 6）
                                  importVideo: @escaping (Item) async throws -> StoryVideoPipeline.Imported,
                                  readPhoto: @escaping (Item) async throws -> Data?,
                                  willRead: (Item) -> Void = { _ in }) async {
@@ -3116,7 +3116,7 @@ struct StoryComposerView: View {
             shot.sharedPhotoId = item.shot.sharedPhotoId
             return shot
         }
-        shots.forEach(startThumb(for:))
+        shots.forEach { startThumb(for: $0) }
         // フィルターをかけてあった写真は、作る画面の絵も描き直す（下書きは元の画素のまま持つ）
         for shot in shots where !shot.filter.isNone { renderFilteredPreview(shot: shot.id) }
         current = 0

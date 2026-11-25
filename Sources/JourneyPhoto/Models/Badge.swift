@@ -171,3 +171,6 @@ struct Clearable<Value: Encodable & Equatable>: Encodable, Equatable {
         if let value { try c.encode(value) } else { try c.encodeNil() }
     }
 }
+
+/// 中身が Sendable なら包みも Sendable（`ProfilePatch` を API の actor へ渡すため・2026-11-25 Swift 6）
+extension Clearable: Sendable where Value: Sendable {}

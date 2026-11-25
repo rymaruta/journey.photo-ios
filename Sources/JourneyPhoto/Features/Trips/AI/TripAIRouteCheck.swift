@@ -19,7 +19,8 @@ enum TripAIRouteCheck {
     }
 
     /// 区間の移動の分。測れなければ nil
-    typealias ETA = (Photo.Coords, Photo.Coords) async -> Int?
+    // 測る関数は別の糸から呼ばれるので @Sendable（2026-11-25 Swift 6）
+    typealias ETA = @Sendable (Photo.Coords, Photo.Coords) async -> Int?
 
     static func trim(_ days: [[OfficialSpot]], limit: Int = TripAILimits.maxTravelMinutesPerDay,
                      eta: ETA = mapsETA) async -> (days: [[OfficialSpot]], removed: [Removed]) {

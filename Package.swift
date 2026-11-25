@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 //
 // **Xcode のプロジェクトはこれではない**（`project.yml` から XcodeGen が作る）。
 // ここは「画面を持たない層」だけを切り出したパッケージで、目的はひとつ:
@@ -76,12 +76,19 @@ let package = Package(
                 "AuthenticationServices", "CryptoKit",
             ],
             path: "Sources/JourneyPhoto",
-            exclude: ["Resources", "Assets.xcassets"]
+            exclude: ["Resources", "Assets.xcassets"],
+            // アプリは言語の版 6（Xcode の project.yml と同じ・2026-11-25）
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "JourneyPhotoTests",
             dependencies: ["JourneyPhoto"],
-            path: "Tests/JourneyPhotoTests"
+            path: "Tests/JourneyPhotoTests",
+            // 試験は言語の版 5 のまま厳しい確かめ（Linux の XCTest は非同期の setUp・tearDown がアクタに属さず、
+            // Apple の XCTest と違う警告が出るため・2026-11-25）。版 6 での確かめは Mac の回
+            swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
         ),
-    ]
+    ],
+    // 模型（Shims）と試験は版 5（模型は本物の SDK の形を写すだけ。試験は上の注記）。アプリだけ版 6
+    swiftLanguageModes: [.v5]
 )

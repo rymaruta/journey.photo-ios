@@ -156,7 +156,8 @@ final class CamperRemovalTests: XCTestCase {
             .appendingPathComponent("Sources/JourneyPhoto")
         let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
         var found: [String] = []
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
+        // 非同期の試験の中では列挙の for-in が使えない（Swift 6）。先に配列にする（2026-11-25）
+        for case let url as URL in enumerator.allObjects where url.pathExtension == "swift" {
             let text = try String(contentsOf: url, encoding: .utf8)
             if text.contains("キャンピングカーの部屋") { found.append(url.lastPathComponent) }
         }

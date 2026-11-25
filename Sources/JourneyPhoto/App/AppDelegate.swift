@@ -88,7 +88,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 
     /// **アプリを開いている間も出す。** 出さないと、見ている画面と関係のない
     /// 出来事（別の写真へのコメント）に気づけない。
-    func userNotificationCenter(
+    // 2026-11-25（Swift 6）: 通知の受け手は通知の側の糸から呼ばれる。アプリの物に触るところは `MainActor.run` で渡る
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
@@ -120,7 +121,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     /// 今までどおりお知らせ画面で、そこが読み終えてから、**一覧の行を押したのと
     /// 同じ決まり**（`NotificationsViewModel.route(for:)`）で行き先を積む。
     /// 引けない写真・ストーリーの返信は一覧に留まる（空振りを作らない）。戻れば一覧
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {

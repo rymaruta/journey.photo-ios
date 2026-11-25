@@ -1,4 +1,6 @@
-import AVFoundation
+// 2026-11-25 判断（Swift 6）: AVFoundation の撮影の型（`AVCaptureSession` など）は Sendable と書かれていない。
+// 撮影の場は専用の列（`queue`）でだけ触る決まりで使っている。外の部品が対応するまで @preconcurrency で読む
+@preconcurrency import AVFoundation
 import AVKit
 import Photos
 import SwiftUI
@@ -55,7 +57,12 @@ final class ComposeCamera: ObservableObject {
     private var rotation: AVCaptureDevice.RotationCoordinator?
     /// 使っている後ろのカメラ（仮想カメラなら拡大でレンズが切り替わる）
     private var device: AVCaptureDevice?
-    private var subjectObserver: NSObjectProtocol?
+    /// 見張りの札。deinit（アクタに属さない）からも外すので、ロックの箱に置く（2026-11-25 Swift 6）
+    private let subjectObserverBox = Locked<NSObjectProtocol?>(nil)
+    private var subjectObserver: NSObjectProtocol? {
+        get { subjectObserverBox.value }
+        set { subjectObserverBox.value = newValue }
+    }
 
     /// 後ろのカメラを選ぶ順（2026-10-16）。**仮想カメラ（三眼・二眼）を先に**——拡大の倍率だけで
     /// 超広角・広角・望遠を OS が切り替える（標準のカメラ App と同じ）。無ければ広角1つ
@@ -197,7 +204,7 @@ final class ComposeCamera: ObservableObject {
     var isObservingSubjectArea: Bool { subjectObserver != nil }
 
     deinit {
-        if let subjectObserver { NotificationCenter.default.removeObserver(subjectObserver) }
+        if let observer = subjectObserverBox.value { NotificationCenter.default.removeObserver(observer) }
     }
 
     // MARK: - 拡大・ピント・明るさ（2026-10-16・標準のカメラ App にそろえる）
@@ -339,14 +346,24 @@ struct ComposeShot: @unchecked Sendable {
 }
 
 /// 撮れた知らせの受け手（1枚ごとに1つ）。**1回だけ**返す
-final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+///
+/// 2026-11-25（Swift 6）: 作るのはメインアクタ、呼ばれるのは撮影の糸。受け取り先はロックの箱に置き、
+/// 1回だけ取り出す（取り出しと消すのを1つにまとめる）
+final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, Sendable {
+
+    private let doneBox = Locked<(@Sendable (ComposeShot?) -> Void)?>(nil)
 
     /// 撮れたら呼ぶ（呼んだら外す）
-    var done: ((ComposeShot?) -> Void)?
+    var done: (@Sendable (ComposeShot?) -> Void)? {
+        get { doneBox.value }
+        set { doneBox.value = newValue }
+    }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        let finish = done
-        done = nil
+        let finish = doneBox.withLock { done -> (@Sendable (ComposeShot?) -> Void)? in
+            defer { done = nil }
+            return done
+        }
         guard error == nil, let data = photo.fileDataRepresentation() else {
             finish?(nil)
             return

@@ -30,7 +30,9 @@ import ImageIO
 ///
 /// **`CIContext` は1つを使い回す。** 作るたびに GPU の準備とキャッシュが捨てられ、
 /// つまみを動かすたびに描き直すプレビューが重くなる（Apple の推奨も使い回し）
-final class PhotoRenderer {
+///
+/// 2026-11-25（Swift 6）: 持つのは使い回す `CIContext`（Apple の文書で複数のスレッドから使ってよい・SDK でも Sendable）だけなので Sendable
+final class PhotoRenderer: Sendable {
 
     static let shared = PhotoRenderer()
 

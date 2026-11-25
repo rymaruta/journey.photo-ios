@@ -685,7 +685,7 @@ actor OfficialSpotService {
     ///   - 5xx・HTML（キャプティブポータル）・壊れた中身・圏外 → 前回の控え（無ければ nil）
     private static func loadSmallFile(_ fileURL: URL, store: SpotSnapshotStore, session: URLSession,
                                       isValid: @escaping @Sendable (Data) -> Bool) async -> Data? {
-        let previous = { () -> Data? in store.loadData().flatMap { isValid($0) ? $0 : nil } }
+        let previous: @Sendable () -> Data? = { store.loadData().flatMap { isValid($0) ? $0 : nil } }
         do {
             let outcome: ConditionalGet.Outcome<Data> = try await ConditionalGet.fetch(
                 fileURL, session: session, validators: store.validators

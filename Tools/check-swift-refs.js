@@ -390,11 +390,29 @@ if (testRoot) {
             mainActorTypes.add(match[1]);
         }
     }
+    // アクタに属さないと書いた静的メンバ（`nonisolated static func x`）は呼んでよい（2026-11-25 Swift 6）
+    const nonisolatedMembers = new Set();
+    for (const file of files) {
+        const source = fs.readFileSync(file, "utf8");
+        for (const match of source.matchAll(/\bnonisolated\s+(?:private\s+|fileprivate\s+)?static\s+(?:func|let|var)\s+(\w+)/g)) {
+            nonisolatedMembers.add(match[1]);
+        }
+    }
     for (const file of walkFiles(testRoot)) {
         const source = fs.readFileSync(file, "utf8");
-        const isMainActorTest = /@MainActor\s*(?:final\s+)?class/.test(source);
+        // クラスに @MainActor（後ろに注記があってもよい）
+        const isMainActorTest = /@MainActor[^\n]*\n\s*(?:final\s+)?class|@MainActor\s*(?:final\s+)?class/.test(source);
         if (isMainActorTest) continue;
-        for (const match of source.matchAll(/\b([A-Z]\w*)\.[a-z]\w*\s*\(/g)) {
+        for (const match of source.matchAll(/\b([A-Z]\w*)\.([a-z]\w*)\s*\(/g)) {
+            if (nonisolatedMembers.has(match[2])) continue;
+            // 試験の関数そのものに @MainActor が付いていれば呼んでよい（直前の func の前の行を見る）
+            const before = source.slice(0, match.index);
+            const funcAt = before.lastIndexOf("func test");
+            if (funcAt >= 0) {
+                const lineStart = before.lastIndexOf("\n", funcAt);
+                const prevLineStart = before.lastIndexOf("\n", lineStart - 1);
+                if (before.slice(prevLineStart, lineStart).includes("@MainActor")) continue;
+            }
             if (mainActorTypes.has(match[1])) {
                 problems.push(
                     `${path.relative(process.cwd(), file)} が @MainActor の ` +

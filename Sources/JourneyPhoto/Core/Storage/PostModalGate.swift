@@ -94,8 +94,12 @@ enum PostModalGate {
     }
 
     /// `ready` になるまで最大 `tries` 回待つ。なったら true（`sleep` はテストで差し替える）
-    static func wait(tries: Int, snapshot: () -> PostModalSnapshot, until ready: (PostModalSnapshot) -> Bool,
-                     sleep: () async -> Void) async -> Bool {
+    ///
+    /// 2026-11-25（Swift 6）: 見るのは画面の状態（メインアクタ）なので、メインアクタの上で待つ。渡す関数もメインアクタのもの
+    @MainActor
+    static func wait(tries: Int, snapshot: @MainActor () -> PostModalSnapshot,
+                     until ready: @MainActor (PostModalSnapshot) -> Bool,
+                     sleep: @MainActor () async -> Void) async -> Bool {
         for _ in 0..<max(1, tries) {
             await sleep()
             if Task.isCancelled { return false }

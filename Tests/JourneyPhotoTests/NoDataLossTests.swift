@@ -109,7 +109,9 @@ final class NoDataLossTests: XCTestCase {
         config.protocolClasses = [ScriptedProtocol.self]
         let session = URLSession(configuration: config)
         let log = MarkLog()
-        let defaults = self.defaults
+        // UserDefaults は Apple の文書で複数のスレッドから使ってよい。Sendable と書かれていないので、
+        // 要求の手前（別の糸）で読むために nonisolated(unsafe) で渡す（2026-11-25 判断・試験だけ）
+        nonisolated(unsafe) let defaults = self.defaults
         let directory = self.directory
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: "t"), session: session,

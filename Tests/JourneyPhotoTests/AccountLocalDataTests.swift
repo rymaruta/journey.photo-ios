@@ -171,7 +171,7 @@ final class AccountLocalDataTests: XCTestCase {
 @MainActor
 final class PushReleaseTests: XCTestCase {
 
-    private func center(_ defaults: UserDefaults, released: @escaping () -> Void) -> PushCenter {
+    private func center(_ defaults: UserDefaults, released: @escaping @MainActor () -> Void) -> PushCenter {
         PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
                                                             tokenProvider: StubTokenProvider(token: nil))) },
                    defaults: defaults, releaseDevice: released)
@@ -288,7 +288,7 @@ final class PushReleaseTests: XCTestCase {
         }
     }
 
-    private func interruptedCenter(_ defaults: UserDefaults, released: @escaping () -> Void,
+    private func interruptedCenter(_ defaults: UserDefaults, released: @escaping @MainActor () -> Void,
                                    interrupt: @escaping @MainActor () async -> Void) -> PushCenter {
         PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
                                                          tokenProvider: InterruptingTokenProvider(interrupt: interrupt))) },
@@ -317,12 +317,14 @@ final class PushReleaseTests: XCTestCase {
         defaults.set(true, forKey: "photo-gallery-push-enabled.a")
         defaults.set(true, forKey: "photo-gallery-push-enabled.b")
         var released = 0
-        var push: PushCenter!
-        push = interruptedCenter(defaults, released: { released += 1 }) {
+        // 割り込みの閉包（@Sendable）からも使うので、作った係はロックの箱に入れて渡す（2026-11-25 Swift 6）
+        let holder = Locked<PushCenter?>(nil)
+        let push = interruptedCenter(defaults, released: { released += 1 }) {
             // a の登録が通信中のうちに b に替わり、b の前に残った c の印がある
             defaults.set("c", forKey: "photo-gallery-push-registered-owner")
-            await push.use(userId: "b")
+            await holder.value?.use(userId: "b")
         }
+        holder.value = push
         await push.use(userId: "a")
         defaults.removeObject(forKey: "photo-gallery-push-registered-owner")
         await push.registerIfPossible()

@@ -11,7 +11,7 @@ struct CompositionExampleThumb: View {
     let kind: CompositionKind
 
     /// 行の写真の大きさ（縦3:4・作例と同じ比）
-    static let size = CGSize(width: 48, height: 64)
+    nonisolated static let size = CGSize(width: 48, height: 64)
 
     @Environment(\.displayScale) private var displayScale
 

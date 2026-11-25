@@ -35,7 +35,7 @@ final class ViewModelTests: XCTestCase {
         APIClient(baseURL: URL(string: "https://api.example.test")!,
                   tokenProvider: StubTokenProvider(token: token),
                   session: session,
-                  beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
+                  beforeRequest: gates.map { gates in { @Sendable (request: URLRequest) async in await gates.wait(for: request) } })
     }
 
     // MARK: - 投稿したばかりの写真を先に並べる（`PostedPhotos`・2026-10-03）

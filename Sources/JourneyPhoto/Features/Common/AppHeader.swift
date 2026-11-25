@@ -143,7 +143,7 @@ struct AskEntryButton: View {
     /// （ロゴの右 約195 から右の余白 21 まで）で、字つきの並び（約247）が入らず、✦ がガラスの外のロゴの隣にはみ出し、
     /// 「AI に頼む」の字が吹き出しにかかった（「AI に頼む」の当たりは 54pt に押し縮められていた）。✦ だけ（並び 194）なら入る。
     /// iPhone（〜440pt）はどれも ✦ だけにし、字つきは約480pt 以上の広い窓（iPad など）だけにする。読み上げは今までどおり「AI に頼む」
-    static let labelMinWindowWidth: CGFloat = 480
+    nonisolated static let labelMinWindowWidth: CGFloat = 480  // 幅の決まりは画面の外の計算（`iconOnly`）でも読む（2026-11-25 Swift 6）
 
     /// 字を出さず ✦ だけにするか（大きな字のとき、狭い iPhone のとき）。窓の幅が読めなければ字を出す
     nonisolated static func iconOnly(largeText: Bool, windowWidth: CGFloat? = nil) -> Bool {

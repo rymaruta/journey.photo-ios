@@ -329,6 +329,7 @@ final class StampBookTests: XCTestCase {
     /// 止める合図が来ていたら、作りかけを捨てて CancellationError で抜ける
     func testCancellableBuildStopsWhenCancelled() async throws {
         let input = try heavyInput(count: 300, spots: 200)
+        let me = me  // 試験の持ち物（self）を別の仕事へ渡さない（2026-11-25 Swift 6）
         let task = Task { () throws -> StampBook in
             withUnsafeCurrentTask { $0?.cancel() }
             return try StampBook.buildCancellable(me: me, photos: input.photos, spots: input.spots, links: input.links,

@@ -187,7 +187,8 @@ enum PhotoRecolor {
 
     /// 編集の元を読む。**403 なら写真を取り直して、新しい URL で1回だけ読み直す**
     /// （公開画像の URL が期限切れになっている回）。取り直せない・それでも 403 なら `.expired`
-    static func loadSource(url: URL?,
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。渡す閉包（画面の持ち物をつかむ）を別の糸へ送らない
+    static func loadSource(url: URL?, isolation: isolated (any Actor)? = #isolation,
                            refreshURL: () async throws -> URL?,
                            fetch: (URL?) async throws -> Data) async throws -> Data {
         do {
