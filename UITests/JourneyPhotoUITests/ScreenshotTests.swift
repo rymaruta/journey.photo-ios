@@ -4502,7 +4502,7 @@ final class ScreenshotTests: JPUITestCase {
     /// **人間工学の直し A・B**（2026-11-25 判断・Artifact「人間工学アーティファクト」）。ログインした人のホームで、
     /// A: 上の右の当たり（AI に頼む、メッセージ、お知らせ、メニュー）が 44pt のまま 6pt ずつ離れ、ロゴと重ならないことを値で確かめ、
     /// 帯を寄りで撮る（標準の字と大きい字）。B: 「フォロー中の人の新しい写真」の段が出た日は、終わりの1行
-    /// （`home.followingEnd`）まで送って撮る。段が出ない日（フォロー中の新しい写真が無い）は撮らずに抜ける（この試験の決まり）
+    /// （`home.followingEnd`）まで送って撮る。フォロー中は見本の通信（`-JPPreviewDM`）で作る
     func testCapturesHomeHeaderGapAndFollowingEnd() {
         executionTimeAllowance = 600
         for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
@@ -4513,6 +4513,9 @@ final class ScreenshotTests: JPUITestCase {
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
             app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
             app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            // 見本の通信でフォロー中を作る（`PreviewBackend.dmFollowing`: 公開の新着の作者をフォローしていることにする）。
+            // 本物の通信だと見本の人はフォロー中の新しい写真が無く、段が出なかった（run 1818）
+            app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
             app.launchArguments += extra
             app.launch()
             defer { app.terminate() }
@@ -4542,6 +4545,12 @@ final class ScreenshotTests: JPUITestCase {
             }
             for (a, b) in zip(frames, frames.dropFirst()) {
                 XCTAssertGreaterThanOrEqual(b.1.minX - a.1.maxX, 5.5, "\(a.0) と \(b.0) の間が 6pt 未満\(tag)")
+                // 当たりの間が空きすぎていない（run 1818: 字つきの「AI に頼む」が押し縮められて、字が隣にかかっていた）
+                XCTAssertLessThanOrEqual(b.1.minX - a.1.maxX, 6.5, "\(a.0) と \(b.0) の間が 6pt でない\(tag)")
+            }
+            // iPhone では「AI に頼む」も ✦ だけ（44pt）。字つきが帯に入り切らないと、当たりが押し縮められる
+            if let ask = frames.first(where: { $0.0 == "header.ask" }) {
+                XCTAssertEqual(ask.1.width, 44, accuracy: 0.5, "AI に頼むの当たりが 44pt でない（字つきがはみ出している）\(tag)")
             }
             // ロゴ（「Journey Photo」）が右の当たりに重ならない
             let logo = app.navigationBars.firstMatch.descendants(matching: .any)
@@ -4553,8 +4562,8 @@ final class ScreenshotTests: JPUITestCase {
 
             // B: 新しい写真の終わりの1行（大きい字の回は A だけ見る）
             guard extra.isEmpty else { continue }
-            guard app.descendants(matching: .any)["home.following"].firstMatch.waitForExistence(timeout: 10) else {
-                unreached(app, "フォロー中の人の新しい写真（この回は段が出ない日）", probes: ["home.following", "home.followingEnd"])
+            guard app.descendants(matching: .any)["home.following"].firstMatch.waitForExistence(timeout: 20) else {
+                unreached(app, "フォロー中の人の新しい写真", probes: ["home.following", "home.followingEnd"])
                 continue
             }
             let end = app.descendants(matching: .any)["home.followingEnd"].firstMatch

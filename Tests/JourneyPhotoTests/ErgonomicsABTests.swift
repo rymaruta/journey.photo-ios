@@ -65,7 +65,9 @@ final class ErgonomicsABTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(375 - (44 + 44 * 3 + gaps) - margins, logoMin, "375pt でロゴが重なる")
         XCTAssertGreaterThanOrEqual(22 * AppLogo.headerMinimumScale, WebTheme.minBodyText, "ロゴの字が 12pt を割る")
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 402), "402pt で字つきだとロゴが切れる")
-        XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: 440))
+        // Mac run 1818: 440pt でも字つきは帯のガラス（約209pt）に入らず、✦ がロゴの隣へはみ出した
+        XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 440), "440pt で字つきだと帯からはみ出す")
+        XCTAssertGreaterThanOrEqual(AskEntryButton.labelMinWindowWidth, 441)
         // 大きな字の設定では ✦ だけ（帯の幅は 375 の ✦ だけと同じ）
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: true, windowWidth: 440))
     }

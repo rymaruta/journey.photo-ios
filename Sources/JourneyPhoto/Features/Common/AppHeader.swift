@@ -138,7 +138,12 @@ struct AskEntryButton: View {
     /// 2026-11-25 判断（当たりの間 6pt×3 を足した・`AppHeaderItems.buttonGap`）: 右の枠は字つきで約240、✦ だけで約194。
     /// ロゴの縮めた幅は約132（絵 19 ＋ 間 8 ＋ 字 約150×0.7・`AppLogo.headerMinimumScale`）。字つきは 48＋240＋132＝420pt 以上
     /// （430、440）だけにし、402pt は ✦ だけにする（字つきだと残りが約114 でロゴが切れる）。375pt は ✦ だけで残り約133
-    static let labelMinWindowWidth: CGFloat = 420
+    ///
+    /// 2026-11-25 判断（Mac run 1818 の 440pt の絵と寸法で上の見積もりを改めた）: 440pt でも帯のガラスに使えるのは約209pt
+    /// （ロゴの右 約195 から右の余白 21 まで）で、字つきの並び（約247）が入らず、✦ がガラスの外のロゴの隣にはみ出し、
+    /// 「AI に頼む」の字が吹き出しにかかった（「AI に頼む」の当たりは 54pt に押し縮められていた）。✦ だけ（並び 194）なら入る。
+    /// iPhone（〜440pt）はどれも ✦ だけにし、字つきは約480pt 以上の広い窓（iPad など）だけにする。読み上げは今までどおり「AI に頼む」
+    static let labelMinWindowWidth: CGFloat = 480
 
     /// 字を出さず ✦ だけにするか（大きな字のとき、狭い iPhone のとき）。窓の幅が読めなければ字を出す
     nonisolated static func iconOnly(largeText: Bool, windowWidth: CGFloat? = nil) -> Bool {
