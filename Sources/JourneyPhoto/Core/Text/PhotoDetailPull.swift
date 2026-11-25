@@ -73,6 +73,17 @@ enum PhotoDetailPull {
     /// 100ms は、触れている指の動きが届く間隔（60〜120Hz で 8〜17ms）の6倍以上。これだけ量が変わらなければ止めている
     static let stillMilliseconds: Double = 100
 
+    /// これより小さい縦の動き（pt）は「動いた」に数えない（2026-11-25 判断・Mac の回 1796）。AI に頼むで 48pt 引いて 0.5 秒止めて離した指で
+    /// 画面が閉じた。止めている間・離す瞬間に届く 1pt 未満の揺れ（指の位置の端数）を動きと数えると、止めていた時間が 0 に戻り、
+    /// UIKit が返す古い速さ（動いていた頃の値）が行き先に足される
+    static let moveEpsilon: Double = 1
+
+    /// 縦の量が前に数えた所から動いたか（`moveEpsilon` 未満の揺れは数えない）
+    static func movedEnough(from last: Double?, to y: Double) -> Bool {
+        guard let last else { return true }
+        return abs(y - last) >= moveEpsilon
+    }
+
     /// 離したときに使う縦の速さ。**最後に量が変わってから `stillMilliseconds` を越えて止めていたら 0**
     /// （UIKit が返す速さは、止めている間も最後に動いていた頃の値のまま）
     static func releaseVelocity(reportedY: Double, sinceLastMoveMs: Double) -> Double {

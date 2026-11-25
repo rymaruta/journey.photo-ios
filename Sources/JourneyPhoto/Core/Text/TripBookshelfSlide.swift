@@ -25,6 +25,22 @@ extension TripBookshelf {
     /// 段の上下へ外れても浮きを残す幅（pt）。これより外へ出たら浮きを消す（やめる）
     static let slideSlack: Double = 30
 
+    /// 押さえたまま動かさずにこれだけ経ったら、長押しのメニュー（表紙だけ見る）の指として押さえをやめる（秒）。
+    /// 2026-11-25 判断（Mac の回 1796）: 1.2 秒押して離すと、メニューが出ずに本が開いていた（押さえが取り消されずに離した所で開いた）。
+    /// メニューの出る約 0.5 秒より少し前に、押さえを必ず取り消して浮きを戻す。離しても何も開かない
+    static let menuSeconds: Double = 0.45
+
+    /// 押さえを長押しのメニューに譲るか: 押さえてから `menuSeconds` 経ち、その間に `holdSlop` より動いていない（ずらしていない）
+    static func yieldsToMenu(heldSeconds: Double, travelled: Double) -> Bool {
+        heldSeconds >= menuSeconds && travelled <= holdSlop
+    }
+
+    /// 「すぐ押して離した」として開くか（押していた秒）。押さえを取り消した長い押し（メニューに譲った・縦の送りに渡した）を、
+    /// 押した1回に数え直さない
+    static func tapOpens(pressedSeconds: Double) -> Bool {
+        pressedSeconds < holdSeconds + 0.1
+    }
+
     /// 押さえたあと縦にこれだけ（`slideSlack` より多く）動いたら、ずらすのをやめて縦の送りに渡す（2026-11-25 確かめ役の指摘）
     static func handsToScroll(dy: Double) -> Bool {
         abs(dy) > slideSlack

@@ -100,6 +100,12 @@ struct SpineSlideHost: UIViewRepresentable {
         private var slide = TripBookshelf.Slide(start: nil)
         /// 押さえ始めた所（縦にどれだけ動いたかを見る）
         private var holdStart: CGPoint = .zero
+        /// 押さえ始めてから動いた量の最大（長押しのメニューに譲るかを見る・`yieldsToMenu`）
+        private var travelled: Double = 0
+        /// 指が触れた時刻（すぐ押して離したかを見る・`tapOpens`）
+        private var touchDownTime: CFTimeInterval = 0
+        /// 押さえたまま動かさない指を、長押しのメニューに譲る見張り
+        private var menuWatch: DispatchWorkItem?
 
         private lazy var hold: UILongPressGestureRecognizer = {
             let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
@@ -135,7 +141,7 @@ struct SpineSlideHost: UIViewRepresentable {
         }
 
         func detach() {
-            if hold.state == .began || hold.state == .changed { handlers?.onLift(nil) }
+            if hold.state == .began || hold.state == .changed { reset() }
             hold.view?.removeGestureRecognizer(hold)
             tap.view?.removeGestureRecognizer(tap)
             host = nil
@@ -153,33 +159,61 @@ struct SpineSlideHost: UIViewRepresentable {
             switch recognizer.state {
             case .began:
                 holdStart = recognizer.location(in: nil)
+                travelled = 0
                 slide = TripBookshelf.Slide(start: target(recognizer))
                 handlers.onLift(slide.lifted)
+                // 動かさずに押さえ続けたら、メニューの出る前に押さえを取り消す（離しても開かない・浮きを戻す）
+                menuWatch?.cancel()
+                let watch = DispatchWorkItem { [weak self, weak recognizer] in
+                    guard let self, let recognizer, recognizer.state == .began || recognizer.state == .changed else { return }
+                    let held = TripBookshelf.menuSeconds
+                    if TripBookshelf.yieldsToMenu(heldSeconds: held, travelled: self.travelled) { self.cancel(recognizer) }
+                }
+                menuWatch = watch
+                DispatchQueue.main.asyncAfter(deadline: .now() + (TripBookshelf.menuSeconds - TripBookshelf.holdSeconds),
+                                              execute: watch)
             case .changed:
+                let here = recognizer.location(in: nil)
+                travelled = max(travelled, Double(hypot(here.x - holdStart.x, here.y - holdStart.y)))
                 // 縦に大きく動いた: ずらすのをやめて縦の送りに渡す（取り消すと `.cancelled` が来る）
                 if TripBookshelf.handsToScroll(dy: Double(recognizer.location(in: nil).y - holdStart.y)) {
-                    recognizer.isEnabled = false
-                    recognizer.isEnabled = true
+                    cancel(recognizer)
                     return
                 }
                 if slide.move(to: target(recognizer)) { handlers.onSwitch() }
                 handlers.onLift(slide.lifted)
             case .ended:
                 let opens = slide.opens
-                slide = TripBookshelf.Slide(start: nil)
-                handlers.onLift(nil)
+                reset()
                 if let opens { handlers.onOpen(opens) }
             case .cancelled, .failed:
-                // 長押しのメニューが出た・電話が来た: 何も開かない
-                slide = TripBookshelf.Slide(start: nil)
-                handlers.onLift(nil)
+                // 長押しのメニューに譲った・縦の送りに渡した・電話が来た: 何も開かない
+                reset()
             default:
                 break
             }
         }
 
+        /// 押さえを取り消す（`.cancelled` が来て、浮きを戻す）。取り消した後も次の指はいつもどおり受ける
+        private func cancel(_ recognizer: UIGestureRecognizer) {
+            recognizer.isEnabled = false
+            recognizer.isEnabled = true
+            // `.cancelled` が届かない場合でも、ここで必ず初めの状態に戻す（Mac の回 1796: 戻らずに押せなくなった）
+            reset()
+        }
+
+        /// 押さえの状態を必ず初めに戻す（浮きを消す・見張りを止める）
+        private func reset() {
+            menuWatch?.cancel()
+            menuWatch = nil
+            travelled = 0
+            slide = TripBookshelf.Slide(start: nil)
+            handlers?.onLift(nil)
+        }
+
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard recognizer.state == .ended, let handlers, let index = target(recognizer) else { return }
+            guard recognizer.state == .ended, let handlers, let index = target(recognizer),
+                  TripBookshelf.tapOpens(pressedSeconds: CACurrentMediaTime() - touchDownTime) else { return }
             handlers.onOpen(index)
         }
 
@@ -189,7 +223,9 @@ struct SpineSlideHost: UIViewRepresentable {
                   let probe, probe.window != nil, handlers?.isEnabled == true else { return false }
             // 流れている送りの上の一押しは、送りを止めるだけ（本を開かない）
             guard TripBookshelf.receivesTouch(scrollDecelerating: host?.isDecelerating == true) else { return false }
-            return probe.bounds.contains(touch.location(in: probe))
+            guard probe.bounds.contains(touch.location(in: probe)) else { return false }
+            if gestureRecognizer === tap { touchDownTime = CACurrentMediaTime() }
+            return true
         }
 
         /// 長押しのメニュー（SwiftUI）とは同時に動いてよい。メニューが出たら、こちらは取り消される

@@ -33,13 +33,17 @@ struct SearchBottomField<Content: View>: View {
             .padding(.top, JPSpace.xs)
             .padding(.bottom, JPSpace.xs + lift)
             .background(alignment: .bottom) {
-                // 結果の上に重なる帯の地。上の端は透けて、結果が下へ流れていくのが見える
+                // 結果の上に重なる帯の地。上の端は透けて、結果が下へ流れていくのが見える。
+                // 読み上げには出さない（Mac の回 1796: 地が下のタブの裏まで伸び、欄の枠が画面の下端 956 まで広がって読まれた）
                 LinearGradient(stops: [.init(color: WebTheme.background.opacity(0), location: 0),
                                        .init(color: WebTheme.background.opacity(0.94), location: 0.35)],
                                startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea(edges: .bottom)
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
+            // 入れ物は読み上げの箱（中の欄・消すボタンは別々に読む）。欄の枠が地の大きさに広がらない
+            .accessibilityElement(children: .contain)
             .animation(.easeOut(duration: 0.2), value: lift)
             .onAppear {
                 visible = true

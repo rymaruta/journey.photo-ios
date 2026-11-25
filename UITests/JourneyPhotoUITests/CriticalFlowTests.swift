@@ -1500,16 +1500,22 @@ final class CriticalFlowTests: JPUITestCase {
 
     /// **AI に頼むを下へ引いて閉じる**（案 1）。少し引いて止めて離すと戻り（閉じない）、大きく引くと閉じる。× も残す
     func testErgo1125AskPullDownCloses() {
-        let app = launch(["-JPAskFixture", "YES"])
+        // `-JPPreviewPullProbe`: 離したときの量・速さ・閉じると決めたか（`detail.pull.probe`・Mac の回 1796 で外したあとの事実取り）
+        let app = launch(["-JPAskFixture", "YES", "-JPPreviewPullProbe", "YES"])
         let field = openAsk(app)
         XCTAssertTrue(app.buttons["ask.close"].firstMatch.exists, "左上の × を外した")
+        func probe() -> String {
+            let element = app.descendants(matching: .any)["detail.pull.probe"].firstMatch
+            return (element.exists ? element.value as? String : nil) ?? "-"
+        }
         let window = app.windows.firstMatch.frame
         // 少しだけ（約 50pt）引いて止めて離す: 戻る（写真の画面と同じ 120pt に届かない）
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3 + 50 / window.height)),
                    withVelocity: .slow, thenHoldForDuration: 0.5)
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertTrue(field.exists, "少し引いて止めただけで閉じた")
+        print("measured askPull small probe=\(probe())")
+        XCTAssertTrue(field.exists, "少し引いて止めただけで閉じた（probe=\(probe())）")
         // 大きく引く: 閉じる
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))

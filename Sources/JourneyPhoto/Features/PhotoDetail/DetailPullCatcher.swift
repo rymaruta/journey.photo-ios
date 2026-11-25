@@ -364,7 +364,8 @@ struct DetailPullPanHost: UIViewRepresentable {
                     lastMoveY = nil
                     if PreviewSession.pullProbe { DetailPullProbe.shared.pullBegan() }
                 }
-                if move.y != lastMoveY {
+                // 1pt 未満の揺れは動きに数えない（止めて離した指に古い速さを足さない・`PhotoDetailPull.movedEnough`）
+                if PhotoDetailPull.movedEnough(from: lastMoveY.map(Double.init), to: Double(move.y)) {
                     lastMoveY = move.y
                     lastMoveTime = CACurrentMediaTime()
                     if PreviewSession.pullProbe { DetailPullProbe.shared.moved(velocityY: Double(pan.velocity(in: nil).y)) }

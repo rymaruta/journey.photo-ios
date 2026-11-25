@@ -263,7 +263,8 @@ final class ErgonomicsReview1125Tests: XCTestCase {
         XCTAssertFalse(TripBookshelf.handsToScroll(dy: 12), "横にずらす途中の小さな揺れで浮きが消える")
         let catcher = try source("Features/Trips/SpineSlideCatcher.swift")
         XCTAssertTrue(catcher.contains("guard TripBookshelf.receivesTouch(scrollDecelerating: host?.isDecelerating == true) else { return false }"))
-        XCTAssertTrue(catcher.contains("if TripBookshelf.handsToScroll(dy: Double(recognizer.location(in: nil).y - holdStart.y)) {\n                    recognizer.isEnabled = false\n                    recognizer.isEnabled = true"))
+        XCTAssertTrue(catcher.contains("if TripBookshelf.handsToScroll(dy: Double(recognizer.location(in: nil).y - holdStart.y)) {\n                    cancel(recognizer)\n                    return"))
+        XCTAssertTrue(catcher.contains("recognizer.isEnabled = false\n            recognizer.isEnabled = true"), "押さえを取り消していない")
         XCTAssertTrue(catcher.contains("if other === host?.panGestureRecognizer { return true }"), "押さえている間に縦に送れない")
         XCTAssertTrue(catcher.contains("&& other !== host?.panGestureRecognizer"), "縦の送りを押さえの失敗まで待たせている")
         // 浮いた背の真鍮の縁は背の外側だけ（布の上にかけない）
@@ -283,5 +284,42 @@ final class ErgonomicsReview1125Tests: XCTestCase {
                       "探すの欄が読み上げで最後になる")
         XCTAssertGreaterThan(SearchReadOrder.title, SearchReadOrder.field)
         XCTAssertGreaterThan(SearchReadOrder.field, 0)
+    }
+
+    // MARK: - Mac の回 1796 で外れた3件（2026-11-25）
+
+    /// 長押しのメニューに譲る: 動かさずに 0.45 秒押さえたら押さえを取り消す（離しても開かない）。ずらしていれば譲らない
+    func testShelfHoldYieldsToContextMenu() throws {
+        XCTAssertTrue(TripBookshelf.yieldsToMenu(heldSeconds: 0.45, travelled: 3), "動かさずに押さえ続けた指で本が開く")
+        XCTAssertFalse(TripBookshelf.yieldsToMenu(heldSeconds: 0.45, travelled: 40), "ずらしている指をメニューに譲った")
+        XCTAssertFalse(TripBookshelf.yieldsToMenu(heldSeconds: 0.3, travelled: 0))
+        XCTAssertGreaterThan(TripBookshelf.menuSeconds, TripBookshelf.holdSeconds)
+        XCTAssertLessThan(TripBookshelf.menuSeconds, 0.5, "長押しのメニューが出た後まで押さえが残る")
+        // 取り消した長い押しを「すぐ押して離した」に数え直さない
+        XCTAssertTrue(TripBookshelf.tapOpens(pressedSeconds: 0.1))
+        XCTAssertFalse(TripBookshelf.tapOpens(pressedSeconds: 1.2), "長押しのあと離した指で本が開く")
+        let catcher = try source("Features/Trips/SpineSlideCatcher.swift")
+        XCTAssertTrue(catcher.contains("if TripBookshelf.yieldsToMenu(heldSeconds: held, travelled: self.travelled) { self.cancel(recognizer) }"))
+        XCTAssertTrue(catcher.contains("TripBookshelf.tapOpens(pressedSeconds: CACurrentMediaTime() - touchDownTime)"))
+        // 取り消し・失敗・離した・外したのどれでも、状態を初めに戻す（戻らずに押せなくなった）
+        let cancel = try XCTUnwrap(catcher.range(of: "private func cancel(_ recognizer: UIGestureRecognizer) {"))
+        XCTAssertTrue(String(catcher[cancel.lowerBound...].prefix(400)).contains("reset()"), "取り消したときに状態を戻していない")
+        XCTAssertTrue(catcher.contains("case .cancelled, .failed:\n                reset()"), "取り消し・失敗で状態を戻していない")
+    }
+
+    /// 止めて離した指: 1pt 未満の揺れを動きに数えない（止めていた時間を 0 に戻して、古い速さを足さない）
+    func testPullIgnoresSubPointJitter() throws {
+        XCTAssertTrue(PhotoDetailPull.movedEnough(from: nil, to: 48))
+        XCTAssertFalse(PhotoDetailPull.movedEnough(from: 48, to: 48.6), "離す瞬間の端数の揺れを動きに数えた")
+        XCTAssertTrue(PhotoDetailPull.movedEnough(from: 48, to: 49))
+        let catcher = try source("Features/PhotoDetail/DetailPullCatcher.swift")
+        XCTAssertTrue(catcher.contains("if PhotoDetailPull.movedEnough(from: lastMoveY.map(Double.init), to: Double(move.y)) {"))
+    }
+
+    /// 探すの欄の読み上げの枠が、下のタブの裏まで伸びた地に広がらない（Mac の回 1796: 欄の下端が画面の下端 956 になった）
+    func testSearchFieldAccessibilityFrameStaysOnField() throws {
+        let bottom = try source("Features/Search/SearchBottomField.swift")
+        XCTAssertTrue(bottom.contains(".allowsHitTesting(false)\n                    .accessibilityHidden(true)"), "下の地が読み上げに出る")
+        XCTAssertTrue(bottom.contains(".accessibilityElement(children: .contain)"), "入れ物が欄と1つに読まれる")
     }
 }
