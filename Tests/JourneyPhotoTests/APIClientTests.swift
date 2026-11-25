@@ -139,9 +139,7 @@ struct StubTokenProvider: TokenProviding {
 }
 
 /// 応答を決め打ちで返す `URLProtocol`。
-// 2026-11-25 判断（Swift 6・試験だけ）: 答えを遅らせる回は別の糸から `client` に返す。URLProtocol は Sendable と
-// 書かれていないが、この模型が持つのは要求ごとの決まった答えだけ（共有の値は static の側）なので @unchecked Sendable
-final class StubProtocol: URLProtocol, @unchecked Sendable {
+final class StubProtocol: URLProtocol {
 
     nonisolated(unsafe) private static var status = 200
     nonisolated(unsafe) private static var body = Data()
@@ -267,11 +265,13 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
             url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
         )!
         // 遅らせる回は別の糸から呼ぶので @Sendable（中身は決めた値の写し・2026-11-25 Swift 6）
+        // URLProtocol は Sendable にできない（SDK が断っている）ので、この要求の係を `nonisolated(unsafe)` で渡す（2026-11-25 判断・試験だけ）
         let reply = body
-        let deliver: @Sendable () -> Void = { [self] in
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: reply)
-            client?.urlProtocolDidFinishLoading(self)
+        nonisolated(unsafe) let me = self
+        let deliver: @Sendable () -> Void = {
+            me.client?.urlProtocol(me, didReceive: response, cacheStoragePolicy: .notAllowed)
+            me.client?.urlProtocol(me, didLoad: reply)
+            me.client?.urlProtocolDidFinishLoading(me)
         }
         // 遅らせるのは、使わない方の `respond(path:status:body:delay:)` の回だけ
         if delay > 0 {

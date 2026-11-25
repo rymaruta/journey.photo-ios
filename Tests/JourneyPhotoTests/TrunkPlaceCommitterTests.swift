@@ -5,8 +5,7 @@ import FoundationNetworking
 @testable import JourneyPhoto
 
 /// 応答を少し遅らせる口（書き込みの最中を作る）。PUT の本文を控える
-// 2026-11-25 判断（Swift 6・試験だけ）: 答えを遅らせて別の糸から返す。持つのは要求ごとの決まった答えだけなので @unchecked Sendable
-final class SlowTrunkProtocol: URLProtocol, @unchecked Sendable {
+final class SlowTrunkProtocol: URLProtocol {
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var body = ""
     nonisolated(unsafe) static var puts: [(path: String, body: Data?)] = []
@@ -35,11 +34,15 @@ final class SlowTrunkProtocol: URLProtocol, @unchecked Sendable {
         if method == "POST" { Self.posts.append((path, request.httpBody ?? Self.read(request.httpBodyStream))) }
         let wait = method == "GET" ? 0 : Self.delay
         let status = method == "GET" ? 200 : (Self.failPath.map { path.contains($0) } == true ? 500 : Self.status)
-        DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [self] in
-            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data((status == 200 ? Self.body : #"{"error":"x"}"#).utf8))
-            client?.urlProtocolDidFinishLoading(self)
+        // 2026-11-25 判断（Swift 6・試験だけ）: 答えを遅らせて別の糸から返す。URLProtocol は Sendable にできない
+        // （SDK が断っている）ので、この要求の係を `nonisolated(unsafe)` で渡す。渡した後は答えを返すだけ
+        nonisolated(unsafe) let me = self
+        let url = request.url!
+        DispatchQueue.global().asyncAfter(deadline: .now() + wait) {
+            let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+            me.client?.urlProtocol(me, didReceive: response, cacheStoragePolicy: .notAllowed)
+            me.client?.urlProtocol(me, didLoad: Data((status == 200 ? Self.body : #"{"error":"x"}"#).utf8))
+            me.client?.urlProtocolDidFinishLoading(me)
         }
     }
 

@@ -317,12 +317,14 @@ final class PushReleaseTests: XCTestCase {
         defaults.set(true, forKey: "photo-gallery-push-enabled.a")
         defaults.set(true, forKey: "photo-gallery-push-enabled.b")
         var released = 0
-        var push: PushCenter!
-        push = interruptedCenter(defaults, released: { released += 1 }) {
+        // 割り込みの閉包（@Sendable）からも使うので、作った係はロックの箱に入れて渡す（2026-11-25 Swift 6）
+        let holder = Locked<PushCenter?>(nil)
+        let push = interruptedCenter(defaults, released: { released += 1 }) {
             // a の登録が通信中のうちに b に替わり、b の前に残った c の印がある
             defaults.set("c", forKey: "photo-gallery-push-registered-owner")
-            await push.use(userId: "b")
+            await holder.value?.use(userId: "b")
         }
+        holder.value = push
         await push.use(userId: "a")
         defaults.removeObject(forKey: "photo-gallery-push-registered-owner")
         await push.registerIfPossible()
