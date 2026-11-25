@@ -1495,4 +1495,66 @@ final class CriticalFlowTests: JPUITestCase {
         shot.lifetime = .keepAlways
         add(shot)
     }
+
+    // MARK: - 人間工学の見直し（2026-11-25・案 1 と案 4）
+
+    /// **AI に頼むを下へ引いて閉じる**（案 1）。少し引いて止めて離すと戻り（閉じない）、大きく引くと閉じる。× も残す
+    func testErgo1125AskPullDownCloses() {
+        // `-JPPreviewPullProbe`: 離したときの量・速さ・閉じると決めたか（`detail.pull.probe`・Mac の回 1796 で外したあとの事実取り）
+        let app = launch(["-JPAskFixture", "YES", "-JPPreviewPullProbe", "YES"])
+        let field = openAsk(app)
+        XCTAssertTrue(app.buttons["ask.close"].firstMatch.exists, "左上の × を外した")
+        func probe() -> String {
+            let element = app.descendants(matching: .any)["detail.pull.probe"].firstMatch
+            return (element.exists ? element.value as? String : nil) ?? "-"
+        }
+        // 少しだけ（50pt）ゆっくり引いて 1.5 秒止めて離す: 戻る（写真の詳細の `testDetailPull…` の「少し引いて離す」と同じ指）。
+        // Mac の回 1798: 正規の座標どうしの引き＋0.5 秒では probe が moves=2;moveAgeMs=0;endVy=235 で、止めた指になっていなかった
+        // （止めずに 235pt/秒で払った指は、写真の詳細と同じく 40 + 235 × 0.499 ≒ 157pt で閉じる＝正しい）。
+        // 写真の詳細と同じ「座標からのずらし」で引き、止めた指になったか（moveAgeMs > 100・endVy=0）を先に確かめる
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 50)),
+                    withVelocity: .slow, thenHoldForDuration: 1.5)
+        Thread.sleep(forTimeInterval: 1.5)
+        let small = probe()
+        print("measured askPull small probe=\(small)")
+        func number(_ key: String) -> Int? {
+            small.components(separatedBy: ";").first { $0.hasPrefix(key + "=") }.flatMap { Int($0.dropFirst(key.count + 1)) }
+        }
+        XCTAssertGreaterThan(number("moveAgeMs") ?? 0, 100, "試験の指が止まってから離れていない（probe=\(small)）")
+        XCTAssertEqual(number("endVy"), 0, "止めて離した指に速さが残っている（probe=\(small)）")
+        XCTAssertTrue(field.exists, "少し引いて止めただけで閉じた（probe=\(small)）")
+        guard field.exists else { return }
+        // 大きく引く: 閉じる
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "下へ引いても AI に頼むの画面が閉じない")
+        XCTAssertTrue(app.buttons["header.ask"].firstMatch.waitForExistence(timeout: 5), "閉じた後に元の画面へ戻らない")
+    }
+
+    /// **探すの欄は下**（案 4）。下のタブのすぐ上にあり、打ち始めるとキーボードのすぐ上に乗る
+    func testErgo1125SearchFieldAtBottom() {
+        let app = launch()
+        tab(app, 1)
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        let window = app.windows.firstMatch.frame
+        let tabBar = app.tabBars.firstMatch.frame
+        print("measured searchField field=\(field.frame) tabBar=\(tabBar) window=\(window)")
+        XCTAssertGreaterThan(field.frame.minY, window.height * 0.6, "探すの欄が画面の下に無い")
+        XCTAssertLessThanOrEqual(field.frame.maxY, tabBar.minY + 1, "探すの欄が下のタブに重なる")
+        XCTAssertGreaterThanOrEqual(field.frame.height, 44, "探すの欄の当たりが 44pt 未満")
+        field.tap()
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.waitForExistence(timeout: 5) {
+            Thread.sleep(forTimeInterval: 0.6)
+            print("measured searchField typing field=\(field.frame) keyboard=\(keyboard.frame)")
+            XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY + 1, "打つ間、探すの欄がキーボードの裏に隠れる")
+            XCTAssertLessThan(keyboard.frame.minY - field.frame.maxY, 60, "打つ間、探すの欄がキーボードから離れている")
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Ergo1125-探す（欄は下）"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
 }

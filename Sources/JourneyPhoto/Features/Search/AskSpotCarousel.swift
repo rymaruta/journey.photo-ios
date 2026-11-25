@@ -33,12 +33,12 @@ struct AskOfflineBand: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "wifi.slash")
-                .font(.system(size: 13, weight: .semibold))
+                .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                 .foregroundStyle(WebTheme.text2)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("電波が届かないので AI に聞けません", "No signal, so AI isn't available"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                     .foregroundStyle(WebTheme.text)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(L("前に見た観光スポットから選びました", "Picked from spots you've already seen"))
@@ -69,7 +69,7 @@ struct AskLoadingSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(AskText.loading, systemImage: "sparkle")
-                .font(.system(size: 13))
+                .jpSystemFont(13, relativeTo: .footnote)
                 .foregroundStyle(WebTheme.text2)
             VStack(alignment: .leading, spacing: 10) {
                 bone(height: 20).padding(.trailing, 40)
@@ -271,7 +271,7 @@ struct AskSpotCarousel: View {
             HStack(spacing: 12) {
                 JPEyebrowLine(L("観光スポット", "Spots"))
                 Text("\((index(of: current) ?? 0) + 1) / \(spots.count)")
-                    .font(.system(size: 12).monospacedDigit())
+                    .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityLabel(L("\(spots.count)か所のうち \((index(of: current) ?? 0) + 1) か所目",
                                           "\((index(of: current) ?? 0) + 1) of \(spots.count)"))
@@ -481,7 +481,7 @@ struct AskSpotCard: View {
                 .accessibilityIdentifier("search.ask.spot")
                 if let reason, !reason.isEmpty {
                     Text(reason)
-                        .font(.system(size: 13))
+                        .jpSystemFont(13, relativeTo: .footnote)
                         .foregroundStyle(WebTheme.text2)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -522,7 +522,7 @@ struct AskSpotTags: View {
         HStack(spacing: 6) {
             ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                 Text(tag.text)
-                    .font(.system(size: 12))
+                    .jpSystemFont(12, relativeTo: .caption)
                     .foregroundStyle(WebTheme.chipText)
                     .lineLimit(1)
                     .padding(.horizontal, 9)
@@ -558,11 +558,11 @@ struct AskWishButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: wanted ? "flag.fill" : "flag")
-                    .font(.system(size: 13, weight: .semibold))
+                    .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityHidden(true)
                 Text(L("行きたい", "Want to go"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                     .foregroundStyle(wanted ? WebTheme.accent : WebTheme.text)
                     .lineLimit(1)
             }

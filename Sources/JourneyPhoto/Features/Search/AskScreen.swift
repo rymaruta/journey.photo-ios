@@ -54,8 +54,25 @@ struct AskScreen: View {
     @State private var signIn: SignInRequest?
     /// 下の欄の高さ（知らせを重ねないため・測る前は 0）
     @State private var composerHeight: CGFloat = 0
+    /// 画面を下へ引いている量（2026-11-25 判断・人間工学の案 1・`PhotoDetailPull.askScreenStarts`）。
+    /// 写真を大きく見る画面と同じ箱と入れ物——**引いている間にこの画面の `body` を描き直さない**（`PhotoDetailPullHolder`）
+    @StateObject private var pullHolder = PhotoDetailPullHolder()
+    private var pull: PhotoDetailPullDrag { pullHolder.drag }
+    /// 会話の送りの見えている高さ（中身が短くても、空いた所から引けるように中身の最小の高さにする）
+    @State private var threadHeight: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // 2026-11-25 判断（人間工学の案 1）: 下へ引くと画面が指に付いて下がり、離すと閉じる（写真を大きく見る画面と同じ）。
+        // 左上の × と VoiceOver の「戻る」は残す（引くだけの操作には押して済む道も残す・WCAG 2.2 の 2.5.7）
+        // 地は不透明に塗って一緒に下げる（全画面の器は透明・`RootView` の `presentationBackground(.clear)`）。
+        // 引いた所から下にだけ、後ろの画面が見える
+        DetailPullFollow(drag: pull, part: .screen, reduceMotion: reduceMotion,
+                         content: screen.background { WebTheme.background.ignoresSafeArea() })
+            .accessibilityAction(.escape) { close() }
+    }
+
+    private var screen: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 if let line = usageLine {
@@ -85,7 +102,11 @@ struct AskScreen: View {
                     }
                     .padding(.top, JPSpace.xs)
                     .padding(.bottom, JPSpace.l)
+                    // 中身が短くても、空いた所から引けるように（引く指を受けるのはこの枠の中だけ・`DetailPullCatcher`）
+                    .frame(maxWidth: .infinity, minHeight: threadHeight, alignment: .top)
+                    .background { pullCatcher }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { threadHeight = $0 }
                 .scrollDismissesKeyboard(.interactively)
                 composer
             }
@@ -533,6 +554,24 @@ struct AskScreen: View {
     }
 
     /// 閉じる。答えを待っている途中なら取り消し、頼みの字は開き直したとき欄に戻す（打ちかけの字も）。会話は残す
+    /// 下へ引く指（写真を大きく見る画面と同じ部品・判定は `PhotoDetailPull`）。答えの一覧の縦の送りに付く
+    private var pullCatcher: some View {
+        DetailPullCatcher(
+            isEnabled: true,
+            shouldBegin: { [pull, focused] dx, dy, atTop in
+                !pull.closing && PhotoDetailPull.askScreenStarts(dx: dx, dy: dy, atTop: atTop, typing: focused)
+            },
+            onChange: { [pull] _, dy in
+                pull.translation = CGSize(width: 0, height: dy)
+            },
+            onEnd: { dy, velocityY in
+                // 引いた所に残したまま閉じる・届かなければ戻す（写真の詳細と同じ `PhotoDetailPullDrag.release`）
+                if pull.release(dy: dy, velocityY: velocityY, reduceMotion: reduceMotion) { close() }
+            },
+            onCancel: { pull.reset(reduceMotion: reduceMotion) }
+        )
+    }
+
     private func close() {
         let interrupted = engine.interrupt()
         task?.cancel()

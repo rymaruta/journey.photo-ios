@@ -1074,6 +1074,9 @@ struct RootView: View {
             }
             .fullScreenCover(isPresented: $showAsk) {
                 AskScreen(engine: askEngine, prefill: askPrefill, onClose: { showAsk = false })
+                    // 下へ引いている間、引いた所から下の画面（探す・ホーム）が見える（2026-11-25 確かめ役の指摘: 後ろが黒かった）。
+                    // 地は AI の画面が自分で塗る（`AskScreen.body`）
+                    .presentationBackground(Color.clear)
             }
             .onChange(of: auth.userId) { _, _ in askEngine.reset() }
     }

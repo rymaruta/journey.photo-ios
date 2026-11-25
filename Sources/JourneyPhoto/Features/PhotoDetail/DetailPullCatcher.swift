@@ -158,6 +158,8 @@ struct DetailPullFollow<Content: View>: View {
         case photo
         /// 写真の下（説明・コメント・入力欄）: 薄れて消える
         case rest
+        /// 画面まるごと（AI に頼むの全画面・2026-11-25 判断）: 縮めず、下へだけ指に付いて動く（シートを引く手ざわり）
+        case screen
     }
 
     @ObservedObject var drag: PhotoDetailPullDrag
@@ -179,6 +181,8 @@ struct DetailPullFollow<Content: View>: View {
                 .offset(x: shift.x, y: shift.y)
         case .rest:
             content.opacity(PhotoDetailPull.restOpacity(dy: dy))
+        case .screen:
+            content.offset(y: PhotoDetailPull.offset(dx: dx, dy: dy).y)
         }
     }
 }
@@ -360,7 +364,8 @@ struct DetailPullPanHost: UIViewRepresentable {
                     lastMoveY = nil
                     if PreviewSession.pullProbe { DetailPullProbe.shared.pullBegan() }
                 }
-                if move.y != lastMoveY {
+                // 1pt 未満の揺れは動きに数えない（止めて離した指に古い速さを足さない・`PhotoDetailPull.movedEnough`）
+                if PhotoDetailPull.movedEnough(from: lastMoveY.map(Double.init), to: Double(move.y)) {
                     lastMoveY = move.y
                     lastMoveTime = CACurrentMediaTime()
                     if PreviewSession.pullProbe { DetailPullProbe.shared.moved(velocityY: Double(pan.velocity(in: nil).y)) }
