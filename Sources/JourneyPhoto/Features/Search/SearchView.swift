@@ -128,10 +128,12 @@ struct SearchView: View {
                         .foregroundStyle(WebTheme.text)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("search.title")
+                        // 読む順: 見出し「探す」→ 下の欄 → 結果（欄は下に置いたが、読む順は見出しのすぐ後・`SearchReadOrder`）
+                        .accessibilitySortPriority(SearchReadOrder.title)
                         .padding(.horizontal, JPSpace.gutter)
                         .transition(.opacity)
                 }
-                searchField
+                // 2026-11-25 判断（人間工学の案 4）: 探すの欄は下（下のタブのすぐ上・`SearchBottomField`）。ここには置かない
                 // 2026-11-16 判断（A10）: 範囲のチップ（すべて・写真・人・タグ・撮影地）は**字を打ってから**出す。
                 // 打つ前に押しても効く中身が無い。選んでいる範囲があれば、外せるように残す（`SearchHeader.showsScopeChips`）
                 if SearchHeader.showsScopeChips(query: query, scopeIsAll: model.scope == .all) {
@@ -231,6 +233,12 @@ struct SearchView: View {
                 fieldFocused = true
             }
             }
+        }
+        // 2026-11-25 判断（人間工学の案 4）: 探すの欄を親指の届く下へ（iOS 26 の Apple のアプリと同じ所）。
+        // 打ち始めるとキーボードのすぐ上に乗る。曲の再生器が下にあれば、その上に積む（`SearchBottomField`）
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SearchBottomField(content: searchField)
+                .accessibilitySortPriority(SearchReadOrder.field)
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
@@ -703,6 +711,9 @@ struct SearchView: View {
             JPTextField(fieldPrompt, text: $query)
                 .focused($fieldFocused)
                 .textFieldStyle(.plain)
+                // 押せる高さは 44 以上（Mac の回 1798: 字の欄の高さ 22 のままだった。枠は 44 でも、欄そのものの当たりは字の高さだった）
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
                 // 板の 16（`.callout`）
                 .font(.callout)
                 .foregroundStyle(WebTheme.foreground)
@@ -731,6 +742,9 @@ struct SearchView: View {
                 .accessibilityIdentifier("search.clear")
             }
         }
+        // 枠のどこを押しても打てる（虫めがねの上・欄の左右の余白も。消す「×」は自分のボタンが先に受ける）
+        .contentShape(Rectangle())
+        .onTapGesture { fieldFocused = true }
         // 地・縁・高さは撮影スポットの一覧の探す欄と同じ（`jpSearchBoxFace`・札 #524 で切り出した）
         .jpSearchBoxFace()
         .padding(.horizontal, JPSpace.gutter)

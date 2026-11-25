@@ -82,7 +82,8 @@ struct TripBookshelfView<Opened: View>: View {
     @State private var presented: TripBookshelf.Book?
     /// 引き出す・めくる段取り。**棚はこれを見張らない**（動くたびに棚を作り直さない）
     @StateObject private var stage = BookStageModel()
-    @State private var returned = 0
+    /// 押さえて浮かせている背（2026-11-25 判断・案 3）。**棚は見張らない**（見張るのは背の枠と振動の子だけ）
+    @StateObject private var lifter = SpineLifter()
 
     private static var space: String { TripBookshelf.coordinateSpace }
 
@@ -124,14 +125,26 @@ struct TripBookshelfView<Opened: View>: View {
             open(book)
                 .modifier(TripBookOpening(book: book, namespace: bookSpace, animated: !reduceMotion))
         }
-        // 一冊の頁が閉じた（「戻る」・下へ引いた）: 表紙を戻して棚へ帰す。帰り着いた瞬間に触覚（.light）
+        // 一冊の頁が閉じた（「戻る」・下へ引いた）: 表紙を戻して棚へ帰す。
+        // 2026-11-25 判断（案 3）: 帰り着いた時の振動はやめた（振動はずらして替わった時と開き切った時だけ）
         .onChange(of: presented) { old, new in
             guard old != nil, new == nil else { return }
-            stage.close { returned += 1 }
+            stage.close {}
         }
-        .onDisappear { if presented == nil { stage.reset() } }
-        .sensoryFeedback(.impact(weight: .light), trigger: returned)
+        .onDisappear {
+            lifter.lift(nil)
+            if presented == nil { stage.reset() }
+        }
+        // ずらして別の背に替わった時の軽い振動（見張るのはこの子だけ）
+        .background {
+            SpineSlideFeedback(lifter: lifter)
+            // UI テストの事実取り（`-JPPreviewPullProbe YES` のときだけ・Mac の回 1798）
+            if PreviewSession.pullProbe { SpineSlideProbeView() }
+        }
     }
+
+    /// 押さえて浮かせてよいか（本が開く・閉じる動きの最中は受けない）
+    private var canLift: Bool { presented == nil && !stage.isBusy && stage.stage == nil }
 
     /// 背表紙を押した（長押しの「開く」も同じ）。動きを減らす設定ではすぐ開く
     private func openBook(_ book: TripBookshelf.Book) {
@@ -167,6 +180,23 @@ struct TripBookshelfView<Opened: View>: View {
                     spine(book)
                 }
             }
+            // 押して・ずらして・離して開く（2026-11-25 判断・人間工学の案 3・`SpineSlideCatcher`）。
+            // 押せる幅は背の幅＋間（`hitWidth`）で、並びと同じ順に左から数える
+            .background {
+                SpineSlideCatcher(
+                    slots: row.map { TripBookshelf.hitWidth(photos: $0.photoCount) },
+                    // 受けるかは押した時に読む（描いた時の値を渡すと、閉じる動きのあと棚が描き直されるまで押せなくなる）
+                    isEnabled: true,
+                    onLift: { index in
+                        guard canLift || index == nil else { return }
+                        lifter.lift(index.flatMap { row.indices.contains($0) ? row[$0].id : nil })
+                    },
+                    onSwitch: { lifter.switched() },
+                    onOpen: { index in
+                        guard row.indices.contains(index) else { return }
+                        openBook(row[index])
+                    })
+            }
             .frame(maxWidth: .infinity, minHeight: TripBookshelf.rowHeight, alignment: .bottomLeading)
             // 背の当たりが間の半分ずつ外へ出る分、段の左を詰める（背の見た目の位置は前と同じ）
             .padding(.horizontal, JPSpace.gutter - CGFloat(TripBookshelf.spineGap / 2))
@@ -178,13 +208,10 @@ struct TripBookshelfView<Opened: View>: View {
         }
     }
 
+    /// 背表紙。**押すのは段の指の部品**（`SpineSlideCatcher`・押して・ずらして・離して開く）。ボタンにしない——
+    /// ボタンは押した背に指が縛られ、ずらして隣に替えられない。読み上げでは今どおりボタンとして「開く」
     private func spine(_ book: TripBookshelf.Book) -> some View {
-        Button {
-            openBook(book)
-        } label: {
-            BookSpineSlot(book: book, hider: stage.hider)
-        }
-        .buttonStyle(SpineButtonStyle(reduceMotion: reduceMotion))
+        BookSpineSlot(book: book, hider: stage.hider, lifter: lifter, reduceMotion: reduceMotion)
         // 本を引き出す元の枠（棚の座標・知らせない）と、表紙を先に読んでおく
         .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .named(TripBookshelf.coordinateSpace)).insetBy(dx: CGFloat(TripBookshelf.spineGap / 2), dy: 0)
@@ -218,14 +245,47 @@ struct TripBookshelfView<Opened: View>: View {
 struct BookSpineSlot: View {
     let book: TripBookshelf.Book
     @ObservedObject var hider: BookSpineHider
+    /// 押さえて浮かせている背（2026-11-25 判断・案 3・見た目は `SpineLiftLook`）
+    @ObservedObject var lifter: SpineLifter
+    var reduceMotion = false
 
     var body: some View {
         BookSpine(book: book)
             // 背の見た目が変わったときだけ描き直す（`TripBookshelf.SpineLook`）
             .equatable()
+            .modifier(SpineLiftLook(lifted: lifter.liftedId == book.id, reduceMotion: reduceMotion))
             .opacity(hider.hiddenId == book.id ? 0 : 1)
             .padding(.horizontal, CGFloat(TripBookshelf.spineGap / 2))
             .contentShape(Rectangle())
+    }
+}
+
+/// 押さえて浮かせた背（2026-11-25 判断・案 3）: 持ち上がって明るくなり、真鍮の細い縁で「いま離せばこれが開く」を
+/// 形でも見せる（黒地の上なので真鍮）。動きを減らす設定では浮かせず、明るくなるだけ（前の押した時と同じ）
+struct SpineLiftLook: ViewModifier {
+    let lifted: Bool
+    let reduceMotion: Bool
+
+    nonisolated static let offset: CGFloat = 12
+    nonisolated static let brightness: Double = 0.12
+    /// 縁の太さ。背の外へこの分だけ広げた線を、背の後ろに描く（線の内側の半分も背の外に収まる）
+    nonisolated static let ringWidth: CGFloat = 1.5
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(lifted ? Self.brightness : 0)
+            // 縁は背の外側だけ（背の後ろに置き、背より一回り大きく描く）。真鍮は布の上にかけない（黒地の上だけ・板の決まり）
+            .background {
+                if lifted {
+                    UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 2,
+                                           bottomTrailingRadius: 2, topTrailingRadius: 3)
+                        .stroke(WebTheme.accent, lineWidth: Self.ringWidth)
+                        .padding(-Self.ringWidth)
+                        .accessibilityHidden(true)
+                }
+            }
+            .offset(y: lifted && !reduceMotion ? -Self.offset : 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: lifted)
     }
 }
 
@@ -375,20 +435,6 @@ struct BookCoverFace: View {
                                           bottomTrailingRadius: 6, topTrailingRadius: 6))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(TripBookshelf.spokenLabel(book))
-    }
-}
-
-/// 背表紙を押したとき: 指が触れた瞬間に明るくなり、少しだけ持ち上がる。押した瞬間に軽い触覚（.light）。
-/// 動きを減らす設定では明るくなるだけ
-private struct SpineButtonStyle: ButtonStyle {
-    let reduceMotion: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .brightness(configuration.isPressed ? 0.12 : 0)
-            .offset(y: configuration.isPressed && !reduceMotion ? -4 : 0)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
     }
 }
 

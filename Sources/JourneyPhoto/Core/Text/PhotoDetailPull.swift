@@ -54,6 +54,19 @@ enum PhotoDetailPull {
         viewerAccepts(zoom: zoom, pinch: pinch) && starts(dx: dx, dy: dy, atTop: true)
     }
 
+    /// **AI に頼むの全画面**（`AskScreen`）で下へ引く指を受けるか（2026-11-25 判断・人間工学の案 1）。
+    /// 写真を大きく見る画面と同じく、閉じるのは左上の × だけだった。**答えの一覧がいちばん上にあって、下向きで、
+    /// 縦が横より大きいとき**だけ（`starts`）——読んでいる途中の送り・観光スポットの札の横の送りとはぶつけない。
+    /// **字を打っている間は始めない**: 下へ引く指はまずキーボードを下ろす（`scrollDismissesKeyboard(.interactively)`）。
+    /// もう一度引けば閉じる。
+    ///
+    /// 閉じる所は写真の詳細と同じ（勢いを足した行き先が 120pt・`closes`）。2026-11-25 判断（Mac の回 1798 の値）: 40pt を 235pt/秒で
+    /// 払った指は 40 + 235 × 0.499 ≒ 157pt で閉じる。写真アプリ・写真の詳細と同じく、短く素早く払えば閉じるのが正しい手ざわり
+    /// （同じアプリの中で「下へ引いて閉じる」の手ごたえを割らない）。止めてから離した指は速さ 0 で、120pt に届かなければ戻る
+    static func askScreenStarts(dx: Double, dy: Double, atTop: Bool, typing: Bool) -> Bool {
+        !typing && starts(dx: dx, dy: dy, atTop: atTop)
+    }
+
     /// 指を止めているとみなす時間（ms）。最後に量が変わってからこれより長く経って離した指は、速さ 0 として扱う。
     ///
     /// **2026-11-14 判断（Mac の回 1232 の値）**: 90pt ゆっくり引いて 1.5 秒止めて離した指で、UIKit のパン
@@ -63,6 +76,17 @@ enum PhotoDetailPull {
     /// 戻る所（120pt）を越えて閉じた（`endCloses=1`）。
     /// 100ms は、触れている指の動きが届く間隔（60〜120Hz で 8〜17ms）の6倍以上。これだけ量が変わらなければ止めている
     static let stillMilliseconds: Double = 100
+
+    /// これより小さい縦の動き（pt）は「動いた」に数えない（2026-11-25 判断・Mac の回 1796）。AI に頼むで 48pt 引いて 0.5 秒止めて離した指で
+    /// 画面が閉じた。止めている間・離す瞬間に届く 1pt 未満の揺れ（指の位置の端数）を動きと数えると、止めていた時間が 0 に戻り、
+    /// UIKit が返す古い速さ（動いていた頃の値）が行き先に足される
+    static let moveEpsilon: Double = 1
+
+    /// 縦の量が前に数えた所から動いたか（`moveEpsilon` 未満の揺れは数えない）
+    static func movedEnough(from last: Double?, to y: Double) -> Bool {
+        guard let last else { return true }
+        return abs(y - last) >= moveEpsilon
+    }
 
     /// 離したときに使う縦の速さ。**最後に量が変わってから `stillMilliseconds` を越えて止めていたら 0**
     /// （UIKit が返す速さは、止めている間も最後に動いていた頃の値のまま）
