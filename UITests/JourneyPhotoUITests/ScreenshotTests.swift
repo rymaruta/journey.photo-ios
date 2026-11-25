@@ -6370,6 +6370,52 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
+    /// **パスワードを変える・アカウントの削除**（2026-11-25・owner の実機の画面写真）: 欄の名前の頭（「い」）と、
+    /// 節の最後の欄の下の縁が、節の角で欠けていた（`FormRowCornerTests`・`jpForm()`）。2つの画面を撮って目で見る。
+    /// 欄の左の端が画面の端 16 にあること（0 に寄っていない・2つの欄で揃う）は数で見る
+    func testCapturesChangePasswordAndDeleteAccount() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 15) else { return XCTFail("設定の丸が無い") }
+        scrollTo(gear, in: app)
+        gear.tap()
+        let row = app.buttons["settings.password"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に「パスワードを変える」の行が無い") }
+        scrollTo(row, in: app)
+        row.tap()
+        let current = app.secureTextFields["changePassword.current"].firstMatch
+        let updated = app.secureTextFields["changePassword.new"].firstMatch
+        guard current.waitForExistence(timeout: 10), updated.exists else { return XCTFail("パスワードを変える画面が開かない") }
+        let window = app.windows.firstMatch.frame
+        let measured = "measured changePassword current=\(current.frame) new=\(updated.frame) window=\(window)"
+        print(measured)
+        XCTContext.runActivity(named: measured) { _ in }
+        // 欄の箱は画面の端 16、字はその内側 14（`jpFieldBox`）。run 1802 は一覧の余白 20 が足されて 50 だった
+        XCTAssertEqual(current.frame.minX - window.minX, 30, accuracy: 1, "欄が画面の端 16 から始まっていない")
+        XCTAssertEqual(current.frame.minX, updated.frame.minX, accuracy: 1, "2つの欄の左の端が揃わない")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102k-パスワードを変える")
+        goBack(app)
+        Thread.sleep(forTimeInterval: 1)
+
+        let delete = app.buttons["settings.deleteAccount"].firstMatch
+        guard delete.waitForExistence(timeout: 5) else { return XCTFail("設定にアカウントの削除が無い") }
+        var pushes = 0
+        while !delete.isHittable || delete.frame.maxY > app.windows.firstMatch.frame.maxY - 60, pushes < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard delete.isHittable else { return XCTFail("アカウントの削除の行に届かない") }
+        delete.tap()
+        guard app.textFields.firstMatch.waitForExistence(timeout: 10) else { return XCTFail("アカウントの削除の画面が開かない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102l-アカウントの削除")
+    }
+
     /// **設定の並び**（2026-10-18 owner「設定の項目多くなってるのでわかりやすいように整理して」）: いちばん上・
     /// 公開範囲とプライバシー（すれちがい乗車券）・最後の危ない操作・下の画面（データとストレージ・トランクを見せる）。
     /// 2026-11-12: 旅の道具は ≡ メニューへ（`testCapturesSiteMenuTools`）。押せる行が 44pt 未満なら落とす

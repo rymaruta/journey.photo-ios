@@ -52,11 +52,13 @@ struct ChangePasswordView: View {
                         .accessibilityIdentifier("changePassword.new")
                 }
                 .overlay(alignment: .bottom) { focusRing(focused == .newPassword) }
-            } footer: {
-                // 板には無いが残す——決まりを知らずに打つと、送ってから断られる
+                // 板には無いが残す——決まりを知らずに打つと、送ってから断られる。
+                // 節の footer ではなく行に置く（2026-11-25）: footer の左の端は端末の余白（大きい iPhone は 20）で、
+                // 行の端 16（`JPFormLayout.sideInset`）と揃わない
                 Text(AuthMessage.passwordRule)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .jpFormRow()
 
@@ -79,6 +81,7 @@ struct ChangePasswordView: View {
             }
             .jpFormRow()
         }
+        .jpForm()
         .webScreen()
         // 戻るボタンの文言のために題は持つが、バーの中央には出さない（板は左寄せの大見出しだけ・設定と同じ）
         .navigationTitle(L("パスワードを変える", "Change password"))

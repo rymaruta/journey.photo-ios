@@ -144,6 +144,7 @@ public struct ScrollDismissesKeyboardModeShim {
 public struct ListStyleShim {
     public static let plain = ListStyleShim()
     public static let insetGrouped = ListStyleShim()
+    public static let grouped = ListStyleShim()
 }
 /// シートの高さの段（本物と同じ形）
 public struct PresentationDetent: Hashable {
@@ -301,6 +302,8 @@ extension View {
     public func listRowSeparator(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の区切り線の色（本物は `edges:` も取る）
     public func listRowSeparatorTint(_ color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 節の上下の区切り線を出すか（本物と同じ）
+    public func listSectionSeparator(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
