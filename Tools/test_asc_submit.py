@@ -83,6 +83,8 @@ class Fake:
         if path.startswith("/v1/subscriptions/") and path.endswith("/appStoreReviewScreenshot"):
             return {"data": None}
         if path.startswith("/v1/subscriptions/") and path.endswith("/subscriptionAvailability"):
+            if getattr(self, "no_availability", False):
+                raise sub.ApiError(404, "NOT_FOUND")
             return {"data": {"id": "av1"}}
         raise AssertionError(f"知らない GET: {path}")
 
@@ -325,6 +327,14 @@ class Test(unittest.TestCase):
         self.assertIn("pro.yearly: 値段が決まっていません", out)
         self.assertIn("pro.monthly: 表示名と説明（ja）がありません", out)
         self.assertNotIn("販売する国や地域が決まっていません", out)
+
+    def test_availability_404_means_not_set(self):
+        """販売する国や地域を決めていない定期購入は 404 が返る（run 45664927348）。読めないではなく「決まっていない」"""
+        f = Fake(subs="MISSING_METADATA")
+        f.no_availability = True
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertIn("pro.monthly: 販売する国や地域が決まっていません", out)
 
     def test_dry_run_skips_details_of_approved_subscriptions(self):
         f = Fake(subs="APPROVED")

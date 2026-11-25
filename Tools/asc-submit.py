@@ -359,7 +359,15 @@ def subscription_details(c, aid: str, subs: list[dict]) -> list[str]:
                 missing.append(f"{pid}: 審査用の画面写真がありません（App Review に関する情報）")
             elif state and state != "COMPLETE":
                 missing.append(f"{pid}: 審査用の画面写真が {state} です")
-        avail_answer = safe(lambda: c.get(f"/v1/subscriptions/{sid}/subscriptionAvailability"), "販売する国や地域")
+        # 決めていない定期購入は 404 が返る（2026-11-25 run 45664927348 で見た）。404 は「決まっていない」と読む
+        def read_avail():
+            try:
+                return c.get(f"/v1/subscriptions/{sid}/subscriptionAvailability")
+            except ApiError as e:
+                if getattr(e, "status", None) == 404:
+                    return {"data": None}
+                raise
+        avail_answer = safe(read_avail, "販売する国や地域")
         if avail_answer is not None:
             avail = avail_answer.get("data")
             print(f"   販売する国や地域: {'決まっている' if avail else '決まっていない'}")
