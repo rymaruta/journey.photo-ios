@@ -85,7 +85,7 @@ struct TripBookshelfView<Opened: View>: View {
     /// 押さえて浮かせている背（2026-11-25 判断・案 3）。**棚は見張らない**（見張るのは背の枠と振動の子だけ）
     @StateObject private var lifter = SpineLifter()
 
-    private static var space: String { "trips.bookshelf" }
+    private static var space: String { TripBookshelf.coordinateSpace }
 
     var body: some View {
         let shelves = TripBookshelf.shelves(books)
@@ -214,7 +214,7 @@ struct TripBookshelfView<Opened: View>: View {
         BookSpineSlot(book: book, hider: stage.hider, lifter: lifter, reduceMotion: reduceMotion)
         // 本を引き出す元の枠（棚の座標・知らせない）と、表紙を先に読んでおく
         .onGeometryChange(for: CGRect.self) {
-            $0.frame(in: .named(Self.space)).insetBy(dx: CGFloat(TripBookshelf.spineGap / 2), dy: 0)
+            $0.frame(in: .named(TripBookshelf.coordinateSpace)).insetBy(dx: CGFloat(TripBookshelf.spineGap / 2), dy: 0)
         } action: { stage.spineFrames[book.id] = $0 }
         .task(id: book.id) { await BookCoverCache.prefetch(book) }
         // 長押しは本の形で表紙だけ見る（中は開かない）。「開く」で開く

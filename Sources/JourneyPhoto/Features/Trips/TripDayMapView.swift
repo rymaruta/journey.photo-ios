@@ -141,14 +141,14 @@ struct TripDayMapView: View {
         opening = stop.number
         directionsTask = Task { @MainActor in
             defer { opening = nil }
-            async let destination = SpotDirections.item(name: stop.name, coords: to)
+            async let destinationFound = SpotDirections.found(name: stop.name, coords: to)
             let origin: MKMapItem
             if let from = stop.from, let fromName = stop.fromName {
                 origin = await SpotDirections.item(name: fromName, coords: from)
             } else {
                 origin = MKMapItem.forCurrentLocation()
             }
-            let target = await destination
+            let target = await destinationFound.item
             guard !Task.isCancelled else { return }
             MKMapItem.openMaps(with: [origin, target], launchOptions: [
                 MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault

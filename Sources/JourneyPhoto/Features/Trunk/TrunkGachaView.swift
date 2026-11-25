@@ -62,7 +62,7 @@ struct TrunkGachaView: View {
     /// 機械の絵の大きさ（モック 300×540）
     private static let machine = (w: 300.0, h: 540.0)
     /// 飛ぶ硬貨の座標の名前
-    private static let space = "trunk.gacha.space"
+    nonisolated private static let space = "trunk.gacha.space" // 寸法を測る閉包（@Sendable）からも読む（2026-11-25 Swift 6）
     /// 入れ口の口の真ん中（機械の絵の座標・入れ口の板を左へ 4 寄せた所）。上は入れ口の上、下は沈んだ所
     private static let slotAbove = CGPoint(x: 92, y: 326.5)
     private static let slotInside = CGPoint(x: 92, y: 352.5)
@@ -1010,7 +1010,7 @@ struct TrunkGachaOpenView: View {
     @State private var pieceFrame = CGRect.zero
     @State private var ticketFrame = CGRect.zero
 
-    private static let space = "trunk.gachaOpen.space"
+    nonisolated private static let space = "trunk.gachaOpen.space" // 寸法を測る閉包（@Sendable）からも読む（2026-11-25 Swift 6）
 
     private var part: TrunkPart { result.part }
     private var equippedNow: Bool { model.state?.equipped.ids(part.kind).contains(part.id) ?? false }

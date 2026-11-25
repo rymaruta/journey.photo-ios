@@ -258,7 +258,7 @@ final class StoryInstaTests: XCTestCase {
         let directory = StoryRingDirectory()
         let counter = Counter()
         let made = [story("s1", user: "x")]
-        let fetch: () async throws -> [Story] = {
+        let fetch: @Sendable () async throws -> [Story] = {  // 2つ並べて読む（async let）ので @Sendable（2026-11-25 Swift 6）
             await counter.bump()
             try? await Task.sleep(nanoseconds: 50_000_000)
             return made
@@ -425,7 +425,8 @@ final class StoryInstaTests: XCTestCase {
     /// 見本の通信は、鍵（`-JPPreviewStories`）があるときだけストーリーの一覧を答える。答えは**本物の読み手**
     /// （`Story`）で読め、公開の新着の作者ごとに1本（先頭の人は2本）と自分の1本。知らない口は今までどおり断る
     func testPreviewBackendAnswersStoriesOnlyWhenAsked() async throws {
-        let feed: [[String: Any]] = [
+        // 書き換えない見本の一覧。[String: Any] は Sendable でないので nonisolated(unsafe)（2026-11-25 判断・試験だけ）
+        nonisolated(unsafe) let feed: [[String: Any]] = [
             ["id": "p1", "src": "https://img.test/p1.jpg", "userId": "a"],
             ["id": "p2", "src": "https://img.test/p2.jpg", "userId": "me"],
             ["id": "p3", "src": "https://img.test/p3.jpg", "userId": "a"],
@@ -456,7 +457,8 @@ final class StoryInstaTests: XCTestCase {
     /// 答えは本物の読み手（`Story`）で読め、紹介した写真の id も残る。自分の束（見本の1本のあと）に入り、消せば消える。
     /// 鍵（`-JPPreviewStories`）が無ければ今までどおり断る（ほかの UI テストの道を変えない）
     func testPreviewBackendKeepsPostedStories() async throws {
-        let feed: [[String: Any]] = [["id": "p1", "src": "https://img.test/p1.jpg", "userId": "a"]]
+        // 書き換えない見本の一覧。[String: Any] は Sendable でないので nonisolated(unsafe)（2026-11-25 判断・試験だけ）
+        nonisolated(unsafe) let feed: [[String: Any]] = [["id": "p1", "src": "https://img.test/p1.jpg", "userId": "a"]]
         let store = PreviewBackend.Store()
         let body = Data(#"{"publicUrl":"https://preview-local.invalid/img/uploads/me/s.jpg","mediaType":"image","sharedPhotoId":"photo-1"}"#.utf8)
         let off = await PreviewBackend.reply(method: "POST", route: ["stories"], body: body, userId: "me",

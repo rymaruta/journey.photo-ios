@@ -80,7 +80,7 @@ struct StoryReelView: View {
     /// 回りきるのにかける時間
     private static let turnDuration: Double = 0.32
     /// 戻すばねが落ち着くまで（`settleAnimation` のばね 0.3 秒・弾まない形 0.2 秒）。この間は止めておく
-    static let settleDuration: Double = 0.3
+    nonisolated static let settleDuration: Double = 0.3
 
     init(groups: [StoryReel.Group], startGroup: Int, viewerId: String?,
          onSeen: ((String) -> Void)? = nil, onDeleted: ((String) -> Void)? = nil) {

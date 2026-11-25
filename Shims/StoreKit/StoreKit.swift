@@ -106,7 +106,7 @@ public struct Product: Identifiable, Sendable {
         public static func appAccountToken(_ token: UUID) -> PurchaseOption { PurchaseOption() }
     }
 
-    public enum PurchaseResult {
+    public enum PurchaseResult: Sendable {  // 本物と同じく Sendable（2026-11-25）
         case success(VerificationResult<Transaction>)
         case userCancelled
         case pending

@@ -1053,6 +1053,12 @@ jobs:
           python3 Tools/compile-errors.py build/logs/xcodebuild-build.log >> "$GITHUB_STEP_SUMMARY"
           python3 Tools/compile-errors.py build/logs/xcodebuild-build.log --annotate
 
+      # 自分のコードの警告を数えて要約に並べる（2026-11-25 判断・Swift 6 へ移す作業）。
+      # Linux の模型では SDK の型の並行処理の決まりが本物と違うので、本物の数はここで見る
+      - name: 自分のコードの警告を要約に並べる
+        if: ${{ always() && steps.compile.outcome != 'skipped' }}
+        run: python3 Tools/compile-errors.py build/logs/xcodebuild-build.log --warnings >> "$GITHUB_STEP_SUMMARY"
+
   # ===========================================================================================
   # 🔴 **全部の回は、テストを別々の Mac に分けて同時に流す**（2026-10-31 判断・#429）
   #

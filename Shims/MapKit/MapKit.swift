@@ -247,6 +247,8 @@ public struct MKError: Error {
 }
 
 /// 地点から `MKMapItem`（名前・住所・Apple の詳細カード用）を引く（iOS 18）
+/// 模型ではメインアクタに置く（Mac の run 1822 で、画面から `mapItem` を待っても警告が出なかった形に合わせる・2026-11-25）
+@MainActor
 public final class MKMapItemRequest {
     public init(feature: MapFeature) {}
     public var mapItem: MKMapItem { get async throws { MKMapItem() } }

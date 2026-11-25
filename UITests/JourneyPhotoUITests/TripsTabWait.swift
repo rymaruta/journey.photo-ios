@@ -5,6 +5,7 @@ import XCTest
 /// 🔴 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（PR #390 の検証 run 728: 3 回目の起動で
 /// タブの中身が「読み込み中」のまま行が出なかった）。長めに待ち、出なければタブを押し直してもう一度待つ。
 /// `ScreenshotTests.openTripsRow`（e3bdc76d）で入れた待ち方を、`CriticalFlowTests` でも同じ形で使う（写しを作らない）
+@MainActor  // XCUIElement はメインアクタの上で触る（2026-11-25 Swift 6）
 enum TripsTabWait {
 
     /// 1回目・押し直したあとに待つ秒数

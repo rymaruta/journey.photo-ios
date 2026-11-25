@@ -23,12 +23,13 @@ final class OthersPhotoExportGuardTests: XCTestCase {
     private static let sourcesRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
 
-    private static var cached: [OthersPhotoGuardScan.Source]?
+    /// 読んだ一覧の控え（試験をまたいで使い回す）。ロックの箱に置く（2026-11-25 Swift 6）
+    private static let cached = Locked<[OthersPhotoGuardScan.Source]?>(nil)
     private func sources() throws -> [OthersPhotoGuardScan.Source] {
-        if let cached = Self.cached { return cached }
+        if let cached = Self.cached.value { return cached }
         let loaded = try OthersPhotoGuardScan.load(root: Self.sourcesRoot)
         XCTAssertGreaterThan(loaded.count, 100, "Sources を読めていない")
-        Self.cached = loaded
+        Self.cached.value = loaded
         return loaded
     }
 

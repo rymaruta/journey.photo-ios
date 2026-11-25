@@ -693,7 +693,8 @@ struct TrunkLidStage: ViewModifier, Animatable {
     /// 読み上げの「増やす・減らす」（true で開く方へ1段）
     let onAdjust: (Bool) -> Void
 
-    var animatableData: Double {
+    // 動きの値は描く糸の外からも読み書きされる（`Animatable` はアクタに属さない約束・2026-11-25 Swift 6）
+    nonisolated var animatableData: Double {
         get { p }
         set { p = newValue }
     }

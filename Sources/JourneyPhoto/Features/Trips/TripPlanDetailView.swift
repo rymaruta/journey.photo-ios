@@ -1205,7 +1205,7 @@ struct TripPlanDetailView: View {
     }
 
     private func daySpots(_ day: TripDay) -> [OfficialSpot] {
-        day.items.compactMap(spotFor)
+        day.items.compactMap { spotFor($0) }
     }
 
     private func spotFor(_ item: TripItem) -> OfficialSpot? {
@@ -2205,7 +2205,7 @@ private final class TripBackgroundWindow {
 struct TripTodayFrame: ViewModifier {
     let on: Bool
     /// 縁の濃さ（真鍮 55%）
-    static let borderOpacity = 0.55
+    nonisolated static let borderOpacity = 0.55
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -2239,8 +2239,8 @@ struct TripAISwapTarget: Identifiable {
 struct TripStopSkeleton: View {
     let number: Int
     /// 行の写真の欄の寸法（44pt・角10）。行の写真（`TripStopThumbView`）と同じ値を使う（2026-11-23 判断・統合で写しを1つにした）
-    static let photoSide: CGFloat = TripStopThumbView.side
-    static let photoCorner: CGFloat = JPRadius.s
+    nonisolated static let photoSide: CGFloat = TripStopThumbView.side
+    nonisolated static let photoCorner: CGFloat = JPRadius.s
 
     var body: some View {
         HStack(alignment: .top, spacing: JPSpace.s) {

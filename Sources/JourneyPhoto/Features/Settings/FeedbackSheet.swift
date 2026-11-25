@@ -135,8 +135,10 @@ struct FeedbackSheet: View {
                     .accessibilityIdentifier("feedback.removePhoto")
                 }
             } else {
+                // 見出しの閉包はメインアクタの外で作られる（Xcode 27）ので、画面の値は先に写す（2026-11-25 Swift 6）
+                let preparing = isPreparingPhoto
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label(isPreparingPhoto ? L("写真を準備しています…", "Preparing photo…") : L("写真を添える（任意）", "Attach a photo (optional)"),
+                    Label(preparing ? L("写真を準備しています…", "Preparing photo…") : L("写真を添える（任意）", "Attach a photo (optional)"),
                           systemImage: "photo")
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text2)

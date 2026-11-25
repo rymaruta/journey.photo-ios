@@ -231,8 +231,9 @@ enum PreviewBackend {
                       signinMethods: String? = nil,
                       followNone: Bool = false,
                       commentNotice: Bool = false,
-                      publicFeed: () async -> [[String: Any]] = { [] },
-                      publicLikes: (String) async -> Int?) async -> Reply {
+                      // 2026-11-25（Swift 6）: 呼んだ側（試験はメインアクタ）から別の糸へ渡すので @Sendable
+                      publicFeed: @Sendable () async -> [[String: Any]] = { [] },
+                      publicLikes: @Sendable (String) async -> Int?) async -> Reply {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
         let uid = userId ?? "preview"
         let stamp = ISO8601DateFormatter().string(from: now)
@@ -838,13 +839,22 @@ final class PreviewBackendProtocol: URLProtocol {
         let body = PreviewBackend.body(of: request)
         let home = HomeLoop.current()
         let demo = StoreDemo.isOn
-        work = Task { [weak self] in
+        let owner = WeakOwner(self)
+        work = Task {
             guard let url = request.url else { return }
             let reply = await PreviewBackend.respond(to: request, body: body, demo: demo,
                                                      userAPIPath: AppConfig.userAPIBaseURL.path,
                                                      hosts: demo ? StoreDemo.Hosts.current : nil)
-            home.perform { self?.deliver(reply, url: url) }
+            home.perform { owner.value?.deliver(reply, url: url) }
         }
+    }
+
+    /// 答えを作る仕事へ自分を弱く渡す箱（2026-11-25 判断・Swift 6）。URLProtocol は Sendable と書かれていないが、
+    /// 箱が持つのは作ったときに入れた弱い参照だけで、中を読むのは `startLoading` を受けた糸（`HomeLoop` で戻した所）だけ。
+    /// `stopped`・`client` もその糸でしか触らない（上の注記）ので @unchecked Sendable
+    private final class WeakOwner: @unchecked Sendable {
+        weak var value: PreviewBackendProtocol?
+        init(_ value: PreviewBackendProtocol) { self.value = value }
     }
 
     private func deliver(_ reply: PreviewBackend.Reply, url: URL) {

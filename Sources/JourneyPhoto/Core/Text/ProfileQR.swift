@@ -105,7 +105,8 @@ enum ProfileQRLink: Equatable {
 ///
 /// 承認のあと（更新できる QR）は、サーバーの口で「今の合図」を取り・更新し・合図を人に引く実装に替える。
 /// 画面（`ProfileQRView`）はこの形だけを見るので、替えても画面は変えない
-protocol ProfileQRSource {
+// 画面（メインアクタ）から問い合わせの糸へ渡すので Sendable（2026-11-25 Swift 6）
+protocol ProfileQRSource: Sendable {
     /// 自分の QR に入れる URL。作れないときは投げる（画面は「作れませんでした・もう一度」）
     func code(for userId: String) async throws -> URL
     /// 合図（`/qr?t=<合図>`）を人の id に引く。引けない（古い・取り消された）なら nil。通信の失敗は投げる

@@ -95,7 +95,8 @@ final class ProfileSongLineTests: XCTestCase {
     }
 
     /// 🔴 進みは 0〜1 に収まり、止まっていると 0。長さが読めないときは 30 秒で割る
-    func testPreviewProgressIsClamped() {
+    @MainActor  // 全体の再生器（メインアクタ）を試す（2026-11-25 Swift 6）
+    func testPreviewProgressIsClamped() async {
         XCTAssertEqual(MusicPreviewPlayer.previewProgress(current: 0, duration: 30), 0)
         XCTAssertEqual(MusicPreviewPlayer.previewProgress(current: 15, duration: 30), 0.5, accuracy: 0.0001)
         XCTAssertEqual(MusicPreviewPlayer.previewProgress(current: 18, duration: nil), 0.6, accuracy: 0.0001)

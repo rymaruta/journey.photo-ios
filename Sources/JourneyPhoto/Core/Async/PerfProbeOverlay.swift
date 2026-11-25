@@ -37,6 +37,7 @@ struct PerfProbeOverlay: View {
 /// 画面の表示の刻み（`CADisplayLink`）の間隔を `PerfRecorder` に渡す。メインスレッドが止まると刻みが遅れるので、
 /// 間隔が 100ms を超えた回数と最大の間隔が、メインスレッドの停止の数になる（`StallMeter`）。
 /// 無効のとき（本番・ふつうの起動）は始めない。iOS 以外（Linux の型検査）では何もしない
+@MainActor  // 画面の刻み・画面の操作からだけ触る（2026-11-25 Swift 6）
 final class PerfStallWatcher: NSObject {
     static let shared = PerfStallWatcher()
 

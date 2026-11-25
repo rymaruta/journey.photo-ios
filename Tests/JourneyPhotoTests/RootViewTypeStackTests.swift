@@ -67,7 +67,7 @@ enum TypeStackProbe {
     }
 
     /// `body` を 16MB のスタックのスレッドで走らせ、スレッドの頭から一番深く使った所までのバイト数を返す
-    static func measure(_ body: @escaping () -> Void) -> Int {
+    static func measure(_ body: @escaping @Sendable () -> Void) -> Int {  // 別の糸（Thread）で走らせるので @Sendable（2026-11-25 Swift 6）
         let box = Box()
         let done = DispatchSemaphore(value: 0)
         let thread = Thread {

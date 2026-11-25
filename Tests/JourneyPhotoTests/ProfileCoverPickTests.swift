@@ -198,19 +198,23 @@ final class ProfileCoverPickTests: XCTestCase {
 
     func testClaimNotifiesOnlyWhenCoinsWereAdded() async {
         let r = reward()
-        var notes: [[AnyHashable: Any]] = []
-        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { notes.append($0.userInfo ?? [:]) }
+        // 知らせの受け手は別の糸から呼ばれうる（@Sendable）ので、数はロックの箱に入れる（2026-11-25 Swift 6）
+        let notes = Locked<[[AnyHashable: Any]]>([])
+        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { note in
+            let info = note.userInfo ?? [:]
+            notes.withLock { $0.append(info) }
+        }
         defer { center.removeObserver(token) }
         // もらい済み（added 0）: 知らせない・数の知らせも流さない
         let none = await r.claim([.avatar], userId: "u1", available: true) { _ in TrunkWelcomeResult(granted: false, added: 0, coins: 7) }
         XCTAssertNil(none)
         XCTAssertFalse(r.hasPending)
-        XCTAssertTrue(notes.isEmpty)
+        XCTAssertTrue(notes.value.isEmpty)
         // 足せた: 知らせと trunkCoinsChanged（coins・userId）
         let got = await r.claim([.cover], userId: "u1", available: true) { _ in TrunkWelcomeResult(granted: true, added: 3, coins: 10) }
         XCTAssertEqual(got, ProfileReward.Grant(kinds: [.cover], added: 3, coins: 10))
-        XCTAssertEqual(notes.last?["coins"] as? Int, 10)
-        XCTAssertEqual(notes.last?["userId"] as? String, "u1")
+        XCTAssertEqual(notes.value.last?["coins"] as? Int, 10)
+        XCTAssertEqual(notes.value.last?["userId"] as? String, "u1")
         // トランクが使えない・入っていないときは呼ばない
         var calls = 0
         _ = await r.claim([.avatar], userId: "u1", available: false) { _ in calls += 1; return TrunkWelcomeResult(granted: true, added: 3, coins: 3) }
@@ -304,8 +308,9 @@ final class ProfileCoverPickTests: XCTestCase {
     /// 頼んでいる間に人が替わった: いまの人には知らせず、数の知らせも流さない。控えは前の人が次に開いたときに出る
     func testClaimForPreviousUserIsNotShownToNewUser() async {
         let r = reward()
-        var notes = 0
-        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { _ in notes += 1 }
+        // 知らせの受け手は別の糸から呼ばれうる（@Sendable）ので、数はロックの箱に入れる（2026-11-25 Swift 6）
+        let notes = Locked(0)
+        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { _ in notes.withLock { $0 += 1 } }
         defer { center.removeObserver(token) }
         let got = await r.claim([.avatar], userId: "u1", available: true) { _ in
             r.noteUser("u2")
@@ -313,7 +318,7 @@ final class ProfileCoverPickTests: XCTestCase {
         }
         XCTAssertNil(got)
         XCTAssertFalse(r.hasPending, "替わった人の画面に前の人のお礼を出す")
-        XCTAssertEqual(notes, 0)
+        XCTAssertEqual(notes.value, 0)
         XCTAssertTrue(reward().restore(userId: "u1"), "前の人の控えが残っていない")
     }
 

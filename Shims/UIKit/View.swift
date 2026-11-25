@@ -7,6 +7,7 @@ import SwiftUI
 
 /// 画面の部品（本物と同じ名前）。**`layerClass` を上書きすると、その層の型で作られる**
 /// （カメラの映像は `AVCaptureVideoPreviewLayer` を層にした UIView に出す）
+@MainActor
 open class UIView {
     public init() {}
     public init(frame: CGRect) {}
@@ -32,6 +33,7 @@ open class UIView {
 /// 部品に足す働き（本物は `NSObjectProtocol` を継ぐ）
 public protocol UIInteraction: AnyObject {}
 
+@MainActor
 public protocol UIViewRepresentable: View {
     associatedtype UIViewType: UIView
     associatedtype Coordinator = Void

@@ -212,7 +212,8 @@ final class StoryDesignRestTests: XCTestCase {
 
     /// 圏外で開いたとき: 項目の失敗を再生器が知らせ（`@Published` の `previewLoad`）、画面が「流せない」へ移る。
     /// 以前は `status` を見張っておらず、知らせが出ないので「読み込み中」のまま描き直されなかった（確かめ役の指摘・2026-11-12）
-    func testPreviewFailureIsPublishedAndShownAsFailed() throws {
+    @MainActor  // 全体の再生器（メインアクタ）を試す（2026-11-25 Swift 6）
+    func testPreviewFailureIsPublishedAndShownAsFailed() async throws {
         XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: false, waiting: true, playing: true), .loading)
         XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: false, waiting: false, playing: true), .ready)
         XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: true, waiting: true, playing: true), .failed)

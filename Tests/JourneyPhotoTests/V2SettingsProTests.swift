@@ -334,7 +334,8 @@ final class V2SettingsProTests: XCTestCase {
         XCTAssertTrue(detail.contains(".tint(WebTheme.accentDeep)"), "ガイド線のトグルが brass-deep でない")
         XCTAssertTrue(detail.contains("JPEyebrowLine(title)"))
         XCTAssertTrue(detail.contains("explanationSection(L(\"どんな構図？\", \"How it works\")"))
-        XCTAssertTrue(detail.contains(".jpPillButton(.outline)"), "自分の写真で確かめるが線のボタンでない")
+        // 写真選びの見出しは `JPPillPickerLabel`（中身は `.jpPillButton(style)`・2026-11-25 Swift 6）
+        XCTAssertTrue(detail.contains("JPPillPickerLabel(") && detail.contains("style: .outline)"), "自分の写真で確かめるが線のボタンでない")
     }
 
     // MARK: - ログイン・規約（板 SignIn・LegalGate）

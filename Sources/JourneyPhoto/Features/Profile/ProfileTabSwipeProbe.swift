@@ -7,6 +7,7 @@ import SwiftUI
 /// 流れている元の札の行の上を右へ払っても札が替わらなかった（`testPinsMyPageTabsAtLargeTextAX3` の after-right）。
 /// 受けたのが UIKit のパン（`ProfileSwipePanHost`）か、留まった札の SwiftUI の払い（`ProfileTabOverlaySwipe`）か、
 /// 横に送る `ScrollView` か、どれも受けなかったのかを、**推定でなく記録で**分ける。Release では何も記録しない
+@MainActor  // 画面の刻み・画面の操作からだけ触る（2026-11-25 Swift 6）
 final class ProfileTabSwipeLog: ObservableObject {
 
     static let shared = ProfileTabSwipeLog()

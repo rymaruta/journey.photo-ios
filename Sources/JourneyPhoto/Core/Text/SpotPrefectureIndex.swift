@@ -120,7 +120,9 @@ enum SpotPrefectureIndex {
 
     /// 索引を読んだ結果。**取り消された回は nil**（段階を変えない）。失敗は spots が nil で `.failed`。
     /// 探すは最初の読み込み・「もう一度試す」・引き下げの3か所からこれを通す（`SearchView.loadSpotIndex`）
-    static func loaded(_ fetch: () async throws -> [OfficialSpot]) async -> (spots: [OfficialSpot]?, load: Load)? {
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。画面が渡す閉包を別の糸へ送らない
+    static func loaded(isolation: isolated (any Actor)? = #isolation,
+                       _ fetch: () async throws -> [OfficialSpot]) async -> (spots: [OfficialSpot]?, load: Load)? {
         do {
             let spots = try await fetch()
             return (spots, .ready)

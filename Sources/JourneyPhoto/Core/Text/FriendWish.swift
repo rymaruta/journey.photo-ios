@@ -127,8 +127,10 @@ enum FriendWish {
     }
 
     /// 読み手は1回だけ作って使い回す（写真ごとに作らない・2026-11-23 確かめ役の指摘）
-    static let plainFormatter = ISO8601DateFormatter()
-    static let fractionalFormatter: ISO8601DateFormatter = {
+    // 2026-11-25 判断（Swift 6）: ISO8601DateFormatter は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。作った後は設定を変えないので `nonisolated(unsafe)` にする
+    nonisolated(unsafe) static let plainFormatter = ISO8601DateFormatter()
+    // 2026-11-25 判断（Swift 6）: ISO8601DateFormatter は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。作った後は設定を変えないので `nonisolated(unsafe)` にする
+    nonisolated(unsafe) static let fractionalFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter

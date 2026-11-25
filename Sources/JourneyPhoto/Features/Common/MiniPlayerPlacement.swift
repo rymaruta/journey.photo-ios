@@ -144,7 +144,8 @@ enum MiniPlayerPlacement {
 }
 
 /// 置き場所を**再生の間（アプリを閉じるまで）**覚える。保存はしない（2026-10-28 判断: 次に開いたら右下から）。
-/// `MusicPreviewPlayer` と同じく `@MainActor` を付けない（View のプロパティ初期化子から読むため）
+/// `MusicPreviewPlayer` と同じく**メインアクタに置く**（2026-11-25 判断・Swift 6。画面の初期値もメインアクタの上で作られる）
+@MainActor
 final class MiniPlayerPlacementStore: ObservableObject {
     static let shared = MiniPlayerPlacementStore()
     @Published var spot = MiniPlayerPlacement.Spot.initial

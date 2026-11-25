@@ -5,6 +5,7 @@ import XCTest
 /// 「1秒あたり・送る1フレームあたりに、画面を描き直させる回数」を数えて見張る。
 /// 実機の描画は Linux では測れないので、描き直しの**きっかけ**（時計の刻み・見張る値の書き込み・
 /// 再生器の知らせ）の回数を数える
+@MainActor  // 画面とメインアクタの物を試す（2026-11-25 Swift 6）
 final class PlaybackScrollLoadTests: XCTestCase {
 
     private func source(_ path: String) throws -> String {
@@ -15,8 +16,9 @@ final class PlaybackScrollLoadTests: XCTestCase {
 
     private let url = URL(fileURLWithPath: "/nonexistent/perf-a.m4a")
 
+    // `tearDown` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶ（2026-11-25 Swift 6）
     override func tearDown() {
-        MusicPreviewPlayer.shared.stop(releaseSession: false)
+        MainActor.assumeIsolated { MusicPreviewPlayer.shared.stop(releaseSession: false) }
         super.tearDown()
     }
 
@@ -24,7 +26,7 @@ final class PlaybackScrollLoadTests: XCTestCase {
 
     /// 🔴 鳴っている間でも、見えていない BGM の輪は描き直さない（毎秒 10 回 → 0 回）。
     /// 直す前は、送って画面の外へ出しても・別の札や次の画面へ移っても 0.1 秒ごとに描き直していた
-    func testBgmRingStopsTickingWhenNotOnScreen() {
+    func testBgmRingStopsTickingWhenNotOnScreen() async {
         let rate = ProfileBgmCard.progressTicksPerSecond
         XCTAssertEqual(rate(true, true, true, false), 10, accuracy: 0.001, "見えている間は今までどおり 0.1 秒ごと")
         XCTAssertEqual(rate(true, true, true, true), 1, accuracy: 0.001, "動きを減らすなら 1 秒ごと")
@@ -56,7 +58,7 @@ final class PlaybackScrollLoadTests: XCTestCase {
     }
 
     /// 輪の `TimelineView` が上の計算で止まること（計算だけあって画面が使っていない、を防ぐ）
-    func testBgmRingUsesTheVisibilityToPause() throws {
+    func testBgmRingUsesTheVisibilityToPause() async throws {
         let view = try source("Sources/JourneyPhoto/Features/Profile/ProfileBgmCard.swift")
         XCTAssertTrue(view.contains("paused: Self.progressTicksPerSecond(playing: true, appeared: appeared,"),
                       "輪の時計が見えているかで止まらない")
@@ -71,7 +73,7 @@ final class PlaybackScrollLoadTests: XCTestCase {
 
     /// 🔴 再生器は**値が変わったときだけ**知らせる。ストーリーの曲の流れ（鳴らす→再開→長押しで止める
     /// →離す→同じ曲の次の1本→閉じる→もう一度止める）で 23 回 → 8 回
-    func testPlayerPublishesOnlyRealChanges() {
+    func testPlayerPublishesOnlyRealChanges() async {
         let player = MusicPreviewPlayer.shared
         player.stop(releaseSession: false)
         let start = player.publishCount
@@ -92,7 +94,7 @@ final class PlaybackScrollLoadTests: XCTestCase {
 
     /// 同じ曲を鳴らし直したときは「回が進んだ」ことだけは知らせる
     /// （`SongStartSheet` の ▶ ⏸ は回で見分けるので、知らせが無いと古いまま残る）
-    func testReplayingTheSameSongStillAnnouncesTheNewSession() {
+    func testReplayingTheSameSongStillAnnouncesTheNewSession() async {
         let player = MusicPreviewPlayer.shared
         player.play(url)
         let before = player.publishCount
@@ -105,7 +107,7 @@ final class PlaybackScrollLoadTests: XCTestCase {
 
     /// 🔴 マイページ・人のページを送っても、画面全体を作り直す値を書かない（1秒 120 フレームで 120 回 → 0 回）。
     /// 直す前は札の行の上端を `@State` に毎フレーム書いていて、そのたびに見出しと保持した全部の札が作り直された
-    func testScrollingTheProfileDoesNotRewriteViewState() throws {
+    func testScrollingTheProfileDoesNotRewriteViewState() async throws {
         let spot = ProfileTabRowSpot()
         let height: CGFloat = 44
         var writes = 0

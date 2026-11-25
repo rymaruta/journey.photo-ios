@@ -217,7 +217,7 @@ struct StoryTextTypingView: View {
     }
 
     /// 上の段の字のボタン（板 v2: 17pt・左右 8・高さ 44）
-    static let barFontSize: CGFloat = 17
+    nonisolated static let barFontSize: CGFloat = 17
 
     private func barButton(_ title: String, weight: Font.Weight, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -464,9 +464,9 @@ struct StoryTextTypingView: View {
     }
 
     /// v2 StoryComposerText の寸法（チップ 32・白 12%・色の丸 30）
-    static let chipHeight: CGFloat = 32
+    nonisolated static let chipHeight: CGFloat = 32
     static let chipFill = 0.12
-    static let swatchSize: CGFloat = 30
+    nonisolated static let swatchSize: CGFloat = 30
 
     /// 消す（ゴミ箱・危険の赤 `WebTheme.danger`）
     private var deleteButton: some View {
@@ -484,7 +484,7 @@ struct StoryTextTypingView: View {
     // MARK: - 大きさ（右の縦のつまみ・板 v2）
 
     /// 板 v2: 縦 200 のつまみの上に「大」、下に「小」（12pt）
-    static let sliderLength: CGFloat = 200
+    nonisolated static let sliderLength: CGFloat = 200
 
     private var sizeSlider: some View {
         VStack(spacing: 6) {

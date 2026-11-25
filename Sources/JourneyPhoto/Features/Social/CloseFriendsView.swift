@@ -234,7 +234,7 @@ struct CloseFriendsView: View {
     }
 
     /// 印の丸（板 28）と、選んでいない輪の白（板 30%）
-    static let pickMarkSize: CGFloat = 28
+    nonisolated static let pickMarkSize: CGFloat = 28
     static let unpickedRing = 0.3
 
     private func load() async {

@@ -649,3 +649,18 @@ struct JPRowButtonStyle: ButtonStyle {
             .background(Color.white.opacity(configuration.isPressed ? 0.06 : 0))
     }
 }
+
+
+/// 写真選び（`PhotosPicker`）の見出しに置く丸いボタンの字（2026-11-25 判断・Swift 6）。
+/// Xcode 27 の `PhotosPicker` は見出しの閉包をメインアクタの外で作るので、そこでは画面の部品の修飾
+/// （`jpPillButton`・メインアクタ）を呼べない。見た目は `Label(...).jpPillButton(style)` と同じで、組むのを body（メインアクタ）に移しただけ
+struct JPPillPickerLabel: View {
+    let title: String
+    let systemImage: String
+    var style: JPPillStyle = .primary
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .jpPillButton(style)
+    }
+}

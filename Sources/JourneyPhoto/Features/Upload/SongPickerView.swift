@@ -145,8 +145,8 @@ struct SongPickerView: View {
     }
 
     /// 行（板 68）・アートワーク（板 48）・「選ぶ」の見た目（板 34）
-    static let rowHeight: CGFloat = 68
-    static let artworkSize: CGFloat = 48
+    nonisolated static let rowHeight: CGFloat = 68
+    nonisolated static let artworkSize: CGFloat = 48
     static let pickHeight: CGFloat = 34
     private func search() async {
         isSearching = true

@@ -61,7 +61,7 @@ struct AppLogo: View {
     /// **文字が縮んだとき（minimumScaleFactor）は縮む前の大きさで計算する**ので、
     /// 絵は最大で見出し 1.5pt・大きいロゴ 3pt ほど上に寄る。縮むのは狭い端末で
     /// 文字が入り切らないときだけ（見積もり・実機で未確認）
-    private static let capHeightRatio = 0.70
+    nonisolated private static let capHeightRatio = 0.70 // 寸法を測る閉包（@Sendable）からも読む（2026-11-25 Swift 6）
     /// 見出しのロゴの字を縮めてよい深さ（22pt → 最小 約15.4pt。本文の最小 12 より大きい）。
     /// 2026-11-25 判断: 右の当たりの間を 6pt ずつ空けた（`AppHeaderItems.buttonGap`）ので、375pt の iPhone で
     /// ロゴに残る幅が約151 から約133 に減った。0.8（約147）のままだと右の丸に重なるので 0.7（約132）にした。
@@ -73,9 +73,11 @@ struct AppLogo: View {
         // 下の余白（J や y の下がり）の分だけ絵が上下にずれて見える
         // （owner の指摘 2026-09-26「アイコンと文字の位置がズレてる」）
         HStack(alignment: .firstTextBaseline, spacing: spacing) {
+            // 揃えの閉包は @Sendable（Xcode 27）なので、字の大きさは先に写す（2026-11-25 Swift 6）
+            let points = fontSize
             mark
                 .alignmentGuide(.firstTextBaseline) { d in
-                    d.height / 2 + fontSize * Self.capHeightRatio / 2
+                    d.height / 2 + points * Self.capHeightRatio / 2
                 }
             Text("Journey Photo")
                 .font(size == .header ? JPFont.wordmark : .system(size: fontSize, weight: .bold, design: .serif))

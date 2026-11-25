@@ -551,7 +551,7 @@ final class DirectMessageMainActorTests: XCTestCase {
                                         tokenProvider: StubTokenProvider(token: "t"),
                                         session: URLSession(configuration: config),
                                         retryPause: { _ in },
-                                        beforeRequest: gate.map { gate in { (_: URLRequest) async in await gate.wait() } }))
+                                        beforeRequest: gate.map { gate in { @Sendable (_: URLRequest) async in await gate.wait() } }))
     }
 
     private static func inboxJSON(_ id: String, unread: Int) -> String {

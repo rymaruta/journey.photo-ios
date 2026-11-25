@@ -101,7 +101,8 @@ struct TripAIService {
         return (res.plan, res.usage)
     }
 
-    private func call<T: Decodable>(_ body: Request, as type: T.Type) async throws -> T {
+    // 答えは API の actor から戻るので Sendable（2026-11-25 Swift 6）
+    private func call<T: Decodable & Sendable>(_ body: Request, as type: T.Type) async throws -> T {
         let sink = APIErrorBody()
         do {
             return try await APIClient.$errorBodySink.withValue(sink) {

@@ -264,10 +264,14 @@ final class StubProtocol: URLProtocol {
         let response = HTTPURLResponse(
             url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
         )!
-        let deliver = { [self] in
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: body)
-            client?.urlProtocolDidFinishLoading(self)
+        // 遅らせる回は別の糸から呼ぶので @Sendable（中身は決めた値の写し・2026-11-25 Swift 6）
+        // URLProtocol は Sendable にできない（SDK が断っている）ので、この要求の係を `nonisolated(unsafe)` で渡す（2026-11-25 判断・試験だけ）
+        let reply = body
+        nonisolated(unsafe) let me = self
+        let deliver: @Sendable () -> Void = {
+            me.client?.urlProtocol(me, didReceive: response, cacheStoragePolicy: .notAllowed)
+            me.client?.urlProtocol(me, didLoad: reply)
+            me.client?.urlProtocolDidFinishLoading(me)
         }
         // 遅らせるのは、使わない方の `respond(path:status:body:delay:)` の回だけ
         if delay > 0 {

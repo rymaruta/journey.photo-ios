@@ -16,7 +16,9 @@ enum StorySharedPhoto {
 
     /// 開いてよい写真。一覧に無い・持ち主をブロックしている（どちら向きでも端末が知っているぶん）・
     /// サーバーの確かめ（`check`）が通らない（断られた・読めなかった）なら nil（「今は開けません」）
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。渡す閉包（画面の持ち物をつかむ）を別の糸へ送らない
     static func verified(_ id: String, in feed: [Photo]?, blocked: Set<String>,
+                         isolation: isolated (any Actor)? = #isolation,
                          check: (String) async throws -> Void) async -> Photo? {
         guard let photo = find(id, in: feed) else { return nil }
         if let owner = photo.userId ?? photo.uploadedBy, blocked.contains(owner) { return nil }

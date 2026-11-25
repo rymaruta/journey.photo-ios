@@ -398,7 +398,7 @@ final class AuthStore: ObservableObject {
     static let googleSignInFailed = L("ログインできませんでした。もう一度お試しください",
                                       "Couldn't verify your Google sign-in. Please try again.")
     /// 同じ ID のログインが別の端末で途中（サーバーの 409）
-    static let federatedBusy = L("ほかの端末でログイン中です。少し待ってからお試しください",
+    nonisolated static let federatedBusy = L("ほかの端末でログイン中です。少し待ってからお試しください",
                                  "Sign-in is already in progress on another device. Please wait a moment and try again.")
 
     /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。

@@ -65,13 +65,14 @@ final class StoryPostTests: XCTestCase {
     /// **断られた**（4xx）ときだけ目印を消す——次は上げ直す
     func testForgetsTheImageOnlyWhenTheServerRefuses() async {
         StubProtocol.respondInOrder([(200, "[]"), (429, #"{"error":"上限"}"#), (200, "{}")])
-        var recorded: [StoryService.UploadedMedia?] = []
+        // 控えに書く口はメインアクタの @Sendable（送る糸から呼ぶ）。書いた値はロックの箱に（2026-11-25 Swift 6）
+        let recorded = Locked<[StoryService.UploadedMedia?]>([])
         do {
-            try await service().post(job(uploaded: media), ownerId: "me", record: { recorded.append($0) })
+            try await service().post(job(uploaded: media), ownerId: "me", record: { media in recorded.withLock { $0.append(media) } })
             XCTFail("投げていない")
         } catch {}
-        XCTAssertEqual(recorded.count, 1)
-        XCTAssertNil(recorded.first ?? media)
+        XCTAssertEqual(recorded.value.count, 1)
+        XCTAssertNil(recorded.value.first ?? media)
         XCTAssertEqual(StubProtocol.requestCount, 3, "画像を片づけていない")
         XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
         XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/upload/discard")
@@ -92,12 +93,13 @@ final class StoryPostTests: XCTestCase {
     /// **届いたか分からない**失敗（5xx・通信）では目印を残す（送り直しで一覧を照らす）
     func testKeepsTheImageWhenItIsUnclear() async {
         StubProtocol.respondInOrder([(200, "[]"), (504, #"{"error":"timeout"}"#)])
-        var recorded: [StoryService.UploadedMedia?] = []
+        // 控えに書く口はメインアクタの @Sendable（送る糸から呼ぶ）。書いた値はロックの箱に（2026-11-25 Swift 6）
+        let recorded = Locked<[StoryService.UploadedMedia?]>([])
         do {
-            try await service().post(job(uploaded: media), ownerId: "me", record: { recorded.append($0) })
+            try await service().post(job(uploaded: media), ownerId: "me", record: { media in recorded.withLock { $0.append(media) } })
             XCTFail("投げていない")
         } catch {}
-        XCTAssertEqual(recorded.count, 0)
+        XCTAssertEqual(recorded.value.count, 0)
     }
 
     private var staleMedia: StoryService.UploadedMedia {
@@ -119,15 +121,16 @@ final class StoryPostTests: XCTestCase {
     func testOldMediaIsDiscardedAndUploadedAgain() async {
         // 一覧 → 片づけ → 置き場所（ここで断らせて、上げ直しに入ったことだけ見る）
         StubProtocol.respondInOrder([(200, "[]"), (200, "{}"), (500, #"{"error":"x"}"#)])
-        var recorded: [StoryService.UploadedMedia?] = []
+        // 控えに書く口はメインアクタの @Sendable（送る糸から呼ぶ）。書いた値はロックの箱に（2026-11-25 Swift 6）
+        let recorded = Locked<[StoryService.UploadedMedia?]>([])
         do {
-            try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { recorded.append($0) })
+            try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { media in recorded.withLock { $0.append(media) } })
             XCTFail("投げていない")
         } catch {}
         XCTAssertEqual(StubProtocol.requestCount, 3)
         XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/upload/presigned-url", "古い画像で行を作った")
-        XCTAssertEqual(recorded.count, 1)
-        XCTAssertNil(recorded.first ?? media, "古い目印を忘れていない")
+        XCTAssertEqual(recorded.value.count, 1)
+        XCTAssertNil(recorded.value.first ?? media, "古い目印を忘れていない")
     }
 
     /// 片づけるのは**古い目印の鍵**（別の鍵を消さない）

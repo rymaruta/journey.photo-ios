@@ -475,9 +475,9 @@ enum TripLegMaps {
             return (SpotDirections.rounded(name: leg.from.name, coords: leg.from.coords),
                     SpotDirections.rounded(name: leg.to.name, coords: leg.to.coords))
         }
-        async let from = SpotDirections.item(name: leg.from.name, coords: leg.from.coords)
-        async let to = SpotDirections.item(name: leg.to.name, coords: leg.to.coords)
-        return await (from, to)
+        async let from = SpotDirections.found(name: leg.from.name, coords: leg.from.coords)
+        async let to = SpotDirections.found(name: leg.to.name, coords: leg.to.coords)
+        return await (from.item, to.item)
     }
 
     /// 見本（UI テスト・Debug）のときだけ、区間の行の段の印を出来事の並びに残す（Release では何もしない）。

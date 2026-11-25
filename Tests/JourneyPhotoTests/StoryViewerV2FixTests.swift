@@ -280,7 +280,8 @@ final class StoryViewerV2FixTests: XCTestCase {
     }
 
     /// 先読みは1つだけ・受け取りは1回・別の URL には渡さない。閉じたら捨てる
-    func testPreloaderHoldsOneAndHandsItOver() throws {
+    @MainActor  // 全体の再生器（メインアクタ）を試す（2026-11-25 Swift 6）
+    func testPreloaderHoldsOneAndHandsItOver() async throws {
         let preloader = StoryVideoPreloader()
         let a = URL(string: "https://example.com/a.mp4")!
         let b = URL(string: "https://example.com/b.mp4")!

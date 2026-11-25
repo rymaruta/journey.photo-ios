@@ -99,8 +99,8 @@ struct CompositionExplanationView: View {
                 // 作例写真は端末内だけで扱う。未選択時は従来の配置図を表示。
                 // 板 v2: 線のボタン（44・白 14% の縁）
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Label(L("自分の写真で構図を確認", "Try with your photo"), systemImage: "photo.on.rectangle")
-                        .jpPillButton(.outline)
+                    JPPillPickerLabel(title: L("自分の写真で構図を確認", "Try with your photo"),
+                                      systemImage: "photo.on.rectangle", style: .outline)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("composition.explanation.choosePhoto")

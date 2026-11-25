@@ -13,9 +13,21 @@ enum SpotDirections {
     /// 行き先の地点。探し直せれば Apple の地点、だめなら丸めた座標に名前を付けたもの
     static func item(name: String, coords: Photo.Coords) async -> MKMapItem {
         let found = await AsyncTimeout.firstWithin(seconds: OfficialSpotIndex.directionsTimeout) {
-            await search(name: name, coords: coords)
+            await search(name: name, coords: coords).map(Found.init)
         }
-        return found ?? rounded(name: name, coords: coords)
+        return found?.item ?? rounded(name: name, coords: coords)
+    }
+
+    /// 起点と行き先を並べて探すとき（`async let`）の形。探した地点を包んで返す
+    static func found(name: String, coords: Photo.Coords) async -> Found {
+        Found(item: await item(name: name, coords: coords))
+    }
+
+    /// 探した地点を、探した仕事から受け取る側へ1回だけ渡す包み（2026-11-25 判断・Swift 6）。
+    /// `MKMapItem` は Sendable と書かれていない。包む前に名前を付け終え、包んだ後は誰も書き換えず、
+    /// 受け取った側だけが使う（並べて探す `async let` と時間切れの待ち `firstWithin` で、境目を1回越えるだけ）
+    struct Found: @unchecked Sendable {
+        let item: MKMapItem
     }
 
     /// 今いる場所からの経路を Apple のマップで開く（撮影スポットの頁・その地図・光の知らせ・2026-10-11）。

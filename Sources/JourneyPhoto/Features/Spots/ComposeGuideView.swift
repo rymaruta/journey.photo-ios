@@ -957,16 +957,19 @@ struct ComposeGuideView: View {
             .accessibilityValue(reference.source == .samples && !samples.isEmpty ? L("選択中", "Selected") : "")
             .accessibilityIdentifier("composeGuide.sourceSamples")
 
+            // 見出しの閉包はメインアクタの外で作られる（Xcode 27）ので、画面の値は先に写す（2026-11-25 Swift 6）
+            let loading = loadingLibrary
+            let fromLibrary = reference.source == .library
             PhotosPicker(selection: $librarySelection, matching: .images) {
                 HStack(spacing: 5) {
-                    if loadingLibrary { ProgressView().tint(WebTheme.foreground) }
+                    if loading { ProgressView().tint(WebTheme.foreground) }
                     Text(L("写真ライブラリ", "Photo library"))
                         .font(JPFont.footnote.weight(.semibold))
                 }
-                .foregroundStyle(reference.source == .library ? WebTheme.foreground : WebTheme.text2)
+                .foregroundStyle(fromLibrary ? WebTheme.foreground : WebTheme.text2)
                 .padding(.horizontal, 12)
                 .frame(minHeight: Self.segmentInner)
-                .background(reference.source == .library ? Color.white.opacity(0.14) : Color.clear,
+                .background(fromLibrary ? Color.white.opacity(0.14) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
             }
             .buttonStyle(.plain)
@@ -980,7 +983,7 @@ struct ComposeGuideView: View {
     }
 
     /// セグメントの内側の高さ（外の 3 の余白と合わせて 44＝押せるものの最小）
-    static let segmentInner: CGFloat = WebTheme.minTapTarget - 6
+    nonisolated static let segmentInner: CGFloat = WebTheme.minTapTarget - 6
 
     /// ライブラリ画像だけ位置と反転を調整。非表示は1タップで戻せる。
     private var libraryAdjustments: some View {
@@ -1195,7 +1198,7 @@ struct ComposeGuideView: View {
     }
 
     /// シャッター（v2 の板 76。v1 は 72）
-    static let shutterSize: CGFloat = 76
+    nonisolated static let shutterSize: CGFloat = 76
 
     /// 右: 作例を切り替える（52pt の丸・白 30% の縁）。1枚しか無ければ押せない
     private var switchButton: some View {

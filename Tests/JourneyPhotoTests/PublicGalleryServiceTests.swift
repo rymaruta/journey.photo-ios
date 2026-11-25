@@ -226,7 +226,8 @@ final class PublicGalleryCoalescingTests: XCTestCase {
     }
 
     /// 呼び手が取得まで進むのを待つ（`fetchPhotos` は actor を何度か行き来してから取りに行く）
-    private func settle() async throws {
+    // 試験の持ち物に触らないので static（メインアクタの試験から呼んでも self を渡さない・2026-11-25 Swift 6）
+    private static func settle() async throws {
         for _ in 0..<10 { await Task.yield() }
         try await Task.sleep(nanoseconds: 100_000_000)
     }
@@ -237,7 +238,7 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         let gallery = service(gate)
         let calls = (0..<3).map { _ in Task { try await gallery.fetchPhotos() } }
         await gate.untilWaiting(1)
-        try await settle()
+        try await Self.settle()
         let arrived = await gate.arrived
         XCTAssertEqual(arrived, 1, "同じ一覧を同時に \(arrived) 本取りに行っている")
         await gate.open()
@@ -256,7 +257,7 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         let first = Task { try await gallery.fetchPhotos() }
         await gate.untilWaiting(1)
         let second = Task { try await gallery.fetchPhotos() }
-        try await settle()
+        try await Self.settle()
 
         first.cancel()
         // 門を閉じたまま、取り消した側が戻るのを待つ（上限2秒。壊れても試験ごと固まらない）
@@ -339,7 +340,7 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         _ = await older.result
 
         let joiner = Task { try await gallery.fetchPhotos() }
-        try await settle()
+        try await Self.settle()
         let arrived = await order.count
         XCTAssertEqual(arrived, 2, "先の取得が、引き下げ更新の取得の印を消した")
         await second.open()
@@ -435,7 +436,7 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         let task = Task { try await gallery.fetchPhotos() }
         task.cancel()
         _ = await task.result
-        try await settle()
+        try await Self.settle()
         let arrived = await gate.arrived
         XCTAssertEqual(arrived, 0, "取り消された呼び手が取得を始めた")
         await gate.open()

@@ -190,7 +190,7 @@ final class SyncRaceTests: XCTestCase {
         return SocialService(api: APIClient(
             baseURL: URL(string: "https://api.example.test")!,
             tokenProvider: StubTokenProvider(token: "t"), session: session,
-            beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } }))
+            beforeRequest: gates.map { gates in { @Sendable (request: URLRequest) async in await gates.wait(for: request) } }))
     }
 
     /// 🔴 **束の隣へ送った後に前の1枚の答えが届いても、今の1枚の読み込みは捨てない**
@@ -258,7 +258,7 @@ final class SyncRaceTests: XCTestCase {
         let gates = PathGates(["/user/likes/p1": mine])
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: "t"), session: session,
-                            beforeRequest: { (request: URLRequest) async in await gates.wait(for: request) })
+                            beforeRequest: { @Sendable (request: URLRequest) async in await gates.wait(for: request) })
         StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#)
         StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":6}"#)

@@ -166,7 +166,10 @@ final class SpotRegionMapTests: XCTestCase {
         let rows = Int(size.height), columns = Int(size.width)
         var perRow = [[String: Int]](repeating: [:], count: rows)
         perRow.withUnsafeMutableBufferPointer { buffer in
-            let out = buffer
+            // 行ごとに別の場所へ書くので重ならない。置き場の指し手は Sendable でないので nonisolated(unsafe)（2026-11-25 判断・試験だけ）
+            nonisolated(unsafe) let out = buffer
+            // 当たりの計算は値の型を読むだけ（上の注記）。Sendable と書けない閉包なので同じく nonisolated(unsafe)
+            nonisolated(unsafe) let hit = hit
             DispatchQueue.concurrentPerform(iterations: rows) { y in
                 var counts: [String: Int] = [:]
                 for x in 0..<columns {

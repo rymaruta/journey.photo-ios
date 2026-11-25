@@ -5,7 +5,7 @@ import SwiftUI
 struct TripStopThumbView: View {
     let thumb: TripStopThumb
 
-    static let side: CGFloat = 44
+    nonisolated static let side: CGFloat = 44
 
     var body: some View {
         Group {

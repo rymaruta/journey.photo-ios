@@ -168,7 +168,8 @@ final class FeedbackTests: XCTestCase {
     private func trailDefaults() -> UserDefaults {
         let name = "FeedbackTests.trail.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        // 後始末の塊は @Sendable なので、名前から開き直して消す（2026-11-25 Swift 6）
+        addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
         return defaults
     }
 

@@ -194,8 +194,9 @@ struct FeedbackOutbox {
     ///
     /// **ログインが切れていたら（トークンが無い・401）、その場でログインしていない人の口で送り直す**——
     /// 下書きの先頭に残したままにすると、ログインし直すまで後ろの分も全部詰まる
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。渡す閉包（送る口）を別の糸へ送らない
     func deliver(_ draft: FeedbackDraft, currentUserId: String?, now: Date = Date(),
-                 trailDefaults: UserDefaults = .standard,
+                 trailDefaults: UserDefaults = .standard, isolation: isolated (any Actor)? = #isolation,
                  send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Outcome {
         let photo = photo(for: draft.id)
         let signedIn = Self.signedIn(draft, currentUserId: currentUserId)
@@ -242,7 +243,9 @@ struct FeedbackOutbox {
     /// - その日の上限の下書きは、待つ時刻（`notBefore`）まで飛ばす。上限に当たったら、その日はもう送らない
     /// - **断られた下書き（`rejectedReason`）は送らない**（同じ理由で断られ続ける。シートで利用者が送り直す）
     @discardableResult
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`・`deliver` と同じ）
     func flush(currentUserId: String?, now: Date = Date(), trailDefaults: UserDefaults = .standard,
+               isolation: isolated (any Actor)? = #isolation,
                send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Int {
         trim(now: now)
         var sent = 0

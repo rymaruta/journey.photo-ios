@@ -387,7 +387,7 @@ final class UploadDraftStore {
     }
 
     /// 画像の在る写真だけ（並びの順）。「読めた分で続ける」で戻すもの
-    func presentItems(_ items: [Item]) -> [Item] { items.filter(hasImage) }
+    func presentItems(_ items: [Item]) -> [Item] { items.filter { hasImage($0) } }
 
     /// 画像の置き場所（一覧の縮図を読む・大きさを数える）
     func imageURL(_ item: Item) -> URL { fileURL(item.imageFile) }

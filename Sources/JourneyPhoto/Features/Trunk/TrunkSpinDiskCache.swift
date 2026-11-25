@@ -82,18 +82,25 @@ enum TrunkSpinDiskCache {
     }
 
     /// OS の版（iOS の版。合図に入れる）
+    ///
+    /// 2026-11-25（Swift 6）: `UIDevice`・`UIAccessibility` はメインアクタ。合図は回す画面を開くとき（メインスレッド）に作るので、
+    /// メインスレッドではそのまま読む。ほかの糸から呼ばれたときは、OS の版は `ProcessInfo` から同じ形（"18.1"・"18.1.1"）で作る
     static var systemVersion: String {
         #if os(iOS)
-        return UIDevice.current.systemVersion
+        if Thread.isMainThread { return MainActor.assumeIsolated { UIDevice.current.systemVersion } }
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return v.patchVersion > 0 ? "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)" : "\(v.majorVersion).\(v.minorVersion)"
         #else
         return ProcessInfo.processInfo.operatingSystemVersionString
         #endif
     }
 
     /// 文字を太くする設定（アクセシビリティ）。絵に効くかは `TrunkBoldProbe` で測った（合図に入れておく）
+    /// （メインスレッドの外では読めないので false・上の `systemVersion` の注記）
     static var boldText: Bool {
         #if os(iOS)
-        return UIAccessibility.isBoldTextEnabled
+        guard Thread.isMainThread else { return false }
+        return MainActor.assumeIsolated { UIAccessibility.isBoldTextEnabled }
         #else
         return false
         #endif
@@ -146,14 +153,10 @@ enum TrunkSpinDiskCache {
     // MARK: 書く列
 
     private static let writer = DispatchQueue(label: "trunk-spin-disk", qos: .utility)
-    private static let lock = NSLock()
-    private static var generationValue = 0
+    /// 世代の数はロックの中（`Locked`・2026-11-25 Swift 6）
+    private static let generationBox = Locked(0)
 
-    private static var generation: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return generationValue
-    }
+    private static var generation: Int { generationBox.value }
 
     /// 今の札（`removeAll` のたびに変わる）。回す画面を開いたときに取り、書くときに渡す
     static func ticket() -> Int {
@@ -186,9 +189,7 @@ enum TrunkSpinDiskCache {
 
     /// 全部消す（退会・測定）。これより前に頼まれた書き込みは書かない
     static func removeAll(in dir: URL? = directory) {
-        lock.lock()
-        generationValue += 1
-        lock.unlock()
+        generationBox.withLock { $0 += 1 }
         guard let dir else { return }
         writer.async { try? FileManager.default.removeItem(at: dir) }
     }

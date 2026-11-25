@@ -90,7 +90,8 @@ enum CloseFriendsRows {
     /// 残りは画面の選択に残る（もう一度「保存」を押すと残りだけが送られる）。
     ///
     /// 状態は**返ってきた値を使う**（自分で決めない）
-    static func save(saved: Set<String>, changes: [Change],
+    // 2026-11-25（Swift 6）: 呼んだ側のアクタの上で走る（`isolation`）。渡す閉包（画面の持ち物をつかむ）を別の糸へ送らない
+    static func save(saved: Set<String>, changes: [Change], isolation: isolated (any Actor)? = #isolation,
                      send: (Change) async throws -> Bool) async -> SaveOutcome {
         var now = saved
         var done = 0

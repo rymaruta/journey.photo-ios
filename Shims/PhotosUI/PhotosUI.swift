@@ -10,7 +10,7 @@ extension PHPhotoLibrary {
     public func presentLimitedLibraryPicker(from controller: UIViewController) async -> [String] { [] }
 }
 
-public struct PhotosPickerItem: Equatable, Hashable {
+public struct PhotosPickerItem: Equatable, Hashable, Sendable {
     /// 受け取る形（本物にもある・iOS 16〜）。`.current` は作り直さず元の形のまま
     public struct EncodingDisambiguationPolicy: Equatable {
         public static let automatic = EncodingDisambiguationPolicy()
