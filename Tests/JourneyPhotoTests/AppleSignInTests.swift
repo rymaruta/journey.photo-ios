@@ -356,6 +356,20 @@ final class AppleSignInTests: XCTestCase {
             XCTAssertFalse(message.contains("途中です"), message)
         }
     }
+
+    /// 登録とログインを切り替えたら、Apple のボタンを作り直す（札 #730・Mac run 1808 で「Appleで登録」のまま残った）。
+    /// `SignInWithAppleButton` は作ったときの字のまま替わらないので、`appleButton` に登録かどうかで変わる `.id` を付ける。
+    /// 画面は Linux で描けないので書いてあるもので見る。実際の字は UI テスト `testCapturesSignInLayout` で見る
+    func testAppleButtonIsRebuiltWhenSideSwitches() async throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto/Features/Auth/SignInView.swift")
+        let source = try String(contentsOf: file, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private var appleButton: some View {"), "appleButton が無い")
+        let end = try XCTUnwrap(source.range(of: "\n    }\n", range: start.upperBound..<source.endIndex))
+        let body = source[start.upperBound..<end.lowerBound]
+        XCTAssertTrue(body.contains("SignInWithAppleButton(mode == .signUp ? .signUp : .signIn)"), "Apple のボタンの字が登録とログインで分かれていない")
+        XCTAssertTrue(body.contains(".id(mode == .signUp)"), "切り替えで Apple のボタンを作り直していない（字が前の側のまま残る）")
+    }
 }
 
 /// `AuthError` の中身に入れる何か（種類は `notAuthorized` の枠で決まる）

@@ -129,7 +129,11 @@ struct TrunkGachaView: View {
         .sensoryFeedback(.selection, trigger: ticks)
         .sensoryFeedback(.impact(weight: .heavy), trigger: drops)
         .task { if model.state == nil { await model.load(offline: false) } }
-        .onAppear { visible = true }
+        .onAppear {
+            visible = true
+            // 押した瞬間に遅れなく鳴るよう、先に読み込む（2026-11-25）
+            SoundEffects.prepare([.coinIn, .capsuleOpen])
+        }
         .onDisappear { visible = false }
         .fullScreenCover(isPresented: $showOpen, onDismiss: closedOpen) {
             if let result {
@@ -440,6 +444,8 @@ struct TrunkGachaView: View {
         inserting = true
         withAnimation(.timingCurve(0.3, 0.7, 0.3, 1, duration: TrunkMotion.insertLiftSeconds)) { flyAt = onMachine(Self.slotAbove) }
         try? await Task.sleep(nanoseconds: UInt64(TrunkMotion.insertLiftSeconds * 1_000_000_000))
+        // 入れ口へ沈み始める瞬間に、小さな「ちゃりん」（2026-11-25・控えめに -9 dBFS）
+        SoundEffects.play(.coinIn)
         withAnimation(.timingCurve(0.5, 0, 0.9, 0.5, duration: TrunkMotion.insertSinkSeconds)) {
             flyAt = onMachine(Self.slotInside)
             flyScale = TrunkMotion.insertSinkScale
@@ -991,6 +997,8 @@ struct TrunkGachaOpenView: View {
     /// 札の切符に見せている切れ端の数（持っている部品: はまったら1つ増える）
     @State private var shownFragments: Int?
     @State private var successes = 0
+    /// カプセルのふたが外れた（音と同じ瞬間の触覚・2026-11-25）
+    @State private var pops = 0
     @State private var pieces = 0
     /// 段階で出た文の数（0〜6・時計ではなく段で出す）
     @State private var texts = 0
@@ -1038,6 +1046,7 @@ struct TrunkGachaOpenView: View {
             }
         }
         .coordinateSpace(.named(Self.space))
+        .sensoryFeedback(.impact(weight: .medium), trigger: pops)
         .sensoryFeedback(.success, trigger: successes)
         .sensoryFeedback(.impact(weight: .light), trigger: pieces)
         .onAppear {
@@ -1057,10 +1066,18 @@ struct TrunkGachaOpenView: View {
             shownFragments = result.fragments
             texts = TrunkMotion.stageDelays.count
             settled = true
+            // 動きを減らす設定でも、開いた音と触覚は残す
+            popOpen()
             if result.duplicate { pieces += 1 } else { successes += 1 }
             return
         }
         start = Date()
+        // ふたが外れる瞬間（半分2つが離れ始める `openDelay`）に、音と触覚を同時に
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(TrunkMotion.openDelay * 1_000_000_000))
+            guard visible else { return }
+            popOpen()
+        }
         let partAt = TrunkOpenClock.partAt
         // 文は段で出す（眉、見出し、線、一行、札、ボタンの順に 0.5 秒で）
         for (i, delay) in TrunkMotion.stageDelays.enumerated() {
@@ -1085,6 +1102,12 @@ struct TrunkGachaOpenView: View {
                 successes += 1
             }
         }
+    }
+
+    /// カプセルが開いた: 「ポンッ」ときらっとした音（`SoundEffect.capsuleOpen`）と、中くらいの触覚（2026-11-25 owner「カプセル開けた時も良い音」）
+    private func popOpen() {
+        pops += 1
+        SoundEffects.play(.capsuleOpen)
     }
 
     /// 段階で出る文（i 番目が出たら、下から 12 上がりながら見える。動きは `begin` の `withAnimation`）
