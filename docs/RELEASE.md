@@ -20,8 +20,7 @@
 > 1〜3 は `bash Tools/mac-release.sh` で一度に走る。
 
 ```bash
-brew install xcodegen
-xcodegen generate
+bash Tools/toolchain.sh generate   # XcodeGen は Tools/toolchain.env の版を落として使う
 open JourneyPhoto.xcodeproj
 ```
 

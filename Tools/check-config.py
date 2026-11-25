@@ -635,6 +635,17 @@ if testflight_yml.exists() and pr_yml.exists():
     if code != 0 or "-only-testing:JourneyPhotoUITests/ScreenshotTests/testCapturesEveryScreen" not in out \
             or "-only-testing:JourneyPhotoUITests/SmokeTests" not in out:
         fail(f"pick-ui-tests.py が絵の名前（01-同意画面）から撮るテストを選べません: {code} {out}")
+    # 小さい画面（375pt）の印: いつもの一覧には混ぜず、`--small` が名指ししたテストだけを出す（2026-11-25）
+    code, out = picked("testCapturesSignInLayout, 小さい画面")
+    if code != 0 or "-only-testing:JourneyPhotoUITests/ScreenshotTests/testCapturesSignInLayout" not in out:
+        fail(f"pick-ui-tests.py が「小さい画面」の印をテストの名前として探しています: {code} {out}")
+    small = subprocess.run([sys.executable, str(picker), "--small", "testCapturesSignInLayout, 小さい画面"],
+                           capture_output=True, text=True)
+    if small.returncode != 0 or small.stdout.split() != ["-only-testing:JourneyPhotoUITests/ScreenshotTests/testCapturesSignInLayout"]:
+        fail(f"pick-ui-tests.py --small が名指ししたテストだけを出しません: {small.returncode} {small.stdout.split()}")
+    for screens in ("小さい画面", "all, small"):
+        if subprocess.run([sys.executable, str(picker), "--small", screens], capture_output=True, text=True).returncode != 2:
+            fail(f"pick-ui-tests.py --small が名指しの無い回（{screens}）で止まりません")
     code, _ = picked("どの絵にも無い語qqq")
     if code != 2:
         fail("pick-ui-tests.py が当たらない語で止まりません（打ち間違いで UI テスト0件のまま緑になる）")

@@ -106,6 +106,26 @@ class StoreScreenshotsTests(unittest.TestCase):
             Image.new("RGB", (1179, 2556)).save(os.path.join(medium, first))
             self.assertEqual(run(large, medium, out), 1)
 
+    def test_selects_small_iphone_in_order(self):
+        """小さい画面（375pt）の機種: SE（750×1334）→ mini（1080×2340）の順。作れない機種があるので候補を全部、順に返す（2026-11-25）"""
+        types = [
+            {"identifier": "t.mini", "name": "iPhone 13 mini", "size": (1080, 2340)},
+            {"identifier": "t.se3", "name": "iPhone SE (3rd generation)", "size": (750, 1334)},
+            {"identifier": "t.18pm", "name": "iPhone 18 Pro Max", "size": (1320, 2868)},
+            {"identifier": "t.16e", "name": "iPhone 16e", "size": (1170, 2532)},
+        ]
+        payload = {"devices": {}}
+        self.assertEqual(store.select_devices("small", types, payload),
+                         [("create", "t.se3", (750, 1334), "iPhone SE (3rd generation)"),
+                          ("create", "t.mini", (1080, 2340), "iPhone 13 mini"),
+                          ("create", "t.16e", (1170, 2532), "iPhone 16e")])
+        # 375pt が無ければ、いちばん最後に 390pt（1170×2532）。それより広い機種には落とさない
+        self.assertEqual(store.select_devices("small", types[2:], payload),
+                         [("create", "t.16e", (1170, 2532), "iPhone 16e")])
+        self.assertIsNone(store.select_device("small", types[2:3], payload))
+        # 点で書かれた SE の機種の情報も 750×1334 になる
+        self.assertEqual(store.profile_size({"mainScreenWidth": 375, "mainScreenHeight": 667, "mainScreenScale": 2}), (750, 1334))
+
     def test_selects_device_by_screen_size_not_name(self):
         """機種は名前で決め打ちせず、画面写真の寸法が受け付ける寸法そのものの機種を選ぶ（run 1740: 名前の機種が無く止まった）"""
         types = [

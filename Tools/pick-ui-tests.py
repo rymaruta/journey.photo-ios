@@ -18,6 +18,11 @@
   補助の関数の分も含む）に、大文字小文字を問わず含まれるものを選ぶ。
   **起動の見張り（`SmokeTests`・2分弱）はいつも足す**（落ちずに描けるかは毎回見る）
 - どれにも当たらない語があれば、候補を出して止める（打ち間違いで0件のまま緑にしない）
+- `小さい画面`・`small` → 名指ししたテストを、いつもの機種（6.9 インチ・440pt）のあとで**小さい iPhone（375pt。iOS 27 に載らないときは 390pt）でも**流す
+  （`python3 Tools/pick-ui-tests.py --small "<screens>"` が小さい機種で流す一覧を出す。2026-11-25 判断）。
+  全部（空・`all`）や名指しが無いときは止める（小さい機種は名指ししたテストだけ・毎回30分以内）
+
+    python3 Tools/pick-ui-tests.py "testCapturesSignInLayout, testCapturesHomeHeaderGapAndFollowingEnd, 小さい画面"
 
 **名指しした回だけ流す UI テスト**（`ONLY_WHEN_NAMED`・2026-10-22）: 家具の脚の接写（49 頁・約5分）・額の頁（60 頁あまり・約6〜7分）のように、
 直している間だけ見る絵は、全部を回す回（空・`all`・PR の検証・TestFlight）では流さない。
@@ -79,6 +84,10 @@ CLASS = re.compile(r"^(?:final\s+)?class\s+(?!JPUITestCase\b)(\w+)\s*:\s*(?:XCTe
 STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 
+# 小さい iPhone（375pt）でも流す印（2026-11-25 判断）。テストの名前・絵の名前としては探さない
+SMALL_WORDS = ("小さい画面", "small")
+
+
 def nfc(text):
     # macOS のファイル名は NFD で返る（`export-screenshots.sh` の注記）。比べる前に揃える
     return unicodedata.normalize("NFC", text).casefold()
@@ -129,6 +138,25 @@ def sharded(submit, store_shots, screens):
     return not submit and not store_shots and wants_all(screens)
 
 
+def wants_small(screens):
+    """`小さい画面`・`small` の印があるか"""
+    return any(nfc(w.strip()) in SMALL_WORDS for w in re.split(r"[,、]", screens or ""))
+
+
+def small_args(screens, tests):
+    """小さい iPhone で流す `-only-testing:…` の並びと、止める理由（無ければ空）。
+    名指ししたテストだけ（起動の見張りは大きい機種で流すので足さない）"""
+    if wants_all(screens):
+        return [], "小さい画面は全部の回では流せません。流すテストを名指ししてください"
+    args, missing = pick(screens, tests)
+    if missing:
+        return [], "次の語に当たる UI テストがありません: " + " / ".join(missing)
+    named = [a for a in args if a != f"-only-testing:{TARGET}/{ALWAYS}"]
+    if not named:
+        return [], "小さい画面で流すテストが名指しされていません（例: testCapturesSignInLayout, 小さい画面）"
+    return named, ""
+
+
 def wants_all(screens):
     """空・`all`・`全部` なら True（UI テストのファイルを読む前に決める）"""
     words = [w.strip() for w in re.split(r"[,、]", screens or "") if w.strip()]
@@ -143,7 +171,7 @@ def pick(screens, tests):
     chosen = {name for name in tests if name.startswith(f"{ALWAYS}/")}
     missing = []
     for word in words:
-        if nfc(word) in ("none", "なし"):
+        if nfc(word) in ("none", "なし") or nfc(word) in SMALL_WORDS:
             continue
         hits = [name for name, text in tests.items() if nfc(word) in nfc(text)]
         if not hits:
@@ -500,6 +528,17 @@ def main():
         submit, store = (sys.argv[2:4] + ["", ""])[:2]
         screens = sys.argv[4] if len(sys.argv) > 4 else ""
         print("true" if sharded(submit == "true", store == "true", screens) else "false")
+        return 0
+    if len(sys.argv) > 1 and sys.argv[1] == "--small":
+        # 小さい iPhone（375pt）で流す一覧。印が無ければ何も出さずに 0（流さない）
+        screens = sys.argv[2] if len(sys.argv) > 2 else ""
+        if not wants_small(screens):
+            return 0
+        args, why = small_args(screens, read_tests())
+        if why:
+            print(f"::error::{why}", file=sys.stderr)
+            return 2
+        print("\n".join(args))
         return 0
     if len(sys.argv) > 1 and sys.argv[1] == "--plan":
         return main_plan(sys.argv[2:])

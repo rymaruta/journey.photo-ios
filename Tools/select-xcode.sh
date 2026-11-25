@@ -29,6 +29,8 @@ if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; th
     [ -n "${GITHUB_ENV:-}" ] && echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
     [ -n "${GITHUB_OUTPUT:-}" ] && echo "version=$ver" >> "$GITHUB_OUTPUT"
     echo "$ver"
+    # この Xcode の Swift の版を出し、Tools/toolchain.env と違えば警告する（止めない・2026-11-25）
+    DEVELOPER_DIR="/Applications/Xcode_$ver.app/Contents/Developer" bash "$(dirname "$0")/toolchain.sh" check-swift || true
 else
     echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
 fi

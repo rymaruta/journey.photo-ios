@@ -49,8 +49,21 @@ FRAMES = [
 ]
 
 
+# App Store の枠ではない機種の選び方（2026-11-25 判断）。`small` は幅 375pt の iPhone（小さい画面で崩れないかを見る UI テスト・
+# `pick-ui-tests.py` の `小さい画面`）。先のものほど優先: SE（375×667・2倍）→ mini（375×812。画面写真は 1080×2340）→ 375×812 の3倍。
+# 2026-11-25（run 45623230009）: Xcode 27.2 の iOS 27.2 には 375pt の機種が載らない（SE 2・3、12 mini・13 mini とも
+# simctl create が「Incompatible device」）。古い iOS が入っていればそれで作り、どれも無ければ、iOS 27 で動く
+# いちばん狭い 390pt（1170×2532・iPhone 16e など）で流して警告を出す（`SMALL_FALLBACK`）
+SMALL_FALLBACK = (1170, 2532)
+OTHER_KINDS = {
+    "small": [(750, 1334), (1080, 2340), (1125, 2436), SMALL_FALLBACK],
+}
+
+
 def accepted(kind):
-    """その枠で Apple が受け付ける寸法（縦）"""
+    """その枠で Apple が受け付ける寸法（縦）。`OTHER_KINDS` の機種の選び方も同じ形で返す"""
+    if kind in OTHER_KINDS:
+        return OTHER_KINDS[kind]
     return next(sizes for _, sizes, _, frame_kind in FRAMES if frame_kind == kind)
 
 # (出力の名前, 材料の画面写真の名前の頭)。アプリの芯の輪の順（見つける → 計画する → 撮る、載せる → 話す）。
@@ -185,13 +198,20 @@ def ios_version(runtime_id):
 
 
 def select_device(kind, types, payload):
+    """`select_devices` の先頭（後ろの注記）"""
+    found = select_devices(kind, types, payload)
+    return found[0] if found else None
+
+
+def select_devices(kind, types, payload):
     """撮る機種を選ぶ（画面写真の寸法が、その枠で受け付ける寸法そのものの iPhone）。
 
     - `types`: [{"identifier", "name", "size": (w, h) か None}]（`size` は機種の情報か、撮った1枚から）
     - `payload`: `simctl list devices -j`
     受け付ける寸法の先のものを先に、同じ寸法なら名前の数の大きい（新しい）機種を先に選ぶ。
     その機種のシミュレータが在れば、いちばん新しい iOS のものを使う（("use", 名前, 寸法, 機種名)）。
-    無ければ作る（("create", 機種の identifier, 寸法, 機種名)）。どれも無ければ None（縮めて合わせる機種には落とさない）"""
+    無ければ作る（("create", 機種の identifier, 寸法, 機種名)）。候補を優先の順に並べて返す（無ければ空。縮めて合わせる機種には落とさない）。
+    作れない機種（その iOS が載らない古い機種など）があるので、`device_for` は作れるまで順に試す（2026-11-25）"""
     import re
     sizes = accepted(kind)
 
@@ -201,6 +221,7 @@ def select_device(kind, types, payload):
 
     candidates = [t for t in types if t["name"].startswith("iPhone") and t.get("size") in sizes]
     candidates.sort(key=lambda t: (sizes.index(t["size"]), -newness(t), t["name"]))
+    out = []
     for t in candidates:
         found = []
         for runtime, devices in payload.get("devices", {}).items():
@@ -211,9 +232,10 @@ def select_device(kind, types, payload):
                 if d.get("isAvailable") and d.get("deviceTypeIdentifier") == t["identifier"]:
                     found.append((version, d["name"]))
         if found:
-            return ("use", max(found)[1], t["size"], t["name"])
-        return ("create", t["identifier"], t["size"], t["name"])
-    return None
+            out.append(("use", max(found)[1], t["size"], t["name"]))
+        else:
+            out.append(("create", t["identifier"], t["size"], t["name"]))
+    return out
 
 
 def simctl_json(*args):
@@ -222,8 +244,22 @@ def simctl_json(*args):
                                      capture_output=True, text=True, check=True).stdout)
 
 
-def measured_types(payload):
-    """入っている iPhone の機種と、その画面写真の寸法。機種の情報から出せない機種は、シミュレータを1回起動して撮った1枚で測る"""
+# 機種の情報（profile.plist）が読めないときの、幅 375pt の機種の画面写真の寸法（Apple の機種の仕様・2026-11-25）。
+# 小さい画面の機種を選ぶときは、シミュレータを起動して測らない（1台ずつ起動すると何分もかかる）
+KNOWN_SIZES = {
+    "iPhone SE (2nd generation)": (750, 1334),
+    "iPhone SE (3rd generation)": (750, 1334),
+    "iPhone 12 mini": (1080, 2340),
+    "iPhone 13 mini": (1080, 2340),
+    "iPhone 16e": (1170, 2532),
+    "iPhone 14": (1170, 2532),
+    "iPhone 13": (1170, 2532),
+}
+
+
+def measured_types(payload, boot=True):
+    """入っている iPhone の機種と、その画面写真の寸法。機種の情報から出せない機種は、シミュレータを1回起動して撮った1枚で測る
+    （`boot=False` なら起動せず、`KNOWN_SIZES` で埋める）"""
     import plistlib
     import subprocess
     import tempfile
@@ -237,7 +273,9 @@ def measured_types(payload):
             if os.path.exists(path):
                 with open(path, "rb") as f:
                     size = profile_size(plistlib.load(f))
-        types.append({"identifier": t.get("identifier"), "name": t["name"], "size": size})
+        types.append({"identifier": t.get("identifier"), "name": t["name"], "size": size or KNOWN_SIZES.get(t["name"])})
+    if not boot:
+        return types
     for t in types:
         if t["size"] is not None:
             continue
@@ -260,26 +298,33 @@ def device_for(kind):
     """撮る機種のシミュレータの名前（無ければ作る）。選んだ機種と寸法を標準エラーに出す。どれも無ければ None"""
     import subprocess
     payload = simctl_json("devices", "available")
-    types = measured_types(payload)
+    types = measured_types(payload, boot=kind not in OTHER_KINDS)
     for t in types:
         print(f"機種 {t['name']}: {'×'.join(map(str, t['size'])) if t['size'] else '寸法が分からない'}", file=sys.stderr)
-    chosen = select_device(kind, types, payload)
-    if chosen is None:
-        return None
-    how, ref, size, type_name = chosen
-    if how == "create":
-        runtimes = [r for r in simctl_json("runtimes").get("runtimes", [])
-                    if r.get("isAvailable") and ios_version(r.get("identifier", "")) is not None]
-        if not runtimes:
-            return None
-        runtime = max(runtimes, key=lambda r: ios_version(r["identifier"]))["identifier"]
-        made = subprocess.run(["xcrun", "simctl", "create", type_name, ref, runtime], capture_output=True, text=True)
-        if made.returncode != 0:
-            return None
-        ref = type_name
-    print(f"選んだ機種（{kind}）: {type_name}（{size[0]}×{size[1]}）シミュレータ「{ref}」{'を作った' if how == 'create' else ''}",
-          file=sys.stderr)
-    return ref
+    runtimes = [r["identifier"] for r in simctl_json("runtimes").get("runtimes", [])
+                if r.get("isAvailable") and ios_version(r.get("identifier", "")) is not None]
+    # 新しい iOS から順に試す（古い機種は新しい iOS に載らないことがある）
+    runtimes.sort(key=ios_version, reverse=True)
+    print(f"入っている iOS: {', '.join(runtimes) or 'なし'}", file=sys.stderr)
+    for how, ref, size, type_name in select_devices(kind, types, payload):
+        if how == "create":
+            made_name = None
+            for runtime in runtimes:
+                made = subprocess.run(["xcrun", "simctl", "create", type_name, ref, runtime], capture_output=True, text=True)
+                if made.returncode == 0:
+                    made_name = type_name
+                    break
+                print(f"機種 {type_name} のシミュレータを作れません（{runtime}）: {made.stderr.strip()[-120:]}", file=sys.stderr)
+            if made_name is None:
+                continue
+            ref = made_name
+        if kind == "small" and size == SMALL_FALLBACK:
+            print(f"::warning::375pt の iPhone のシミュレータが作れないので、390pt の {type_name} で流します（iOS 27 に 375pt の機種は載らない）",
+                  file=sys.stderr)
+        print(f"選んだ機種（{kind}）: {type_name}（{size[0]}×{size[1]}）シミュレータ「{ref}」{'を作った' if how == 'create' else ''}",
+              file=sys.stderr)
+        return ref
+    return None
 
 
 def runtime_of(name, payload):
@@ -328,7 +373,8 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--device":
         name = device_for(sys.argv[2])
         if not name:
-            print(f"::error::App Store 用の絵を撮る機種（{sys.argv[2]}）のシミュレータがありません（縮めて合わせない）", file=sys.stderr)
+            what = "小さい画面（375pt）の UI テストを流す機種" if sys.argv[2] in OTHER_KINDS else "App Store 用の絵を撮る機種"
+            print(f"::error::{what}（{sys.argv[2]}）のシミュレータがありません（縮めて合わせない）", file=sys.stderr)
             return 1
         print(name)
         return 0

@@ -7,15 +7,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen がありません: brew install xcodegen"; exit 1; }
 command -v xcodebuild >/dev/null 2>&1 || { echo "Xcode がありません"; exit 1; }
 
 # 機種名は固定しない。Xcode が上がると消える機種があり、指すと
 # 「そんな行き先は無い」で落ちる（`DEVICE=... bash Tools/mac-release.sh` で上書きできる）
 DEVICE="${DEVICE:-$(python3 Tools/pick-simulator.py)}"
 
-echo "== プロジェクトを作る"
-xcodegen generate
+echo "== プロジェクトを作る（XcodeGen は Tools/toolchain.env の版）"
+bash Tools/toolchain.sh generate
 
 echo
 echo "== staging（Debug）でビルドとテスト"

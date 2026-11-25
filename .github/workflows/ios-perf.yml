@@ -86,12 +86,8 @@ jobs:
 
       - name: Xcodeプロジェクトを生成
         run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          else
-            echo "xcodegen はインストール済みのため再インストールしません"
-          fi
-          xcodegen generate
+          # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
+          bash Tools/toolchain.sh generate
 
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
         run: |

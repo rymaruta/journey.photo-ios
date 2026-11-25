@@ -120,7 +120,7 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 | 段 | ランナー | 中身 | 目安 |
 |---|---|---|---|
 | 静的な検査 | ubuntu | 構文・参照・import の組・設定（`verify.sh` と同じ道具） | 1分 |
-| 単体テスト（Linux・模型） | ubuntu（`swift:6.0.3-noble`） | `Shims/` に向けたビルドと単体テスト | 5分 |
+| 単体テスト（Linux・模型） | ubuntu（`swift:<版>-noble`・版は `Tools/toolchain.env`） | `Shims/` に向けたビルドと単体テスト | 5分 |
 | Xcode のビルドとテスト | macos-15 | 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵） | 控えが当たれば20〜30分 |
 
 - **macOS は、静的な検査が通ってから起こす。** 構文の壊れで macOS の分を使わない。Linux の単体テストは待たない——

@@ -120,10 +120,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       app_changed: ${{ steps.diff.outputs.app_changed }}
+      swift: ${{ steps.tools.outputs.swift }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+      # Linux の単体テストの Swift の版は Tools/toolchain.env の1か所で決める（手元・Mac の Xcode とそろえる・2026-11-25 判断）
+      - name: 道具の版を読む
+        id: tools
+        run: echo "swift=$(bash Tools/toolchain.sh swift)" >> "$GITHUB_OUTPUT"
       - name: 差分を確認
         id: diff
         env:
@@ -166,7 +171,8 @@ jobs:
     if: ${{ needs.scope.outputs.app_changed != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    container: swift:6.0.3-noble
+    # 版は Tools/toolchain.env の JP_SWIFT（Mac の Xcode 27.2 の Swift と同じ版・2026-11-25 判断）。ここに数字を書かない
+    container: swift:${{ needs.scope.outputs.swift }}-noble
     env:
       # 🔴 **落ちたときの書き出しを止める**（2026-10-03・run 1）。テストが落ちると Swift は
       # 呼び出しの積み重なりを書き出そうとするが、コンテナの中ではそこで止まり、
@@ -319,9 +325,12 @@ jobs:
             echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
             echo "選んだ Xcode: $ver"
             echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
+            export DEVELOPER_DIR="/Applications/Xcode_$ver.app/Contents/Developer"
           else
             echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
           fi
+          # Swift の版が Linux の段（Tools/toolchain.env）と同じかを見る。違えば警告だけ（2026-11-25）
+          bash Tools/toolchain.sh check-swift
 
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
@@ -379,12 +388,8 @@ jobs:
 
       - name: Xcode プロジェクトを作る
         run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          else
-            echo "xcodegen はインストール済みのため再インストールしません"
-          fi
-          xcodegen generate
+          # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
+          bash Tools/toolchain.sh generate
 
       # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
       # 行かずに止まる。**ここは絞らない**——main に入る前に全部が回る場所（枝の確認の `screens` は
