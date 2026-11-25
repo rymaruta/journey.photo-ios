@@ -77,5 +77,10 @@ if [ -d "$DEST" ]; then mv "$DEST" "$DEST.old"; fi
 mv "$DEST.new" "$DEST"
 rm -rf "$DEST.old"
 "$DEST/bin/swift" --version
+# 手元の XcodeGen は Swift の実行時の部品を読むので、Swift を替えたら作り直す（2026-11-25・install-xcodegen-linux.sh の注記）
+if [ -x /opt/xcodegen/xcodegen ] && [ "$DEST" = /opt/swift ]; then
+    echo "== XcodeGen を新しい Swift で作り直す"
+    PATH="$DEST/bin:$PATH" bash "$(dirname "$0")/install-xcodegen-linux.sh"
+fi
 echo
 echo "PATH に足してください: export PATH=$DEST/bin:\$PATH"
