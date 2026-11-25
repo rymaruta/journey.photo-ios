@@ -6393,7 +6393,8 @@ final class ScreenshotTests: JPUITestCase {
         let measured = "measured changePassword current=\(current.frame) new=\(updated.frame) window=\(window)"
         print(measured)
         XCTContext.runActivity(named: measured) { _ in }
-        XCTAssertGreaterThanOrEqual(current.frame.minX - window.minX, 12, "欄が画面の左の端に寄っている")
+        // 欄の箱は画面の端 16、字はその内側 14（`jpFieldBox`）。run 1802 は一覧の余白 20 が足されて 50 だった
+        XCTAssertEqual(current.frame.minX - window.minX, 30, accuracy: 1, "欄が画面の端 16 から始まっていない")
         XCTAssertEqual(current.frame.minX, updated.frame.minX, accuracy: 1, "2つの欄の左の端が揃わない")
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "102k-パスワードを変える")

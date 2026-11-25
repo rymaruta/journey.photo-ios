@@ -28,7 +28,9 @@ final class FormRowCornerTests: XCTestCase {
     /// 共通の部品: `jpForm()` は角の無い形、`jpFormRow` は左右に `sideInset` を取る
     func testSharedModifiers() throws {
         let parts = try source("Core/Design/FormParts.swift")
-        XCTAssertTrue(parts.contains("self.listStyle(.grouped)"), "jpForm() が角の無い形になっていない")
+        XCTAssertTrue(parts.contains(".listStyle(.grouped)"), "jpForm() が角の無い形になっていない")
+        XCTAssertTrue(parts.contains(".contentMargins(.horizontal, 0, for: .scrollContent)"),
+                      "jpForm() が一覧の左右の余白を消していない（行の 16 に端末の余白が足される）")
         XCTAssertTrue(parts.contains("leading: JPFormLayout.sideInset"), "jpFormRow の左の余白が sideInset でない")
         XCTAssertTrue(parts.contains("trailing: JPFormLayout.sideInset"), "jpFormRow の右の余白が sideInset でない")
         XCTAssertFalse(parts.contains("leading: 0, bottom: 8, trailing: 0"), "jpFormRow が左右 0 に戻っている")

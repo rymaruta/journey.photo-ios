@@ -243,9 +243,14 @@ extension View {
     /// 節の最初の行の上の角と、最後の行の下の角を、**地を透かしていても丸く切り抜く**。
     /// 行の左右の余白を 0 にして欄を節の端まで出していたので、節の最初の欄の名前の頭
     /// （「いまのパスワード」の「い」の左の画）と、節の最後の欄の下の縁の両端が角で欠けていた。
-    /// 角の無い形（grouped）にして、左右の端 16 は行の余白で取る（`JPFormLayout.sideInset`）
+    /// 角の無い形（grouped）にして、左右の端 16 は行の余白で取る（`JPFormLayout.sideInset`）。
+    ///
+    /// **一覧の左右の余白は 0 にする。** grouped でも一覧は端末の余白（大きい iPhone で 20）を左右に取り、
+    /// 行の余白 16 と足して欄が端から 36 に寄った（Mac run 1802・440 幅で欄の字の左が 50 ＝ 20＋16＋欄の内側 14）
     func jpForm() -> some View {
-        self.listStyle(.grouped)
+        self
+            .listStyle(.grouped)
+            .contentMargins(.horizontal, 0, for: .scrollContent)
     }
 
     /// `Form` の行に JPField を置くときの行の作法（板は左右 16・区切り線なし）。
