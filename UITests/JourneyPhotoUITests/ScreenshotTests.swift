@@ -4499,6 +4499,87 @@ final class ScreenshotTests: JPUITestCase {
         return true
     }
 
+    /// **人間工学の直し A・B**（2026-11-25 判断・Artifact「人間工学アーティファクト」）。ログインした人のホームで、
+    /// A: 上の右の当たり（AI に頼む、メッセージ、お知らせ、メニュー）が 44pt のまま 6pt ずつ離れ、ロゴと重ならないことを値で確かめ、
+    /// 帯を寄りで撮る（標準の字と大きい字）。B: 「フォロー中の人の新しい写真」の段が出た日は、終わりの1行
+    /// （`home.followingEnd`）まで送って撮る。フォロー中は見本の通信（`-JPPreviewDM`）で作る
+    func testCapturesHomeHeaderGapAndFollowingEnd() {
+        executionTimeAllowance = 600
+        for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
+            let app = XCUIApplication.jp()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            // 見本の通信でフォロー中を作る（`PreviewBackend.dmFollowing`: 公開の新着の作者をフォローしていることにする）。
+            // 本物の通信だと見本の人はフォロー中の新しい写真が無く、段が出なかった（run 1818）
+            app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+            app.launchArguments += extra
+            app.launch()
+            defer { app.terminate() }
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            guard app.navigationBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "上の帯\(tag)") }
+            Thread.sleep(forTimeInterval: 3)
+            shootHeaderBand(app, tab: "69-ホーム\(tag)")
+
+            // A: 当たりは 44pt、隣との間は 6pt（中心の間 50pt）
+            let ids = ["header.ask", "header.messages", "header.notifications", "header.menu"]
+            var frames: [(String, CGRect)] = []
+            for id in ids {
+                let button = app.buttons[id].firstMatch
+                XCTAssertTrue(button.exists, "\(id) が無い\(tag)")
+                if button.exists { frames.append((id, button.frame)) }
+            }
+            let lines = frames.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+            print("[header-gap\(tag)]\n\(lines)")
+            let note = XCTAttachment(string: lines)
+            note.name = "69-ホーム\(tag)（右の当たりの寸法）"
+            note.lifetime = .keepAlways
+            add(note)
+            for (id, frame) in frames {
+                XCTAssertGreaterThanOrEqual(frame.width, 43.5, "\(id) の当たりが 44pt 未満\(tag)")
+                XCTAssertGreaterThanOrEqual(frame.height, 43.5, "\(id) の当たりが 44pt 未満\(tag)")
+            }
+            for (a, b) in zip(frames, frames.dropFirst()) {
+                XCTAssertGreaterThanOrEqual(b.1.minX - a.1.maxX, 5.5, "\(a.0) と \(b.0) の間が 6pt 未満\(tag)")
+                // 当たりの間が空きすぎていない（run 1818: 字つきの「AI に頼む」が押し縮められて、字が隣にかかっていた）
+                XCTAssertLessThanOrEqual(b.1.minX - a.1.maxX, 6.5, "\(a.0) と \(b.0) の間が 6pt でない\(tag)")
+            }
+            // iPhone では「AI に頼む」も ✦ だけ（44pt）。字つきが帯に入り切らないと、当たりが押し縮められる
+            if let ask = frames.first(where: { $0.0 == "header.ask" }) {
+                XCTAssertEqual(ask.1.width, 44, accuracy: 0.5, "AI に頼むの当たりが 44pt でない（字つきがはみ出している）\(tag)")
+            }
+            // ロゴ（「Journey Photo」）が右の当たりに重ならない
+            let logo = app.navigationBars.firstMatch.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", "Journey Photo")).firstMatch
+            if logo.exists, logo.frame.width > 0, let first = frames.first {
+                print("[header-gap\(tag)] logo: \(logo.frame)")
+                XCTAssertLessThanOrEqual(logo.frame.maxX, first.1.minX + 0.5, "ロゴが右の当たりに重なる\(tag)")
+            }
+
+            // B: 新しい写真の終わりの1行（大きい字の回は A だけ見る）
+            guard extra.isEmpty else { continue }
+            guard app.descendants(matching: .any)["home.following"].firstMatch.waitForExistence(timeout: 20) else {
+                unreached(app, "フォロー中の人の新しい写真", probes: ["home.following", "home.followingEnd"])
+                continue
+            }
+            let end = app.descendants(matching: .any)["home.followingEnd"].firstMatch
+            scrollUntilHittable(app, end, limit: 12)
+            XCTAssertTrue(end.exists, "新しい写真の段の終わりに1行が無い")
+            guard end.exists else { continue }
+            // 1行が画面の真ん中あたりに来るよう引いて、上に新しい写真、下にほかの写真が見える絵にする
+            let window = app.windows.firstMatch.frame
+            let dy = window.midY - end.frame.midY
+            if abs(dy) > 40 { dragFeed(app, by: dy); Thread.sleep(forTimeInterval: 2) }
+            print("[following-end] \(end.frame) label=\(end.label)")
+            XCTAssertEqual(end.label, "新しい写真は、ここまでです")
+            shoot(app, "69b-ホーム（新しい写真の終わり）")
+        }
+    }
+
     /// **ホームの「登録するとできること」**（札 #618 の案1・2026-11-15 判断で案C・`HomeSignUpBenefitsView`）。**未ログイン**で、
     /// ホームを送って段を出し、標準の字と大きい字で撮る。札4枚の順・重なり・押せる大きさ・画面の幅に収まるかを値で確かめ、
     /// 札を押すと今のログイン画面（`signin.form`）が開くことを確かめる。寸法はログと添付に出す（`[home-signup-benefits]`）。
