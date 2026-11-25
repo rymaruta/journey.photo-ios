@@ -1,6 +1,7 @@
 import SwiftUI
 #if os(iOS)
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 #endif
 
 /// 浮いている背（`SpineSlideCatcher` が書き、背の枠 `BookSpineSlot` だけが見張る）。
@@ -30,16 +31,21 @@ final class SpineSlideProbe: ObservableObject {
     var began: Double?, moved: Double?, ended: Double?
     var travelled = 0.0, cancels = 0
     var opened: Int?, decided: Bool?
+    /// 押さえの部品が指を受けた回数・始まらずに終わった回数・すぐ押しの部品が受けた回数・ほかに同じ指を見た身振りの型（Mac の回 1814 の事実取り）
+    var received = 0, failed = 0, tapped = 0
+    var others: [String] = []
 
     func touchDown(_ time: Double) {
         down = time
         began = nil; moved = nil; ended = nil; travelled = 0; opened = nil; decided = nil
+        received += 1
         publish()
     }
 
     func publish() {
         value = TripBookshelf.probeLine(began: began, moved: moved, ended: ended, travelled: travelled, cancels: cancels,
-                                        opened: opened, decided: decided)
+                                        opened: opened, decided: decided, received: received, failed: failed,
+                                        tapped: tapped, others: others)
     }
 }
 
@@ -97,6 +103,83 @@ struct SpineSlideCatcher: View {
 }
 
 #if os(iOS)
+/// 押さえの身振り（2026-11-25 判断・Mac の回 1814）。`UILongPressGestureRecognizer` は、背の上の 1.2 秒の押しでも一度も始まらなかった
+/// （probe: began=-・長押しのメニューも出ない）。同じ指を見るほかの身振り（SwiftUI の長押しのメニューなど）に止められていた。
+/// **自分で時計を持ち、ほかの身振りに止められない**（`canBePrevented(by:)` が偽）形にした。決まりは `TripBookshelf.holdBegins`
+final class SpineHoldRecognizer: UIGestureRecognizer {
+    private var start: CGPoint = .zero
+    private var startTime: CFTimeInterval = 0
+    private(set) var travelled: Double = 0
+    private var timer: Timer?
+    /// 始まらずに終わった（送り・払いの指、すぐ離した指）
+    var onFail: (() -> Void)?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard touches.count == 1, let touch = touches.first, numberOfTouches <= 1 else {
+            fail(); return
+        }
+        start = touch.location(in: nil)
+        startTime = CACurrentMediaTime()
+        travelled = 0
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: TripBookshelf.holdSeconds, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.timerFired() }
+        }
+    }
+
+    private func timerFired() {
+        guard state == .possible else { return }
+        if TripBookshelf.holdBegins(elapsed: CACurrentMediaTime() - startTime, travelled: travelled) {
+            state = .began
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let touch = touches.first else { return }
+        let here = touch.location(in: nil)
+        travelled = max(travelled, Double(hypot(here.x - start.x, here.y - start.y)))
+        switch state {
+        case .possible:
+            if TripBookshelf.holdFailsBeforeBegin(travelled: travelled) { fail() }
+        case .began, .changed:
+            state = .changed
+        default:
+            break
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        switch state {
+        case .began, .changed: state = .ended
+        default: fail()
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        switch state {
+        case .began, .changed: state = .cancelled
+        default: fail()
+        }
+    }
+
+    private func fail() {
+        if state == .possible {
+            onFail?()
+            state = .failed
+        }
+    }
+
+    override func reset() {
+        super.reset()
+        timer?.invalidate()
+        timer = nil
+        travelled = 0
+    }
+
+    /// ほかの身振り（長押しのメニュー・SwiftUI の押し）に止められない。縦の送り・札の横の払いとの順は、受け手の決まり（delegate）で決める
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+}
+
 struct SpineSlideHost: UIViewRepresentable {
 
     let handlers: SpineSlideCatcher
@@ -143,13 +226,13 @@ struct SpineSlideHost: UIViewRepresentable {
         /// 指が触れた時刻（すぐ押して離したかを見る・`tapOpens`）
         private var touchDownTime: CFTimeInterval = 0
 
-        private lazy var hold: UILongPressGestureRecognizer = {
-            let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
-            hold.minimumPressDuration = TripBookshelf.holdSeconds
-            hold.allowableMovement = CGFloat(TripBookshelf.holdSlop)
+        private lazy var hold: SpineHoldRecognizer = {
+            let hold = SpineHoldRecognizer(target: self, action: #selector(handleHold(_:)))
             // SwiftUI の中身（長押しのメニュー）への指は止めない
             hold.cancelsTouchesInView = false
+            hold.delaysTouchesEnded = false
             hold.delegate = self
+            hold.onFail = { [weak self] in self?.note { $0.failed += 1 } }
             return hold
         }()
 
@@ -190,7 +273,7 @@ struct SpineSlideHost: UIViewRepresentable {
                                              height: Double(probe.bounds.height), slots: handlers.slots)
         }
 
-        @objc private func handleHold(_ recognizer: UILongPressGestureRecognizer) {
+        @objc private func handleHold(_ recognizer: SpineHoldRecognizer) {
             guard let handlers else { return }
             switch recognizer.state {
             case .began:
@@ -260,6 +343,7 @@ struct SpineSlideHost: UIViewRepresentable {
         }
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+            if recognizer.state == .ended { note { $0.tapped += 1 } }
             guard recognizer.state == .ended, let handlers, let index = target(recognizer),
                   TripBookshelf.tapOpens(pressedSeconds: CACurrentMediaTime() - touchDownTime) else { return }
             handlers.onOpen(index)
@@ -283,6 +367,11 @@ struct SpineSlideHost: UIViewRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             guard gestureRecognizer === hold || gestureRecognizer === tap else { return false }
+            // 事実取り: 同じ指を見たほかの身振りの型（Mac の回 1814）
+            if gestureRecognizer === hold {
+                let name = String(describing: type(of: other))
+                note { probe in if !probe.others.contains(name), probe.others.count < 6 { probe.others.append(name) } }
+            }
             // 縦の送りとは同時に動く（押さえたあと縦に大きく動かせば送れる・`handsToScroll`）。
             // 札の横の払い（同じ縦の送りに付いたほかのパン）とは同時に動かない
             if other === host?.panGestureRecognizer { return true }

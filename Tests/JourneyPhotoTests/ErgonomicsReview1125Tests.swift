@@ -310,7 +310,7 @@ final class ErgonomicsReview1125Tests: XCTestCase {
         XCTAssertTrue(catcher.contains("note { $0.cancels += 1 }\n                reset()"), "取り消し・失敗で状態を戻していない")
         // 事実取りの1行（UI テストが落ちたときに読む）
         XCTAssertEqual(TripBookshelf.probeLine(began: 0.28, moved: 0.46, ended: 0.76, travelled: 39, cancels: 0, opened: 1, decided: true),
-                       "began=280;moved=460;ended=760;travelled=39;cancels=0;opened=1;opens=1")
+                       "began=280;moved=460;ended=760;travelled=39;cancels=0;opened=1;opens=1;received=0;failed=0;tapped=0;others=")
     }
 
     /// 止めて離した指: 1pt 未満の揺れを動きに数えない（止めていた時間を 0 に戻して、古い速さを足さない）
@@ -343,5 +343,21 @@ final class ErgonomicsReview1125Tests: XCTestCase {
         XCTAssertTrue(PhotoDetailPull.closes(dy: 40, velocityY: 235), "素早く払っても閉じない（写真の詳細と手ごたえが割れる）")
         XCTAssertFalse(PhotoDetailPull.closes(dy: 40, velocityY: PhotoDetailPull.releaseVelocity(reportedY: 235, sinceLastMoveMs: 500)),
                        "止めてから離した指で閉じる")
+    }
+
+    /// 押さえの身振り（Mac の回 1814 で一度も始まらなかった `UILongPressGestureRecognizer` を替えた）。
+    /// 0.28 秒動かさなければ始まり、それより前に 10pt を超えて動けば始まらない。ほかの身振りに止められない
+    func testShelfHoldRecognizerRules() throws {
+        XCTAssertTrue(TripBookshelf.holdBegins(elapsed: 0.28, travelled: 2))
+        XCTAssertFalse(TripBookshelf.holdBegins(elapsed: 0.2, travelled: 0), "押さえる前に始まった")
+        XCTAssertFalse(TripBookshelf.holdBegins(elapsed: 0.4, travelled: 12), "送りの指で始まった")
+        XCTAssertTrue(TripBookshelf.holdFailsBeforeBegin(travelled: 11))
+        XCTAssertFalse(TripBookshelf.holdFailsBeforeBegin(travelled: 10))
+        let catcher = try source("Features/Trips/SpineSlideCatcher.swift")
+        XCTAssertFalse(catcher.contains("UILongPressGestureRecognizer("), "始まらなかった長押しの部品に戻した")
+        XCTAssertTrue(catcher.contains("override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }"),
+                      "押さえがほかの身振りに止められる")
+        XCTAssertTrue(catcher.contains("if TripBookshelf.holdBegins(elapsed: CACurrentMediaTime() - startTime, travelled: travelled) {"))
+        XCTAssertTrue(catcher.contains("import UIKit.UIGestureRecognizerSubclass"))
     }
 }

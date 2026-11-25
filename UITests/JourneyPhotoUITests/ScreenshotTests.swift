@@ -6188,9 +6188,12 @@ final class ScreenshotTests: JPUITestCase {
         guard first.isHittable, second.isHittable else { return XCTFail("メニューを閉じた後に背表紙を押せない") }
         print("measured shelfSlide first=\(first.frame) \(firstTitle) second=\(second.frame) \(secondTitle)")
         // 押さえて（0.4 秒・押さえたとみなす 0.28 秒より長く、長押しのメニューより短い）、隣の背の真ん中へずらして離す
-        first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
-            .press(forDuration: 0.4, thenDragTo: second.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
-                   withVelocity: .slow, thenHoldForDuration: 0.2)
+        // 行き先は画面の座標で渡す（Mac の回 1814: 要素の座標どうしだと、ログで始めと終わりが同じ "trips.book" の [0.50, 0.60] に見えた）
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let from = origin.withOffset(CGVector(dx: first.frame.midX, dy: first.frame.minY + first.frame.height * 0.6))
+        let to = origin.withOffset(CGVector(dx: second.frame.midX, dy: second.frame.minY + second.frame.height * 0.6))
+        print("measured shelfSlide drag from=(\(first.frame.midX), \(first.frame.minY + first.frame.height * 0.6)) to=(\(second.frame.midX), \(second.frame.minY + second.frame.height * 0.6))")
+        from.press(forDuration: 0.4, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
         let share = app.buttons["trips.share"].firstMatch
         let opened = share.waitForExistence(timeout: 15)
         print("measured shelfSlide probe=\(slideProbe())")

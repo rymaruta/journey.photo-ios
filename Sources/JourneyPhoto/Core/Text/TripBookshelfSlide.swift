@@ -45,11 +45,23 @@ extension TripBookshelf {
 
     /// UI テストの事実取りの1行（`SpineSlideProbe`・`-JPPreviewPullProbe YES` のときだけ出す）。時刻は指が触れてからの ms
     static func probeLine(began: Double?, moved: Double?, ended: Double?, travelled: Double, cancels: Int,
-                          opened: Int?, decided: Bool?) -> String {
+                          opened: Int?, decided: Bool?, received: Int = 0, failed: Int = 0, tapped: Int = 0,
+                          others: [String] = []) -> String {
         func ms(_ v: Double?) -> String { v.map { String(Int(($0 * 1000).rounded())) } ?? "-" }
         let decision = decided.map { $0 ? "1" : "0" } ?? "-"
         return "began=\(ms(began));moved=\(ms(moved));ended=\(ms(ended));travelled=\(Int(travelled.rounded()))"
             + ";cancels=\(cancels);opened=\(opened.map(String.init) ?? "-");opens=\(decision)"
+            + ";received=\(received);failed=\(failed);tapped=\(tapped);others=\(others.joined(separator: ","))"
+    }
+
+    /// 押さえが始まるか（触れてからの秒と、それまでに動いた量）。`SpineHoldRecognizer` が時計で見る（2026-11-25・Mac の回 1814）
+    static func holdBegins(elapsed: Double, travelled: Double) -> Bool {
+        elapsed >= holdSeconds && travelled <= holdSlop
+    }
+
+    /// 押さえが始まる前に動きすぎた（送り・払いの指）
+    static func holdFailsBeforeBegin(travelled: Double) -> Bool {
+        travelled > holdSlop
     }
 
     /// 押さえたあと縦にこれだけ（`slideSlack` より多く）動いたら、ずらすのをやめて縦の送りに渡す（2026-11-25 確かめ役の指摘）
