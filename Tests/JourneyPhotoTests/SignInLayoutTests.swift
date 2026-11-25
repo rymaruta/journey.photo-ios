@@ -215,19 +215,39 @@ final class SignInLayoutTests: XCTestCase {
         XCTAssertFalse(button.isEmpty, "主ボタンで送るときにキーボードを下ろしていない")
     }
 
-    /// 模型 NL2x の寸法
+    /// 模型 NL2x の寸法（見出しは 2026-11-25 owner「タイトルとかも小さい」で 40・32・28）
     func testMetricsMatchMock() {
         XCTAssertEqual(SignInLayout.metrics(.regular),
-                       .init(external: 50, externalGap: 10, field: 50, primary: 52, gap: 12, tagline: true, fieldLabels: true, orLine: true))
+                       .init(external: 50, externalGap: 10, field: 50, primary: 52, gap: 12, brand: 40,
+                             fieldLabels: true, orLine: true, externalSideBySide: false))
         XCTAssertEqual(SignInLayout.metrics(.compact),
-                       .init(external: 46, externalGap: 8, field: 44, primary: 48, gap: 10, tagline: false, fieldLabels: true, orLine: true))
+                       .init(external: 46, externalGap: 8, field: 44, primary: 48, gap: 10, brand: 32,
+                             fieldLabels: true, orLine: true, externalSideBySide: false))
         XCTAssertEqual(SignInLayout.metrics(.tight).gap, 8)
         XCTAssertFalse(SignInLayout.metrics(.tight).fieldLabels)
+        XCTAssertFalse(SignInLayout.metrics(.tight).externalSideBySide)
+        XCTAssertTrue(SignInLayout.metrics(.paired).externalSideBySide)
         for density in SignInLayout.Density.allCases {
             let m = SignInLayout.metrics(density)
             XCTAssertGreaterThanOrEqual(min(m.external, m.field, m.primary), 44, "押せるものが 44 未満（\(density)）")
         }
         XCTAssertEqual(SignInLayout.compactTypeLimit, .xxxLarge)
+    }
+
+    /// 見出しと一文は、どの形でも出す（2026-11-25 owner「タイトルとかも小さいし、サブタイトルも消えるの嫌だ」）。
+    /// 見出しは前の小さい画面の 22 より大きく、28 以上
+    func testBrandAndTaglineAlwaysShown() throws {
+        for density in SignInLayout.Density.allCases {
+            XCTAssertGreaterThanOrEqual(SignInLayout.metrics(density).brand, 28, "見出しが小さい（\(density)）")
+            XCTAssertGreaterThanOrEqual(SignInLayout.headMin(density), SignInLayout.headTop + 28 + 30 + SignInLayout.headBottom,
+                                        "上の段の最低に一文の分が無い（\(density)）")
+        }
+        XCTAssertEqual(SignInLayout.brandHeight(.regular), 82)
+        let view = try source("Features/Auth/SignInView.swift")
+        let brand = try slice(view, from: "private var brand: some View", to: "/// いまの形。")
+        XCTAssertTrue(brand.contains("Text(Labels.Brand.tagline)"), "一文が無い")
+        XCTAssertTrue(brand.contains("AppLogo(size: .points(metrics.brand))"), "見出しの大きさが形の値でない")
+        XCTAssertFalse(brand.contains("if "), "形によって一文や見出しを出し分けている")
     }
 
     /// 375×667 で見せられる高さ（タブ: 667 − 上 20 − 見出し 44 − タブ 49 ≈ 554、シート: 見出し 56 を引いて約 581、見出しなしのタブ 598）
@@ -248,6 +268,14 @@ final class SignInLayoutTests: XCTestCase {
                 }
             }
         }
+        // 375×667 のふつうのログイン（Apple と Google あり、上の一文なし）は、ボタンを縦に積んだまま入る
+        for viewport in smallViewports {
+            XCTAssertNotEqual(SignInLayout.density(viewport: viewport, signUp: false, externalCount: 2, hasReason: false, largeText: false),
+                              .paired, "高さ \(viewport) のログインで Apple と Google を横に並べている")
+        }
+        // 横に並べるのは、縦に積むと入らないときだけ（新規登録に Apple と Google と上の一文が全部ある、いちばん低い 554）
+        XCTAssertEqual(SignInLayout.density(viewport: 554, signUp: true, externalCount: 2, hasReason: true, largeText: false), .paired)
+        XCTAssertGreaterThan(SignInLayout.need(.tight, signUp: true, externalCount: 2, hasReason: true), 554)
         // 前の作り（帯 380 決め打ち・ロゴの始まり 250、枠つきの切り替え）では 375×667 の新規登録が収まらなかった
         XCTAssertGreaterThan(250 + SignInLayout.formNeed(.regular, signUp: true, externalCount: 2, hasReason: false), 598)
     }
@@ -258,6 +286,8 @@ final class SignInLayoutTests: XCTestCase {
         XCTAssertEqual(SignInLayout.density(viewport: 760, signUp: false, externalCount: 2, hasReason: false, largeText: false), .regular)
         XCTAssertEqual(SignInLayout.density(viewport: 598, signUp: false, externalCount: 2, hasReason: false, largeText: false), .compact)
         XCTAssertEqual(SignInLayout.density(viewport: 900, signUp: true, externalCount: 2, hasReason: false, largeText: true), .tight)
+        XCTAssertEqual(SignInLayout.density(viewport: 400, signUp: true, externalCount: 2, hasReason: true, largeText: true), .tight,
+                       "大きい字で横に並べると字が切れる（送れる形のまま）")
     }
 
     /// 上の段は残りの高さ。ロゴが入る高さより低くはしない（そのときは送れる）

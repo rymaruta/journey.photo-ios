@@ -14,24 +14,49 @@ import SwiftUI
 ///
 /// **文字もサイトと同じ**（`docs/BRAND.md`）: `Journey Photo`（ドット無し）、
 /// serif の Bold（iPhone では New York）、字間 -0.025em、白1色、22pt。
-/// 間 8pt もサイトの値。マークは**見える絵で約18pt**（サイトの 28px の枠に余白込みと
-/// 同じ見た目の大きさ）。以前の「Photo だけ青」はサイトに無い。
+/// 間 8pt もサイトの値。マークは**見える絵で文字の大きさの約0.9倍**（`markRatio`・
+/// 2026-11-25 owner「このロゴが小さい」で大きくした）。以前の「Photo だけ青」はサイトに無い。
 struct AppLogo: View {
 
-    /// 見出しのロゴ（22pt）と、ログイン画面の大きいロゴ（40pt・板 41）
-    enum Size { case header, hero }
+    /// 見出しのロゴ（22pt）と、ログイン画面の大きいロゴ（40pt・板 41）。ログイン画面は画面の大きさで
+    /// 40・32・28 を使い分ける（`points`・`SignInLayout.Metrics.brand`・2026-11-25）
+    enum Size: Equatable { case header, hero, points(Double) }
 
     var size: Size = .header
 
     /// 文字の大きさ（見出しはサイトと同じ 22pt 固定）
-    private var fontSize: Double { size == .header ? 22 : 40 }
-    /// **絵の枠の大きさ。** 絵は余白 2% で切り出してあるので、見える絵は枠の約96%。
-    /// **見える大きさは以前のまま**（見出し: 28pt の枠に余白 17% 込み＝約18pt、
-    /// 大きいロゴ: 44pt の枠＝約28pt）——直したのは「ずれ」で、大きさではない
-    private var markSize: Double { size == .header ? 19 : 29.5 }
+    nonisolated static func fontPoints(_ size: Size) -> Double {
+        switch size {
+        case .header: return 22
+        case .hero: return 40
+        case .points(let points): return points
+        }
+    }
+    private var fontSize: Double { Self.fontPoints(size) }
+
+    /// **絵の枠は文字の大きさの 0.94 倍（見出しも大きいロゴも同じ比）。** 絵は余白 2% で
+    /// 切り出してあるので、見える絵は枠の約96%＝文字の大きさの約0.9倍
+    /// （大文字の高さ 0.70 より上下に少しずつ出て、「J」「y」の上下の幅に近い）。
+    ///
+    /// 2026-11-25 owner「このロゴが小さい」（ログイン画面の画面写真に赤丸）。以前は枠が
+    /// 見出し 19・大きいロゴ 29.5 で、比が 0.86 と 0.74 に割れていた——大きいロゴの方が
+    /// 文字に比べて小さく、見える絵は大文字の高さ（28pt）と同じで字に負けて見えた。
+    /// 2026-11-25 判断: 比を1つにそろえ、見える絵を字の大きさの約0.9倍にする
+    /// （見出し 19 → 20.7、大きいロゴ 29.5 → 37.6）。絵の中心は大文字の真ん中のままなので、
+    /// 上下は行の高さの中に収まり、ログイン画面の高さ（`SignInLayout`）は変わらない
+    nonisolated static let markRatio = 0.94
+    nonisolated static func markPoints(_ size: Size) -> Double { fontPoints(size) * markRatio }
+    private var markSize: Double { Self.markPoints(size) }
     /// 絵と文字の間。見出しはサイトの `gap-2` = 8px、大きいロゴは板 41 の 12px。
     /// 以前は透明な余白のぶん、これより約5〜8pt 広く見えていた
-    private var spacing: Double { size == .header ? 8 : 12 }
+    /// ほかの大きさは字の 0.3 倍（32 → 10、28 → 8）
+    private var spacing: Double {
+        switch size {
+        case .header: return 8
+        case .hero: return 12
+        case .points(let points): return max(8, (points * 0.3).rounded())
+        }
+    }
     /// New York Bold の大文字の高さ（字の大きさに対する割合）。
     /// **文字が縮んだとき（minimumScaleFactor）は縮む前の大きさで計算する**ので、
     /// 絵は最大で見出し 1.5pt・大きいロゴ 3pt ほど上に寄る。縮むのは狭い端末で
@@ -48,7 +73,7 @@ struct AppLogo: View {
                     d.height / 2 + fontSize * Self.capHeightRatio / 2
                 }
             Text("Journey Photo")
-                .font(size == .header ? JPFont.wordmark : .system(size: 40, weight: .bold, design: .serif))
+                .font(size == .header ? JPFont.wordmark : .system(size: fontSize, weight: .bold, design: .serif))
                 // 字間 -0.025em（サイトと同じ）
                 .tracking(-fontSize * 0.025)
                 .foregroundStyle(WebTheme.foreground)

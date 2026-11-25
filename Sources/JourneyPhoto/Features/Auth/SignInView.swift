@@ -251,26 +251,21 @@ struct SignInView: View {
     /// 大きいロゴと一文（板: マーク＋serif。一文は 2026-10-16 にアプリの一言 `Labels.Brand.tagline` にそろえた）。
     /// 板 v2: 一文は明朝 18（段の下限）の text-2。溶けの下の方（黒 70% 以上）に乗るので灰は透過の `muted2`
     ///
-    /// 小さい画面（2026-11-23 判断・模型 NL2x）: 一文を消し、ロゴは見出しの大きさ（`AppLogo(size: .header)`）だけ。
-    /// どのアプリの画面かはロゴで分かり、一文は飾り
-    @ViewBuilder
+    /// **どの画面の大きさでも見出しと一文を出す**（2026-11-25 owner「タイトルとかも小さいし、サブタイトルも消えるの嫌だ」）。
+    /// 見出しの大きさは形で 40・32・28（`SignInLayout.Metrics.brand`）。前は小さい画面で一文を消し、見出しを 22 にしていた
     private var brand: some View {
-        if metrics.tagline {
-            VStack(alignment: .leading, spacing: SignInLayout.brandGap) {
-                AppLogo(size: .hero)
-                    .accessibilityAddTraits(.isHeader)
-                Text(Labels.Brand.tagline)
-                    .font(JPFont.rowTitle)
-                    // 写真が下まで見えるようにしたので、一文は写真の上＝白（灰は写真の上で読めない）
-                    .foregroundStyle(WebTheme.foreground.opacity(0.9))
-            }
-            // 写真の上でも読めるよう、字の周りだけ薄く沈める
-            .shadow(color: Color.black.opacity(SignInLayout.brandShadowOpacity), radius: 6, y: 1)
-        } else {
-            AppLogo(size: .header)
+        VStack(alignment: .leading, spacing: SignInLayout.brandGap) {
+            AppLogo(size: .points(metrics.brand))
                 .accessibilityAddTraits(.isHeader)
-                .shadow(color: Color.black.opacity(SignInLayout.brandShadowOpacity), radius: 6, y: 1)
+            Text(Labels.Brand.tagline)
+                .font(JPFont.rowTitle)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                // 写真が下まで見えるようにしたので、一文は写真の上＝白（灰は写真の上で読めない）
+                .foregroundStyle(WebTheme.foreground.opacity(0.9))
         }
+        // 写真の上でも読めるよう、字の周りだけ薄く沈める
+        .shadow(color: Color.black.opacity(SignInLayout.brandShadowOpacity), radius: 6, y: 1)
     }
 
     /// いまの形。見せられる高さと、出すもの（欄の数、Apple と Google、上の一文、字の大きさ）で決める
@@ -533,13 +528,11 @@ struct SignInView: View {
     /// 描く（`ExternalSignInMemory`）。いちばん詰めた形では「またはメールアドレスで」の線を消す
     private var externalSection: some View {
         VStack(alignment: .leading, spacing: metrics.externalGap) {
-            if appleAvailable {
-                appleButton
-                    .transition(.opacity)
-            }
-            if googleAvailable {
-                googleButton
-                    .transition(.opacity)
+            // いちばん詰めた形（`paired`）だけ横に並べる（Apple が左・同じ幅と高さ。Apple の決まり: ほかのボタンと同じ大きさ）
+            if metrics.externalSideBySide {
+                HStack(spacing: metrics.externalGap) { externalButtons }
+            } else {
+                externalButtons
             }
             if metrics.orLine {
                 // 「または」の線（区切りは字と余白で。中黒は使わない）
@@ -554,6 +547,19 @@ struct SignInView: View {
                 .padding(.top, 2)
                 .accessibilityElement(children: .combine)
             }
+        }
+    }
+
+    /// Apple と Google（使えるときだけ・Apple が先）
+    @ViewBuilder
+    private var externalButtons: some View {
+        if appleAvailable {
+            appleButton
+                .transition(.opacity)
+        }
+        if googleAvailable {
+            googleButton
+                .transition(.opacity)
         }
     }
 
@@ -593,6 +599,7 @@ struct SignInView: View {
             Task { await finishApple(result) }
         }
         .signInWithAppleButtonStyle(.white)
+        .frame(maxWidth: .infinity)
         .frame(height: metrics.external)
         .clipShape(Capsule())
         // 🔴 シートを開いている間も止める（続けて押して頼みを2つ開かない）
@@ -1432,11 +1439,16 @@ enum SignInLayout {
     /// 詰めた形の字の大きさの上限（特大。アクセシビリティの大きい字はここで止める）
     static let compactTypeLimit: DynamicTypeSize = .xxxLarge
 
-    /// 3つの形（2026-11-23・模型 NL2x の案と owner「スクロールしないといけないのが嫌だ」）。
-    /// - `regular`: 390×844 以上の寸法（Apple と Google 50、欄 50、主ボタン 52、間 12、大きいロゴと一文）
-    /// - `compact`: 375×667 の寸法（46、44、48、間 10、見出しの大きさのロゴ、一文なし）
-    /// - `tight`: シートの見出しや上の一文で `compact` でも入らないとき、欄の名前の行と「またはメールアドレスで」の線を消し、間 8
-    enum Density: Equatable, CaseIterable { case regular, compact, tight }
+    /// 4つの形（2026-11-23・模型 NL2x の案と owner「スクロールしないといけないのが嫌だ」）。
+    /// - `regular`: 390×844 以上の寸法（Apple と Google 50、欄 50、主ボタン 52、間 12、見出し 40）
+    /// - `compact`: 375×667 の寸法（46、44、48、間 10、見出し 32）
+    /// - `tight`: シートの見出しや上の一文で `compact` でも入らないとき、欄の名前の行と「またはメールアドレスで」の線を消し、間 8、見出し 28
+    /// - `paired`: `tight` でも入らないとき（375×667 の新規登録に Apple と Google と上の一文が全部あるとき）、Apple と Google を横に並べる
+    ///
+    /// **見出しと一文は、どの形でも必ず出す**（2026-11-25 owner「タイトルとかも小さいし、サブタイトルも消えるの嫌だ」。
+    /// 前は小さい画面で一文を消し、見出しを 22 にしていた）。詰めるのは上の写真のタイル（`headHeight`）と、欄の名前の行・
+    /// 「または」の線・ボタンの並べ方。見出し・一文・ボタン・欄は削らない
+    enum Density: Equatable, CaseIterable { case regular, compact, tight, paired }
 
     struct Metrics: Equatable {
         let external: CGFloat
@@ -1444,29 +1456,44 @@ enum SignInLayout {
         let field: CGFloat
         let primary: CGFloat
         let gap: CGFloat
-        let tagline: Bool
+        /// 見出し「Journey Photo」の字の大きさ（印はその 0.94 倍の枠・`AppLogo.markRatio`）
+        let brand: Double
         let fieldLabels: Bool
         let orLine: Bool
+        /// Apple と Google を横に並べる（同じ幅と高さ。Apple が左）
+        let externalSideBySide: Bool
     }
 
     static func metrics(_ density: Density) -> Metrics {
         switch density {
         case .regular:
-            return Metrics(external: 50, externalGap: 10, field: 50, primary: 52, gap: 12, tagline: true, fieldLabels: true, orLine: true)
+            return Metrics(external: 50, externalGap: 10, field: 50, primary: 52, gap: 12, brand: 40,
+                           fieldLabels: true, orLine: true, externalSideBySide: false)
         case .compact:
-            return Metrics(external: 46, externalGap: 8, field: 44, primary: 48, gap: 10, tagline: false, fieldLabels: true, orLine: true)
+            return Metrics(external: 46, externalGap: 8, field: 44, primary: 48, gap: 10, brand: 32,
+                           fieldLabels: true, orLine: true, externalSideBySide: false)
         case .tight:
-            return Metrics(external: 46, externalGap: 8, field: 44, primary: 48, gap: 8, tagline: false, fieldLabels: false, orLine: false)
+            return Metrics(external: 46, externalGap: 8, field: 44, primary: 48, gap: 8, brand: 28,
+                           fieldLabels: false, orLine: false, externalSideBySide: false)
+        case .paired:
+            return Metrics(external: 46, externalGap: 8, field: 44, primary: 48, gap: 8, brand: 28,
+                           fieldLabels: false, orLine: false, externalSideBySide: true)
         }
     }
 
     // 形を決める見積もりの寸法（標準の字の大きさ。375 幅）
-    static let estimate = (heroBrand: CGFloat(82), headerBrand: CGFloat(28), fieldLabel: CGFloat(22), rule: CGFloat(48),
+    static let estimate = (fieldLabel: CGFloat(22), rule: CGFloat(48),
                            forgot: CGFloat(44), error: CGFloat(36), orLine: CGFloat(18), reason: CGFloat(20))
 
-    /// 上の段（写真とロゴ）の最低の高さ（ロゴが入る高さ）
+    /// 見出しと一文の高さの見積もり: 見出しの行（New York Bold の行の高さ ≈ 字の 1.2 倍）＋間＋一文（明朝 18 の行 ≈ 30）。
+    /// 40 なら 82（前の見積もりと同じ）、32 なら 72、28 なら 68
+    static func brandHeight(_ density: Density) -> CGFloat {
+        (CGFloat(metrics(density).brand) * 1.2).rounded(.up) + brandGap + 30
+    }
+
+    /// 上の段（写真とロゴ）の最低の高さ（見出しと一文が入る高さ）
     static func headMin(_ density: Density) -> CGFloat {
-        headTop + (metrics(density).tagline ? estimate.heroBrand : estimate.headerBrand) + headBottom
+        headTop + brandHeight(density) + headBottom
     }
 
     /// 下の段の高さの見積もり（**失敗の文の分も先に数える**——出たときに形が替わらず、主ボタンと失敗の文が1画面に残る）
@@ -1476,8 +1503,10 @@ enum SignInLayout {
         var items: [CGFloat] = []
         if hasReason { items.append(e.reason) }
         if externalCount > 0 {
-            items.append(CGFloat(externalCount) * m.external + CGFloat(externalCount - 1) * m.externalGap
-                         + (m.orLine ? m.externalGap + e.orLine : 0))
+            let buttons = m.externalSideBySide
+                ? m.external
+                : CGFloat(externalCount) * m.external + CGFloat(externalCount - 1) * m.externalGap
+            items.append(buttons + (m.orLine ? m.externalGap + e.orLine : 0))
         }
         items += [e.error, field, field]
         items += signUp ? [field, e.rule] : [e.forgot]
@@ -1491,14 +1520,14 @@ enum SignInLayout {
         headMin(density) + formNeed(density, signUp: signUp, externalCount: externalCount, hasReason: hasReason)
     }
 
-    /// どの形で描くか。大きい順に、1画面に収まる最初の形。大きい字はいつも `tight`（字の上限も掛ける）。
-    /// まだ測れていない（0）ときは `regular`
+    /// どの形で描くか。大きい順に、1画面に収まる最初の形。大きい字はいつも `tight`（字の上限も掛ける。
+    /// 横に並べると字が切れるので `paired` にはしない。入らなければ送れる）。まだ測れていない（0）ときは `regular`
     static func density(viewport: CGFloat, signUp: Bool, externalCount: Int, hasReason: Bool, largeText: Bool) -> Density {
         guard viewport > 0 else { return .regular }
         if largeText { return .tight }
         return Density.allCases.first {
             need($0, signUp: signUp, externalCount: externalCount, hasReason: hasReason) <= viewport
-        } ?? .tight
+        } ?? .paired
     }
 
     /// 上の段（写真とロゴ）の高さ: 見せられる高さから下の段を引いた残り。ロゴが入る高さより低くはしない（そのときは送れる）。
