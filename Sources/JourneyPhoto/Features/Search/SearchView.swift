@@ -128,6 +128,8 @@ struct SearchView: View {
                         .foregroundStyle(WebTheme.text)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("search.title")
+                        // 読む順: 見出し「探す」→ 下の欄 → 結果（欄は下に置いたが、読む順は見出しのすぐ後・`SearchReadOrder`）
+                        .accessibilitySortPriority(SearchReadOrder.title)
                         .padding(.horizontal, JPSpace.gutter)
                         .transition(.opacity)
                 }
@@ -236,6 +238,7 @@ struct SearchView: View {
         // 打ち始めるとキーボードのすぐ上に乗る。曲の再生器が下にあれば、その上に積む（`SearchBottomField`）
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SearchBottomField(content: searchField)
+                .accessibilitySortPriority(SearchReadOrder.field)
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う

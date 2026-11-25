@@ -98,6 +98,8 @@ struct SpineSlideHost: UIViewRepresentable {
         private weak var probe: UIView?
         private weak var host: UIScrollView?
         private var slide = TripBookshelf.Slide(start: nil)
+        /// 押さえ始めた所（縦にどれだけ動いたかを見る）
+        private var holdStart: CGPoint = .zero
 
         private lazy var hold: UILongPressGestureRecognizer = {
             let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
@@ -150,9 +152,16 @@ struct SpineSlideHost: UIViewRepresentable {
             guard let handlers else { return }
             switch recognizer.state {
             case .began:
+                holdStart = recognizer.location(in: nil)
                 slide = TripBookshelf.Slide(start: target(recognizer))
                 handlers.onLift(slide.lifted)
             case .changed:
+                // 縦に大きく動いた: ずらすのをやめて縦の送りに渡す（取り消すと `.cancelled` が来る）
+                if TripBookshelf.handsToScroll(dy: Double(recognizer.location(in: nil).y - holdStart.y)) {
+                    recognizer.isEnabled = false
+                    recognizer.isEnabled = true
+                    return
+                }
                 if slide.move(to: target(recognizer)) { handlers.onSwitch() }
                 handlers.onLift(slide.lifted)
             case .ended:
@@ -178,6 +187,8 @@ struct SpineSlideHost: UIViewRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard gestureRecognizer === hold || gestureRecognizer === tap,
                   let probe, probe.window != nil, handlers?.isEnabled == true else { return false }
+            // 流れている送りの上の一押しは、送りを止めるだけ（本を開かない）
+            guard TripBookshelf.receivesTouch(scrollDecelerating: host?.isDecelerating == true) else { return false }
             return probe.bounds.contains(touch.location(in: probe))
         }
 
@@ -185,14 +196,18 @@ struct SpineSlideHost: UIViewRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             guard gestureRecognizer === hold || gestureRecognizer === tap else { return false }
-            // 縦の送りと札の横の払い（同じ縦の送りに付いたパン）とは同時に動かない
+            // 縦の送りとは同時に動く（押さえたあと縦に大きく動かせば送れる・`handsToScroll`）。
+            // 札の横の払い（同じ縦の送りに付いたほかのパン）とは同時に動かない
+            if other === host?.panGestureRecognizer { return true }
             return !(other is UIPanGestureRecognizer && other.view === host)
         }
 
-        /// 縦の送り・札の横の払いは、押さえるが「始まらない」と決まってから（押してすぐ払った指は 10pt 動いた所で渡す）
+        /// 札の横の払いは、押さえるが「始まらない」と決まってから（ずらしている指で札が替わらない。押してすぐ払った指は 10pt 動いた所で渡す）。
+        /// 縦の送りは待たせない（2026-11-25 確かめ役の指摘: 背の上に指を置いてから縦に送れなかった）
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
             gestureRecognizer === hold && other is UIPanGestureRecognizer && other.view === host
+                && other !== host?.panGestureRecognizer
         }
     }
 }

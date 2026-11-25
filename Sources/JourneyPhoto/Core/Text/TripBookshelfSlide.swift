@@ -16,12 +16,24 @@ import Foundation
 /// 画面を持たない計算（`SpineSlideCatcher` が読む）
 extension TripBookshelf {
 
-    /// 押さえたとみなす時間（秒）。これより早く離せばそのまま開き、これより早く動けば送り・払いに渡す
-    static let holdSeconds: Double = 0.15
+    /// 押さえたとみなす時間（秒）。これより早く離せばそのまま開き、これより早く動けば送り・払いに渡す。
+    /// 2026-11-25 確かめ役の指摘で 0.15 → 0.28（背の上に指を置いてから縦に送ろうとした指を、押さえたと取り違えない）。
+    /// 長押しのメニュー（約 0.5 秒）より短い
+    static let holdSeconds: Double = 0.28
     /// 押さえる前に動いてよい量（pt）。これより動いたら送り・払いの指（UIKit の既定の動き出しと同じ 10）
     static let holdSlop: Double = 10
     /// 段の上下へ外れても浮きを残す幅（pt）。これより外へ出たら浮きを消す（やめる）
     static let slideSlack: Double = 30
+
+    /// 押さえたあと縦にこれだけ（`slideSlack` より多く）動いたら、ずらすのをやめて縦の送りに渡す（2026-11-25 確かめ役の指摘）
+    static func handsToScroll(dy: Double) -> Bool {
+        abs(dy) > slideSlack
+    }
+
+    /// 流れている（指を離したあとの惰性の）送りの上の一押しは、送りを止めるだけ。背を開かない・浮かせない（2026-11-25 確かめ役の指摘）
+    static func receivesTouch(scrollDecelerating: Bool) -> Bool {
+        !scrollDecelerating
+    }
 
     /// 段の左端からの横の位置 `x` にある背（`slots` は段の背ごとの押せる幅＝背の幅＋間・`hitWidth`）。段の外は nil
     static func slotIndex(at x: Double, slots: [Double]) -> Int? {

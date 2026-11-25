@@ -71,10 +71,36 @@ struct TripPlanFailure: Equatable {
         title + L("。", ". ") + message(offline: offline)
     }
 
+    /// 保存の帯を、自動の保存が通ったら消すか（2026-11-25 確かめ役の指摘: 電波が戻って送れたあとも「保存できませんでした」が残った）。
+    /// 送れていない事情が消え（`problem == nil`）、送っていない変更も無いときだけ。**変更が残っている間は消さない**（黙って失わない）
+    func isSettled(problemRemains: Bool, dirty: Bool) -> Bool {
+        kind == .save && !problemRemains && !dirty
+    }
+
+    /// 上の札（「まだ送れていません」）の「もう一度試す」を出すか。保存の帯が出ている間は帯の1か所だけにする（同じ一手を2か所に置かない）
+    static func showsTopRetry(failure: TripPlanFailure?) -> Bool {
+        failure?.kind != .save
+    }
+
     /// 帯を払って閉じるか（横か下へ、これだけ動かして離した）
     static let swipeDistance: Double = 60
 
     static func swipeCloses(dx: Double, dy: Double) -> Bool {
         abs(dx) >= swipeDistance || dy >= swipeDistance
     }
+}
+
+/// 帯の「もう一度」で走らせる直し。**1回だけ取り出せる**（続けて2回押しても、送るのは1回・2026-11-25 確かめ役の指摘）
+final class TripPlanRetry {
+    private var action: (() -> Void)?
+
+    init(_ action: (() -> Void)? = nil) { self.action = action }
+
+    /// 取り出す（2回目からは nil）
+    func take() -> (() -> Void)? {
+        defer { action = nil }
+        return action
+    }
+
+    var isEmpty: Bool { action == nil }
 }

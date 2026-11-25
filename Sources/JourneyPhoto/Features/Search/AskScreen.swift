@@ -65,7 +65,10 @@ struct AskScreen: View {
     var body: some View {
         // 2026-11-25 判断（人間工学の案 1）: 下へ引くと画面が指に付いて下がり、離すと閉じる（写真を大きく見る画面と同じ）。
         // 左上の × と VoiceOver の「戻る」は残す（引くだけの操作には押して済む道も残す・WCAG 2.2 の 2.5.7）
-        DetailPullFollow(drag: pull, part: .screen, reduceMotion: reduceMotion, content: screen)
+        // 地は不透明に塗って一緒に下げる（全画面の器は透明・`RootView` の `presentationBackground(.clear)`）。
+        // 引いた所から下にだけ、後ろの画面が見える
+        DetailPullFollow(drag: pull, part: .screen, reduceMotion: reduceMotion,
+                         content: screen.background { WebTheme.background.ignoresSafeArea() })
             .accessibilityAction(.escape) { close() }
     }
 

@@ -32,7 +32,7 @@ final class ErgonomicsReview1125Tests: XCTestCase {
     /// 画面まるごとが指に付いて下がり（縮めない）、離すと閉じる。× と VoiceOver の「戻る」は残す
     func testAskScreenIsWiredToPullClose() throws {
         let ask = try source("Features/Search/AskScreen.swift")
-        XCTAssertTrue(ask.contains("DetailPullFollow(drag: pull, part: .screen, reduceMotion: reduceMotion, content: screen)"),
+        XCTAssertTrue(ask.contains("content: screen.background { WebTheme.background.ignoresSafeArea() })"),
                       "画面が指に付いて下がらない")
         XCTAssertTrue(ask.contains("PhotoDetailPull.askScreenStarts(dx: dx, dy: dy, atTop: atTop, typing: focused)"))
         XCTAssertTrue(ask.contains("if pull.release(dy: dy, velocityY: velocityY, reduceMotion: reduceMotion) { close() }"),
@@ -105,7 +105,8 @@ final class ErgonomicsReview1125Tests: XCTestCase {
         XCTAssertNil(TripBookshelf.slideTarget(x: 40, y: -31, height: 220, slots: slots), "段の上へ外しても浮きが残る（やめられない）")
         XCTAssertNil(TripBookshelf.slideTarget(x: 40, y: 251, height: 220, slots: slots))
         // 押さえたとみなすまでは短く、指の動き出し（10pt）より動いたら送り・払いに渡す
-        XCTAssertLessThanOrEqual(TripBookshelf.holdSeconds, 0.2)
+        XCTAssertGreaterThanOrEqual(TripBookshelf.holdSeconds, 0.25, "背の上に置いた指を、縦に送る前に押さえたと取り違える")
+        XCTAssertLessThanOrEqual(TripBookshelf.holdSeconds, 0.3, "長押しのメニューに近すぎる")
         XCTAssertEqual(TripBookshelf.holdSlop, 10)
     }
 
@@ -209,5 +210,78 @@ final class ErgonomicsReview1125Tests: XCTestCase {
         XCTAssertTrue(glass.contains("modifier(JPGlassFace(shape: shape, border: border))"))
         XCTAssertTrue(glass.contains(".background(WebTheme.sheet, in: shape)"), "透けない地が板の #161617 でない")
         XCTAssertEqual(BrandPalette.surface2, 0x161617)
+    }
+
+    // MARK: - 確かめ役の指摘（2026-11-25）
+
+    /// 帯の「もう一度」は1回だけ送る（続けて押しても2回目は何もしない）
+    func testTripPlanRetryRunsOnlyOnce() {
+        var runs = 0
+        let retry = TripPlanRetry { runs += 1 }
+        XCTAssertFalse(retry.isEmpty)
+        retry.take()?()
+        retry.take()?()
+        XCTAssertEqual(runs, 1, "続けて押すと2回送る")
+        XCTAssertTrue(retry.isEmpty)
+        XCTAssertNil(TripPlanRetry().take(), "送り直さない失敗に直しがある")
+        let plan = try? source("Features/Trips/TripPlanDetailView.swift")
+        XCTAssertTrue(plan?.contains("let retry = failureRetry.take()\n                clearFailure()\n                retry?()") == true,
+                      "帯の「もう一度」が1回だけ取り出す形でない")
+    }
+
+    /// 保存の帯は、自動の保存が通って送っていない変更が無くなった時だけ消える。**変更が残っている間は残す**（黙って失わない）
+    func testSaveBandClearsOnlyAfterAutosaveSucceeds() throws {
+        let save = TripPlanFailure(kind: .save, detail: "送れませんでした")
+        XCTAssertTrue(save.isSettled(problemRemains: false, dirty: false), "電波が戻って送れたあとも帯が残る")
+        XCTAssertFalse(save.isSettled(problemRemains: false, dirty: true), "送っていない変更があるのに帯を消した")
+        XCTAssertFalse(save.isSettled(problemRemains: true, dirty: false))
+        XCTAssertFalse(TripPlanFailure(kind: .share, detail: "").isSettled(problemRemains: false, dirty: false),
+                       "保存でない失敗まで自動の保存で消した")
+        // 一手は1か所: 保存の帯が出ている間は上の札の「もう一度試す」を出さない
+        XCTAssertFalse(TripPlanFailure.showsTopRetry(failure: save))
+        XCTAssertTrue(TripPlanFailure.showsTopRetry(failure: nil))
+        XCTAssertTrue(TripPlanFailure.showsTopRetry(failure: TripPlanFailure(kind: .delete, detail: "")))
+        let plan = try source("Features/Trips/TripPlanDetailView.swift")
+        XCTAssertTrue(plan.contains("if settled, failure?.isSettled(problemRemains: problem != nil, dirty: isDirty) == true { clearFailure() }"))
+        XCTAssertTrue(plan.contains("} else if TripPlanFailure.showsTopRetry(failure: failure) {"), "「もう一度」が上と下の2か所に出る")
+        // 保存し損ねた変更は残す: 失敗の道で日程を戻したり「保存せずに戻る」にしたりしない
+        let leave = try XCTUnwrap(plan.range(of: "private func saveAndLeave() {"))
+        let leaveBody = String(plan[leave.lowerBound...].prefix(600))
+        XCTAssertFalse(leaveBody.contains("discarding = true") || leaveBody.contains("days = "), "保存し損ねた変更を捨てている")
+        // 読み上げで閉じる・動きを減らす設定
+        XCTAssertTrue(plan.contains(".accessibilityAction(named: L(\"閉じる\", \"Close\")) { clearFailure() }"), "払えない人が帯を閉じられない")
+        XCTAssertTrue(plan.contains(".transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))"))
+        XCTAssertTrue(plan.contains("withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { failureDrag = .zero }"))
+    }
+
+    /// 流れている送りの上の一押しでは開かない。押さえたあと縦に大きく動かせば、縦の送りに渡す
+    func testShelfSlideYieldsToScrolling() throws {
+        XCTAssertFalse(TripBookshelf.receivesTouch(scrollDecelerating: true), "流れている送りを止めた指で本が開く")
+        XCTAssertTrue(TripBookshelf.receivesTouch(scrollDecelerating: false))
+        XCTAssertTrue(TripBookshelf.handsToScroll(dy: -31))
+        XCTAssertTrue(TripBookshelf.handsToScroll(dy: 31))
+        XCTAssertFalse(TripBookshelf.handsToScroll(dy: 12), "横にずらす途中の小さな揺れで浮きが消える")
+        let catcher = try source("Features/Trips/SpineSlideCatcher.swift")
+        XCTAssertTrue(catcher.contains("guard TripBookshelf.receivesTouch(scrollDecelerating: host?.isDecelerating == true) else { return false }"))
+        XCTAssertTrue(catcher.contains("if TripBookshelf.handsToScroll(dy: Double(recognizer.location(in: nil).y - holdStart.y)) {\n                    recognizer.isEnabled = false\n                    recognizer.isEnabled = true"))
+        XCTAssertTrue(catcher.contains("if other === host?.panGestureRecognizer { return true }"), "押さえている間に縦に送れない")
+        XCTAssertTrue(catcher.contains("&& other !== host?.panGestureRecognizer"), "縦の送りを押さえの失敗まで待たせている")
+        // 浮いた背の真鍮の縁は背の外側だけ（布の上にかけない）
+        let shelf = try source("Features/Trips/TripShelf.swift")
+        XCTAssertTrue(shelf.contains(".stroke(WebTheme.accent, lineWidth: Self.ringWidth)\n                        .padding(-Self.ringWidth)"),
+                      "真鍮の縁が背の上（布の上）にかかる")
+    }
+
+    /// AI に頼むを引いた所から下の画面が見える（器は透明・地は画面が塗る）。探すの欄は見出しのすぐ後に読まれる
+    func testAskBackdropAndSearchReadOrder() throws {
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("AskScreen(engine: askEngine, prefill: askPrefill, onClose: { showAsk = false })\n                    .presentationBackground(Color.clear)"),
+                      "引いている間に後ろが黒い")
+        let search = try source("Features/Search/SearchView.swift")
+        XCTAssertTrue(search.contains(".accessibilitySortPriority(SearchReadOrder.title)"))
+        XCTAssertTrue(search.contains("SearchBottomField(content: searchField)\n                .accessibilitySortPriority(SearchReadOrder.field)"),
+                      "探すの欄が読み上げで最後になる")
+        XCTAssertGreaterThan(SearchReadOrder.title, SearchReadOrder.field)
+        XCTAssertGreaterThan(SearchReadOrder.field, 0)
     }
 }

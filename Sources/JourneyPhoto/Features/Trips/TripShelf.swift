@@ -264,15 +264,19 @@ struct SpineLiftLook: ViewModifier {
 
     nonisolated static let offset: CGFloat = 12
     nonisolated static let brightness: Double = 0.12
+    /// 縁の太さ。背の外へこの分だけ広げた線を、背の後ろに描く（線の内側の半分も背の外に収まる）
+    nonisolated static let ringWidth: CGFloat = 1.5
 
     func body(content: Content) -> some View {
         content
             .brightness(lifted ? Self.brightness : 0)
-            .overlay {
+            // 縁は背の外側だけ（背の後ろに置き、背より一回り大きく描く）。真鍮は布の上にかけない（黒地の上だけ・板の決まり）
+            .background {
                 if lifted {
-                    UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 1,
-                                           bottomTrailingRadius: 1, topTrailingRadius: 2)
-                        .stroke(WebTheme.accent, lineWidth: 1.5)
+                    UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 2,
+                                           bottomTrailingRadius: 2, topTrailingRadius: 3)
+                        .stroke(WebTheme.accent, lineWidth: Self.ringWidth)
+                        .padding(-Self.ringWidth)
                         .accessibilityHidden(true)
                 }
             }

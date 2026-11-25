@@ -6168,10 +6168,22 @@ final class ScreenshotTests: JPUITestCase {
             return parts.count > 1 ? parts[1] : spine.label
         }
         let firstTitle = title(first), secondTitle = title(second)
+        // 長押しのメニュー（表紙だけ見る）が出たら、指を離しても本は開かない（確かめ役の指摘・2026-11-25）
+        first.press(forDuration: 1.2)
+        let menuOpen = app.buttons["開く"].firstMatch
+        if menuOpen.waitForExistence(timeout: 3) {
+            Thread.sleep(forTimeInterval: 0.5)
+            XCTAssertFalse(app.buttons["trips.share"].firstMatch.exists, "長押しのメニューを出しただけで本が開いた")
+            // メニューの外を押して閉じる（開くは押さない）
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertFalse(app.buttons["trips.share"].firstMatch.exists, "長押しのメニューを閉じたら本が開いた")
+        guard first.isHittable, second.isHittable else { return XCTFail("メニューを閉じた後に背表紙を押せない") }
         print("measured shelfSlide first=\(first.frame) \(firstTitle) second=\(second.frame) \(secondTitle)")
-        // 押さえて（0.3 秒・長押しのメニューより短い）、隣の背の真ん中へずらして離す
+        // 押さえて（0.4 秒・押さえたとみなす 0.28 秒より長く、長押しのメニューより短い）、隣の背の真ん中へずらして離す
         first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
-            .press(forDuration: 0.3, thenDragTo: second.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+            .press(forDuration: 0.4, thenDragTo: second.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
                    withVelocity: .slow, thenHoldForDuration: 0.2)
         let share = app.buttons["trips.share"].firstMatch
         guard share.waitForExistence(timeout: 15) else { return XCTFail("押さえてずらして離しても一冊が開かない") }

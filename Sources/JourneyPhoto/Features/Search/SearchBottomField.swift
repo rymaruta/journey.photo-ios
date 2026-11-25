@@ -63,3 +63,10 @@ struct SearchBottomField<Content: View>: View {
         if toasts.keepClearAbove != top { toasts.keepClearAbove = top }
     }
 }
+
+/// 探すの読み上げの順（2026-11-25 確かめ役の指摘: 下に置いた欄が、画面のいちばん最後に読まれた）。
+/// 大きいほど先: 見出し「探す」（2）→ 欄（1）→ 結果（0・既定）
+enum SearchReadOrder {
+    static let title: Double = 2
+    static let field: Double = 1
+}

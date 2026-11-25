@@ -140,8 +140,9 @@ struct TripPlanDetailView: View {
     /// 失敗の帯（2026-11-25 判断・人間工学の案 2・`TripPlanFailure`）。前は5つの窓（`.alert`）で、OK しか無く画面が止まった。
     /// 下の帯に出して、「もう一度」1回で直す（`failureRetry`）。下までスクロールしていても見える所（指の近く）に出す
     @State private var failure: TripPlanFailure?
-    /// 帯の「もう一度」で走らせる直し（送り直せる失敗だけ。項目が変わった回は nil で「閉じる」）
-    @State private var failureRetry: (() -> Void)?
+    /// 帯の「もう一度」で走らせる直し（送り直せる失敗だけ。項目が変わった回は空で「閉じる」）。1回だけ取り出せる（`TripPlanRetry`）
+    @State private var failureRetry = TripPlanRetry()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 帯を払っている量（離したら戻すか閉じる・`TripPlanFailure.swipeCloses`）
     @State private var failureDrag: CGSize = .zero
     /// 名前を引く材料が**一度でも取れたか**。取れた後の読み直しの失敗で消さない
@@ -349,6 +350,10 @@ struct TripPlanDetailView: View {
         }
         // 失敗の帯（2026-11-25 判断・人間工学の案 2）。日程と会話のどちらのタブでも、いちばん下（指の近く）に出す
         .safeAreaInset(edge: .bottom) { failureBand }
+        // 電波が戻って自動の保存が通ったら、保存の帯を消す（送っていない変更が残っている間は消さない）
+        .onChange(of: problem == nil && !isDirty) { _, settled in
+            if settled, failure?.isSettled(problemRemains: problem != nil, dirty: isDirty) == true { clearFailure() }
+        }
         // 🔴 **取り直せなかった回は、取れていた材料を消さない。** この `.task` は
         // 項目のスポットを開いて戻るたびに走る。圏外で戻ると、読めていた場所の名前と
         // リンクが消えて鍵（sp_…）だけになり、候補も「読み込めませんでした」になっていた
@@ -668,7 +673,8 @@ struct TripPlanDetailView: View {
                     TripOutlineButton(title: L("読み直す", "Reload")) {
                         Task { await reloadFromServer() }
                     }
-                } else {
+                } else if TripPlanFailure.showsTopRetry(failure: failure) {
+                    // 保存の帯（下の「もう一度」）が出ている間は、一手を帯の1か所にする
                     TripOutlineButton(title: L("もう一度試す", "Try again")) {
                         Task { _ = await flush(force: true) }
                     }
@@ -1774,7 +1780,7 @@ struct TripPlanDetailView: View {
     /// 失敗を下の帯に出す。送り直せる失敗は `retry` を「もう一度」に結ぶ。読み上げでも1回伝える
     private func fail(_ kind: TripPlanFailure.Kind, _ detail: String, retry: (() -> Void)? = nil) {
         let next = TripPlanFailure(kind: kind, detail: detail, serial: (failure?.serial ?? 0) + 1)
-        failureRetry = next.canRetry ? retry : nil
+        failureRetry = TripPlanRetry(next.canRetry ? retry : nil)
         failureDrag = .zero
         withAnimation(.easeOut(duration: 0.24)) { failure = next }
         // 上に別の画面を積んでいる間は鳴らさない（戻ったら帯が見える）
@@ -1782,7 +1788,7 @@ struct TripPlanDetailView: View {
     }
 
     private func clearFailure() {
-        failureRetry = nil
+        failureRetry = TripPlanRetry()
         failureDrag = .zero
         withAnimation(.easeOut(duration: 0.2)) { failure = nil }
     }
@@ -1808,14 +1814,14 @@ struct TripPlanDetailView: View {
                         actionTitle: failure.actionTitle,
                         isBusy: failure.canRetry && model.busy != nil,
                         actionIdentifier: "tripPlan.failure.action") {
-                if failure.canRetry, let retry = failureRetry {
-                    clearFailure()
-                    retry()
-                } else {
-                    clearFailure()
-                }
+                // 取り出すのは1回だけ（続けて押しても2回は送らない）
+                let retry = failureRetry.take()
+                clearFailure()
+                retry?()
             }
             .accessibilityIdentifier("tripPlan.failure")
+            // 送り直せる帯は右の小ボタンが「もう一度」なので、払えない人に「閉じる」を読み上げの操作で足す
+            .accessibilityAction(named: L("閉じる", "Close")) { clearFailure() }
             .offset(x: failureDrag.width, y: max(0, failureDrag.height))
             .gesture(
                 DragGesture(minimumDistance: 12)
@@ -1825,13 +1831,15 @@ struct TripPlanDetailView: View {
                                                        dy: Double(value.translation.height)) {
                             clearFailure()
                         } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { failureDrag = .zero }
+                            // 動きを減らす設定では弾ませずに戻す
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { failureDrag = .zero }
                         }
                     }
             )
             .padding(.horizontal, JPSpace.gutter)
             .padding(.bottom, JPSpace.xs)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            // 動きを減らす設定では濃さだけで出し入れする
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             .id(failure.serial)
         }
     }
