@@ -23,7 +23,3 @@ extension Animation: @unchecked Sendable {}
 extension Angle: @unchecked Sendable {}
 extension EdgeInsets: @unchecked Sendable {}
 extension Font.Design: @unchecked Sendable {}
-
-// Apple の Dispatch では Sendable（Linux の Dispatch では書かれていない）。模型の側でそろえる
-import Dispatch
-extension DispatchSpecificKey: @unchecked @retroactive Sendable {}
