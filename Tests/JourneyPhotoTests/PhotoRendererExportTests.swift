@@ -206,7 +206,9 @@ final class PhotoRendererExportTests: XCTestCase {
         var stages: [(name: String, rgb: [Double])] = []
         func add(_ name: String, _ rgb: [Double]) {
             stages.append((name, rgb))
-            XCTContext.runActivity(named: "\(name): \(rgb)") { _ in }
+            // Xcode 27 の XCTContext はメインアクタ。同期の試験はメインスレッドで走る（2026-11-25 Swift 6）
+            let note = "\(name): \(rgb)"
+            MainActor.assumeIsolated { XCTContext.runActivity(named: note) { _ in } }
         }
         add("0 元の PNG", try centerPixel(decode(data), in: extended))
         add("1 無編集で書き出し", try centerPixel(decode(renderer.export(data: data, recipe: .identity)), in: extended))

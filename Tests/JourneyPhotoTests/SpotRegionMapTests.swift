@@ -162,12 +162,14 @@ final class SpotRegionMapTests: XCTestCase {
     /// `testEveryRegionIsAtLeast44x44` が 35.5秒（run 1332）〜43.3秒（run 1329）で、単体テストで1件の最長だった。
     /// 当たりの計算（`SpotRegionMap.area(at:)`・`PrefectureMapGeometry.prefecture(at:)`）は値の型だけを読むので、
     /// 行ごとに別の数え先へ書いて最後に足せば、数は1つずつ順に数えたのと同じ
-    private func hitAreas(_ hit: @Sendable (CGPoint) -> String?, size: CGSize) -> [String: Int] {  // 並べて数える（concurrentPerform）ので @Sendable（2026-11-25 Swift 6）
+    private func hitAreas(_ hit: (CGPoint) -> String?, size: CGSize) -> [String: Int] {
         let rows = Int(size.height), columns = Int(size.width)
         var perRow = [[String: Int]](repeating: [:], count: rows)
         perRow.withUnsafeMutableBufferPointer { buffer in
             // 行ごとに別の場所へ書くので重ならない。置き場の指し手は Sendable でないので nonisolated(unsafe)（2026-11-25 判断・試験だけ）
             nonisolated(unsafe) let out = buffer
+            // 当たりの計算は値の型を読むだけ（上の注記）。Sendable と書けない閉包なので同じく nonisolated(unsafe)
+            nonisolated(unsafe) let hit = hit
             DispatchQueue.concurrentPerform(iterations: rows) { y in
                 var counts: [String: Int] = [:]
                 for x in 0..<columns {

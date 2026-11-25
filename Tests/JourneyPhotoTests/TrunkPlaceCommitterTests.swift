@@ -5,7 +5,8 @@ import FoundationNetworking
 @testable import JourneyPhoto
 
 /// 応答を少し遅らせる口（書き込みの最中を作る）。PUT の本文を控える
-final class SlowTrunkProtocol: URLProtocol {
+// 2026-11-25 判断（Swift 6・試験だけ）: 答えを遅らせて別の糸から返す。持つのは要求ごとの決まった答えだけなので @unchecked Sendable
+final class SlowTrunkProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var body = ""
     nonisolated(unsafe) static var puts: [(path: String, body: Data?)] = []

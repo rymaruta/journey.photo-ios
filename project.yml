@@ -144,10 +144,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(JP_BUNDLE_ID)
         MARKETING_VERSION: "1.2.0"
         CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "5.0"
+        # 言語の版 6（並行処理の確かめは厳しい形がいつも効く・2026-11-25 owner「Swift 6にしたい」）。
+        # 単体テスト・UI テストも 6。逃げ道（@unchecked Sendable・nonisolated(unsafe)）は使う所に理由を書く
+        SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_USER_SCRIPT_SANDBOXING: YES
-        SWIFT_STRICT_CONCURRENCY: complete
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       # **プッシュの環境は構成ごとに変える。**
@@ -172,8 +173,7 @@ targets:
       - target: JourneyPhoto
     settings:
       base:
-        SWIFT_VERSION: "5.0"
-        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_VERSION: "6.0"
         # **テストの束にも Info.plist が要る。** 無いと署名の段で
         #   Cannot code sign because the target does not have an Info.plist
         # と言われ、**1行もコンパイルされないまま**テストが止まる
@@ -203,8 +203,7 @@ targets:
       - target: JourneyPhoto
     settings:
       base:
-        SWIFT_VERSION: "5.0"
-        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.journeyphoto.JourneyPhotoUITests
         CODE_SIGNING_ALLOWED: NO

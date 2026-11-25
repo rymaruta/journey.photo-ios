@@ -13,6 +13,7 @@ final class MusicPreviewPlayerTests: XCTestCase {
 
     // `tearDown` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶ（2026-11-25 Swift 6）
     override func tearDown() {
+        let tokens = tokens
         MainActor.assumeIsolated {
             let player = MusicPreviewPlayer.shared
             player.stop(releaseSession: false)

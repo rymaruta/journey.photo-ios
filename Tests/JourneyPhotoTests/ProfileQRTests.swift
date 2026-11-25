@@ -361,7 +361,7 @@ final class ProfileQRTests: XCTestCase {
     /// 合図を引く間の試験用の作り手。引く途中で `during` を走らせる（その間に別の QR を読んだ、を作る）
     private final class FakeSource: ProfileQRSource, @unchecked Sendable {
         var answer: Result<String?, Error>
-        var during: (@MainActor () -> Void)?
+        var during: (@MainActor @Sendable () -> Void)?
         init(_ answer: Result<String?, Error>) { self.answer = answer }
         func code(for userId: String) async throws -> URL { URL(string: "https://journey-photo.com/qr?t=x")! }
         func resolve(pass: String) async throws -> String? {

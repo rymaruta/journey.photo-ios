@@ -822,10 +822,7 @@ enum PreviewBackend {
 
 #if DEBUG
 /// 見本の通信の答え手（`PreviewBackend`）。見本の鍵・見本の置き場の要求だけを引き受ける
-///
-/// 2026-11-25 判断（Swift 6）: 答えを作る `Task` が自分（`self`）を弱くつかむ。URLProtocol は Sendable と書かれていないが、
-/// `stopped`・`client` を触るのは `startLoading` を受けた糸だけ（`HomeLoop` で戻してから触る・上の注記）なので @unchecked Sendable
-final class PreviewBackendProtocol: URLProtocol, @unchecked Sendable {
+final class PreviewBackendProtocol: URLProtocol {
 
     private var work: Task<Void, Never>?
     /// 止められた（`stopLoading`）。読み書きは `startLoading` を受けたスレッドだけ
@@ -842,13 +839,22 @@ final class PreviewBackendProtocol: URLProtocol, @unchecked Sendable {
         let body = PreviewBackend.body(of: request)
         let home = HomeLoop.current()
         let demo = StoreDemo.isOn
-        work = Task { [weak self] in
+        let owner = WeakOwner(self)
+        work = Task {
             guard let url = request.url else { return }
             let reply = await PreviewBackend.respond(to: request, body: body, demo: demo,
                                                      userAPIPath: AppConfig.userAPIBaseURL.path,
                                                      hosts: demo ? StoreDemo.Hosts.current : nil)
-            home.perform { self?.deliver(reply, url: url) }
+            home.perform { owner.value?.deliver(reply, url: url) }
         }
+    }
+
+    /// 答えを作る仕事へ自分を弱く渡す箱（2026-11-25 判断・Swift 6）。URLProtocol は Sendable と書かれていないが、
+    /// 箱が持つのは作ったときに入れた弱い参照だけで、中を読むのは `startLoading` を受けた糸（`HomeLoop` で戻した所）だけ。
+    /// `stopped`・`client` もその糸でしか触らない（上の注記）ので @unchecked Sendable
+    private final class WeakOwner: @unchecked Sendable {
+        weak var value: PreviewBackendProtocol?
+        init(_ value: PreviewBackendProtocol) { self.value = value }
     }
 
     private func deliver(_ reply: PreviewBackend.Reply, url: URL) {

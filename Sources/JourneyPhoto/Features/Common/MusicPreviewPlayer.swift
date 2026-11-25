@@ -280,7 +280,8 @@ final class MusicPreviewPlayer: ObservableObject {
         let reportLoad: @Sendable (AVPlayer) -> Void = { [weak self] observed in
             let failed = observed.currentItem?.status == .failed
             let waiting = observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
-            DispatchQueue.main.async { self?.noteLoad(itemFailed: failed, waiting: waiting, from: observed) }
+            let owner = self  // 弱い参照は1度読んでから渡す（2026-11-25 Swift 6）
+            DispatchQueue.main.async { owner?.noteLoad(itemFailed: failed, waiting: waiting, from: observed) }
         }
         loadObservations = [
             player.observe(\.currentItem?.status, options: [.initial, .new]) { observed, _ in reportLoad(observed) },
