@@ -629,10 +629,15 @@ jobs:
       - name: 小さい iPhone でも流す
         id: uismall
         if: ${{ always() && steps.scope.outputs.small == 'true' && (steps.ui.outcome == 'success' || steps.ui.outcome == 'failure') }}
+        # 上限を置く（2026-11-25・run 45609158163 はこの段が 28 分を越えても終わらず、手で止めたのでログも絵も残らなかった）。
+        # 時間切れで落ちても、下の段（絵を置く・ログを集める）は走る
+        timeout-minutes: 20
         run: |
           set -euo pipefail
+          echo "機種を選ぶ: $(date -u +%T)"
           SMALL="$(python3 Tools/store-screenshots.py --device small)"
           echo "### 小さい iPhone: $SMALL" >> "$GITHUB_STEP_SUMMARY"
+          echo "流し始め: $(date -u +%T)"
           DEVICE="$SMALL" bash Tools/xcode-test.sh ui build/ios/test/Small.xcresult /tmp/ui-small.txt
 
       # 小さい iPhone の絵は、組 `small` として別に置く（`bash Tools/fetch-shots.sh <run>` の `small/`）

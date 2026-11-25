@@ -49,8 +49,12 @@ fi
 if command -v swift >/dev/null 2>&1; then
     # Mac の Xcode と同じ版か（Tools/toolchain.env の JP_SWIFT・2026-11-25）。違えば警告だけ
     bash Tools/toolchain.sh check-swift
-    swift build
-    swift test
+    # **試験ごと先に組み、`swift test` では組まない**（PR の検証の Linux の段と同じ形・2026-11-25）。
+    # Swift 6.4.2 の既定の作り方（swiftbuild）は、まっさらな .build で `swift build` のあと `swift test` に組ませると、
+    # 試験を走らせる係（test-runner）の組み立てが「test_entry_point.d を開けない」で落ち、そのあと組み直しても直らなかった
+    # （直すには .build を消す）。`swift build --build-tests` からなら落ちない
+    swift build --build-tests
+    swift test --skip-build
 else
     echo "   Swift がありません。入れるには: sudo bash Tools/install-swift-linux.sh"
     echo "   （SwiftUI に触るファイルは iOS SDK が要るので、どのみち Mac が必要）"

@@ -240,8 +240,19 @@ def simctl_json(*args):
                                      capture_output=True, text=True, check=True).stdout)
 
 
-def measured_types(payload):
-    """入っている iPhone の機種と、その画面写真の寸法。機種の情報から出せない機種は、シミュレータを1回起動して撮った1枚で測る"""
+# 機種の情報（profile.plist）が読めないときの、幅 375pt の機種の画面写真の寸法（Apple の機種の仕様・2026-11-25）。
+# 小さい画面の機種を選ぶときは、シミュレータを起動して測らない（1台ずつ起動すると何分もかかる）
+KNOWN_SIZES = {
+    "iPhone SE (2nd generation)": (750, 1334),
+    "iPhone SE (3rd generation)": (750, 1334),
+    "iPhone 12 mini": (1080, 2340),
+    "iPhone 13 mini": (1080, 2340),
+}
+
+
+def measured_types(payload, boot=True):
+    """入っている iPhone の機種と、その画面写真の寸法。機種の情報から出せない機種は、シミュレータを1回起動して撮った1枚で測る
+    （`boot=False` なら起動せず、`KNOWN_SIZES` で埋める）"""
     import plistlib
     import subprocess
     import tempfile
@@ -255,7 +266,9 @@ def measured_types(payload):
             if os.path.exists(path):
                 with open(path, "rb") as f:
                     size = profile_size(plistlib.load(f))
-        types.append({"identifier": t.get("identifier"), "name": t["name"], "size": size})
+        types.append({"identifier": t.get("identifier"), "name": t["name"], "size": size or KNOWN_SIZES.get(t["name"])})
+    if not boot:
+        return types
     for t in types:
         if t["size"] is not None:
             continue
@@ -278,7 +291,7 @@ def device_for(kind):
     """撮る機種のシミュレータの名前（無ければ作る）。選んだ機種と寸法を標準エラーに出す。どれも無ければ None"""
     import subprocess
     payload = simctl_json("devices", "available")
-    types = measured_types(payload)
+    types = measured_types(payload, boot=kind not in OTHER_KINDS)
     for t in types:
         print(f"機種 {t['name']}: {'×'.join(map(str, t['size'])) if t['size'] else '寸法が分からない'}", file=sys.stderr)
     for how, ref, size, type_name in select_devices(kind, types, payload):
