@@ -10,7 +10,7 @@ App Store Connect の「App Review に関する情報」に入れる文と、そ
 
 ## Notes に貼る文面
 
-審査官は英語を読むので、**貼るのは英語**（3,883字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+審査官は英語を読むので、**貼るのは英語**（3,895字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
 2026-11-23 に AI の行を同意の画面（1.1.119）に合わせ、2026-11-24 にログインの行を Apple と Google のある 1.2.x に合わせた。
 2026-11-26 に、申請し直す前に直した: 通知の尋ね方（初めての投稿かフォローのあとに説明とボタン1つ）、Sandbox ではサポーターのバッジが付かないこと、
 Sandbox の Apple ID の定期購入が買ったアカウントに残ること、曲の試聴（iTunes Search API の30秒と Apple Music へのリンク）、
@@ -28,7 +28,7 @@ USER-GENERATED CONTENT (1.2)
 - Photos and comments: "..." > Report (8 reasons + note) or Block. Reported or blocked content disappears for the reporter at once. Unblock: Settings > Blocked people.
 - Stories: Report and Block in the viewer; "..." on each story reply.
 - Profiles: "..." > Report or Block.
-- Messages (1:1), from Home (top right) or a profile: in a conversation, "..." > Report or Block. Reports include the latest 20 messages. Before a request is accepted: 3 text messages max, no links or photos.
+- Messages (1:1, Home top right): in a conversation, "..." > Report or Block. Reports include the latest 20 messages. Before a request is accepted: 3 text messages max, no links or photos.
 - Trip plan chat (members invited by link): long-press a message > Report or Block. Members can leave.
 - Pass cards: Report, Block and Remove on each card.
 - Reports reach journey.photo.official@gmail.com; we review them within 24 hours and remove violations.
@@ -40,14 +40,14 @@ ACCOUNT
 PERMISSIONS (asked in context)
 - Camera: posts, stories, composition overlay, profile QR codes.
 - Microphone: story video sound only, asked when recording.
-- Photos: add-only to save shots; read access to pick photos and for "trips from photos" (asked after an explanation). Only date, rounded place and ID are read on device; images are not uploaded.
-- Location (When In Use): current position on the map, never sent to us. EXIF/GPS is stripped before upload; places are rounded to about 1 km.
+- Photos: add-only to save; read to pick photos and for "trips from photos" (asked after an explanation). Only date, rounded place and ID are read on device; images are not uploaded.
+- Location (When In Use): current position on the map, never sent to us. EXIF/GPS is stripped before upload; places are rounded to ~1 km.
 - Notifications: After the first post or follow, a short explanation appears with one button that leads to the iOS prompt; declining keeps the app fully usable.
 
 BACKGROUND BLUETOOTH FOR "PASS" (bluetooth-central, bluetooth-peripheral)
-- Optional, OFF by default. Starts only after My Page > Settings > Pass, an explanation, "Turn on" and the iOS prompt. Turning it off stops it.
-- Only swaps a small card with nearby devices running this app (one service UUID): id of one chosen public photo, a short note, from/to text, ticket design, prefecture on/off. No location, contacts or device IDs.
-- Swapping needs two iPhones and two accounts; one iPhone shows the explanation, prompt and switch. A screen recording of two iPhones swapping cards can be sent on request.
+- Optional, OFF by default. Starts only after My Page > Settings > Pass, an explanation with a single "Continue" button and the iOS prompt. While on, swapping continues with the app closed. Turning it off stops it.
+- Only swaps a small card with nearby users of this app (one service UUID): id of one chosen public photo, a short note, from/to text, ticket design, prefecture on/off. No location, contacts or device IDs.
+- Swapping needs two iPhones and two accounts; one iPhone shows the explanation and prompt. A screen recording of two iPhones swapping cards can be sent on request.
 
 MUSIC IN STORIES
 - Song search and 30-second previews use the iTunes Search API; each song links to Apple Music. Full tracks are never played.
@@ -61,7 +61,7 @@ IN-APP PURCHASE (3.1.2)
 - Test: My Page > Settings > Pro > pick a plan > "Start Pro" (Sandbox). Restore is under the plans.
 - Supporter badge is granted for production purchases only; in Sandbox, Pro features work but the badge is not shown.
 - A subscription bought with a sandbox Apple ID stays with the account that bought it; after deleting the demo account, please use a different sandbox Apple ID to test Pro.
-- Coins and trunk parts are earned by posting and cannot be bought.
+- Coins and trunk parts cannot be bought (earned by posting).
 ```
 
 ### 日本語（確かめる用）
@@ -74,7 +74,7 @@ Journey Photo は、約4,600か所の観光スポットの案内がついた、�
 - 写真とコメント：「…」から通報（理由8種と補足）、ブロック。通報、ブロックした内容は、その人の画面からその場で消えます。解除は設定 → ブロックした人。
 - ストーリー：閲覧画面に通報とブロック。ストーリーへの返信は各行の「…」。
 - プロフィール：「…」から通報、ブロック。
-- メッセージ（1対1）：ホームの右上、またはプロフィールから。会話の「…」から通報、ブロック。通報には直近20通が付きます。承認されるまでは、文字3通までで、リンクと写真は送れません。
+- メッセージ（1対1、ホームの右上）：会話の「…」から通報、ブロック。通報には直近20通が付きます。承認されるまでは、文字3通までで、リンクと写真は送れません。
 - 旅行プランの会話（招待リンクで加わった人）：1通を長押しして通報、ブロック。仲間はプランから抜けられます。
 - すれちがいのカード：各カードに通報、ブロック、帳から外す。
 - 通報の宛先は journey.photo.official@gmail.com。24時間以内に確かめ、違反した内容とアカウントを消します。
@@ -91,9 +91,9 @@ Journey Photo は、約4,600か所の観光スポットの案内がついた、�
 - 通知：初めて投稿したとき、またはフォローしたときに、短い説明とボタン1つを出し、押すと iOS の確認が出ます。断ってもアプリはすべて使えます。
 
 すれちがい乗車券の背景の Bluetooth（bluetooth-central、bluetooth-peripheral）
-- 任意で、初期設定はオフ。マイページ → 設定 → すれちがい乗車券で説明を読み、「オンにする」と iOS の確認のあとで初めて動きます。オフにすると止まります。
+- 任意で、初期設定はオフ。マイページ → 設定 → すれちがい乗車券で説明を読み、ボタン1つの「続ける」と iOS の確認のあとで初めて動きます。オンの間は、アプリを閉じていても交換します。オフにすると止まります。
 - 同じアプリの近くの端末と小さなカードを交換するだけ（専用のサービス UUID）。中身は、選んだ公開写真1枚の id、ひとこと、発と着の字、券面の種類、都道府県を出すかの印。位置、連絡先、端末の識別子は送りません。
-- 交換には iPhone が2台とアカウントが2つ要ります。1台で、説明、確認、オフのスイッチは見られます。2台で交換する画面収録は、求められたら送ります。
+- 交換には iPhone が2台とアカウントが2つ要ります。1台で、説明と確認は見られます。2台で交換する画面収録は、求められたら送ります。
 
 ストーリーの曲
 - 曲の検索と30秒の試聴は iTunes Search API を使います。各曲に Apple Music へのリンクを出します。曲の全体は流しません。
@@ -107,7 +107,7 @@ App 内課金（3.1.2）
 - 試し方：マイページ → 設定 → Pro → プランを選び「Pro をはじめる」（Sandbox）。購入を復元はプランの下。
 - サポーターのバッジは本番の購入だけに付きます。Sandbox では Pro の機能は使えますが、バッジは出ません。
 - Sandbox の Apple ID で買った定期購入は、買ったアカウントに残ります。審査用アカウントを消したあとに Pro を試すときは、別の Sandbox の Apple ID を使ってください。
-- 旅のトランクの硬貨と部品は投稿で配られ、購入できません。
+- 旅のトランクの硬貨と部品は購入できません（投稿で配られます）。
 ```
 
 ### 入ったら足す文
@@ -118,7 +118,7 @@ App 内課金（3.1.2）
 足しても 4,000 字に収まることは `Tools/test_asc_submit.py` が確かめる。
 
 ```
-- Text in posts and comments is checked on our server before it is published; abusive words are blocked.
+- Post and comment text is checked on our server before publishing; abusive words are blocked.
 ```
 
 日本語: 「投稿とコメントの文は、載せる前にサーバーで確かめ、ひどい言葉は載せません。」

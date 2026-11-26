@@ -455,6 +455,8 @@ class Test(unittest.TestCase):
             "Supporter badge is granted for production purchases only; in Sandbox, Pro features work but the badge is not shown.",
             "A subscription bought with a sandbox Apple ID stays with the account that bought it; after deleting the demo "
             "account, please use a different sandbox Apple ID to test Pro.",
+            'an explanation with a single "Continue" button and the iOS prompt',
+            "While on, swapping continues with the app closed.",
             "iTunes Search API", "Apple Music", '"Report this answer"', "an account (email, Apple or Google)",
         ):
             self.assertIn(line, notes)
