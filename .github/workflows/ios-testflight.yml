@@ -1103,12 +1103,17 @@ jobs:
             -destination generic/platform=iOS -archivePath build/size/JourneyPhoto.xcarchive \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-            LD_GENERATE_MAP_FILE=YES 'LD_MAP_FILE_PATH=$(PROJECT_DIR)/build/size/$(TARGET_NAME)-LinkMap.txt' \
+            LD_GENERATE_MAP_FILE=YES \
             > build/size/xcodebuild-archive.log 2>&1
           status=$?
           echo "組むのに $(( $(date +%s) - started ))秒（終わりの値 ${status}）"
-          if [ "$status" -ne 0 ]; then tail -40 build/size/xcodebuild-archive.log; exit 0; fi
+          if [ "$status" -ne 0 ]; then grep -E "error:|FAILED" build/size/xcodebuild-archive.log | tail -40; exit 1; fi
           app="build/size/JourneyPhoto.xcarchive/Products/Applications/JourneyPhoto.app"
+          # 地図の置き場は既定のまま（ターゲットごとの作業場所）。置き場を1つに決めると、部品の道具（Mac 向けに組む
+          # swift-argument-parser など）の地図と重なり Archive が落ちる（run 1867）。アプリ本体の分だけ拾う
+          map="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*ArchiveIntermediates*' -path '*/JourneyPhoto.build/*' \
+                 -name 'JourneyPhoto-LinkMap-*-arm64.txt' 2>/dev/null | head -1)"
+          [ -n "$map" ] && cp "$map" build/size/JourneyPhoto-LinkMap.txt
           xcodebuild -project JourneyPhoto.xcodeproj -target JourneyPhoto -configuration Release -sdk iphoneos -showBuildSettings 2>/dev/null \
             | grep -E '^ +(SWIFT_OPTIMIZATION_LEVEL|SWIFT_COMPILATION_MODE|GCC_OPTIMIZATION_LEVEL|DEAD_CODE_STRIPPING|STRIP_INSTALLED_PRODUCT|STRIP_STYLE|STRIP_SWIFT_SYMBOLS|DEPLOYMENT_POSTPROCESSING|COPY_PHASE_STRIP|DEBUG_INFORMATION_FORMAT|ASSETCATALOG_COMPILER_OPTIMIZATION|LLVM_LTO|ONLY_ACTIVE_ARCH|ARCHS) =' \
             > build/size/build-settings.txt
