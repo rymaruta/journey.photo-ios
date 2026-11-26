@@ -351,6 +351,8 @@ enum DMText {
                      "You can't send photos until they accept. Send text instead.")
         case "photoNotFound":
             return t("この写真は送れません", "This photo can't be sent.")
+        case APIError.contentRejectedCode:
+            return APIError.contentRejectedText(language: language)
         default:
             return APIError.server(status: status, message: fallback).description(language: language)
         }
@@ -360,7 +362,9 @@ enum DMText {
     static func returnsToField(code: String?) -> Bool {
         switch code {
         case "requestUrl", "requestLimit", "blockedByMe", "empty", "selfFull", "unavailable", "dailyLimit", "notFound",
-             "requestPhoto", "photoNotFound":
+             "requestPhoto", "photoNotFound",
+             // 言葉の判定の断り（2026-11-26）。同じ文では通らない: 吹き出しにして「もう一度送る」を出さず、欄に戻して直してもらう
+             APIError.contentRejectedCode:
             return true
         default:
             return false

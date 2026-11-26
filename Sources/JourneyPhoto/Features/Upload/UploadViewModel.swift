@@ -816,7 +816,7 @@ final class UploadViewModel: ObservableObject {
     var ownerStillSignedIn: (() -> Bool)?
     /// 直近の送信を、持ち主でなくなったので止めた
     private(set) var stoppedForOwner = false
-    /// 直近の失敗が「もう一度」では直らず、投稿の画面で直す要るもの（選んだアルバムが消えた）
+    /// 直近の失敗が「もう一度」では直らず、投稿の画面で直す要るもの（選んだアルバムが消えた・言葉の判定で断られた）
     private(set) var failureNeedsEditing = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
@@ -2173,6 +2173,9 @@ final class UploadViewModel: ObservableObject {
                                       "The album you chose wasn't found. It may have been deleted. Choose another destination."))
                     break
                 }
+                // 言葉の判定の断り（2026-11-26）: 「もう一度」では同じ文がまた断られる。裏の係は送り直しを出さず、
+                // 投稿の画面で文を直すよう案内する（写真と文は画面のモデルが持ったまま）
+                if APIError.isContentRejected(error) { failureNeedsEditing = true }
                 failures.append((error as? LocalizedError)?.errorDescription
                                 ?? L("投稿できませんでした", "Couldn't post"))
             }

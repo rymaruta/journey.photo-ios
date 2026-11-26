@@ -794,7 +794,20 @@ enum PreviewBackend {
         return (try? JSONDecoder().decode(Count.self, from: data))?.likes
     }
 
-    private static let plainSession = URLSession(configuration: StoreDemo.guarded(.ephemeral))
+    /// 見本の答え手が本物の公開の口（`/feed`・いいね数）を読むときの待ちの上限（秒）。
+    ///
+    /// 2026-11-26 判断（run 1859）: 前は既定（60秒）のままで、見本のストーリーの一覧（`GET /stories`）が
+    /// 公開の新着を読み終えるまで答えなかった。staging の口が遅い回は、アプリの待ち（`APIClient.requestTimeout`
+    /// 20秒）が切れるまでホームのストーリーの行が出ず（`StoriesRow.showsRings` は読み終えるまで出さない）、
+    /// UI テストが自分の輪を 20 秒待って落ちた。見本の答えは本物の公開の口が遅くても早く返す（読めなければ空の一覧）
+    static let publicReadTimeout: TimeInterval = 6
+
+    private static let plainSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = publicReadTimeout
+        config.timeoutIntervalForResource = publicReadTimeout
+        return URLSession(configuration: StoreDemo.guarded(config))
+    }()
 
     /// 送られた本文（`httpBody`、無ければ流れから読む）
     static func body(of request: URLRequest) -> Data? {

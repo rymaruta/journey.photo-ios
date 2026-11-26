@@ -48,6 +48,10 @@ final class StoryUploadCenter: ObservableObject {
         var uploaded: StoryService.UploadedMedia?
         /// 紹介した写真の id（札 #541 の ①・写真の詳細の「ストーリーに載せる」）。紹介でなければ nil
         var sharedPhotoId: String? = nil
+        /// 作る画面に戻すための、焼き込む前の1枚（文字・投票を動かせる形）。**メモリだけ**（端末には書かない）。
+        /// 言葉の判定で断られたとき、作る画面へ戻して書いた文を直してもらう（`takeBackForEditing`・2026-11-26 判断）。
+        /// 動画の1本・起動し直して戻した並びは nil（戻せないので「やめる」だけ）
+        var editShot: StoryDraftStore.ShotInput? = nil
 
         init(id: UUID = UUID(), imageData: Data, caption: String, location: String,
              coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
@@ -93,6 +97,9 @@ final class StoryUploadCenter: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .idle
+    /// 止まった理由が言葉の判定の断り（`content_rejected`・2026-11-26）。**同じ文では通らないので送り直さない**
+    /// （`retry` が受けない）。作る画面へ戻して直す（`takeBackForEditing`）か、やめるかを選ぶ
+    @Published private(set) var needsEditing = false
     /// **全部送り終えた回数。** 輪はこれを見て一覧を読み直す
     /// （回数で伝えるのは `TabRouter` と同じ理由——真偽値だと2回目が効かない）
     @Published private(set) var finished = 0
@@ -188,7 +195,8 @@ final class StoryUploadCenter: ObservableObject {
 
     /// 失敗した残りをもう一度送る
     func retry() {
-        guard case .failed = phase, !pending.isEmpty else { return }
+        // 言葉の判定で断られた並びは送り直さない（同じ文では何度送っても断られる）
+        guard case .failed = phase, !pending.isEmpty, !needsEditing else { return }
         phase = .sending(done: total - pending.count, total: total)
         Task { await run() }
     }
@@ -208,6 +216,37 @@ final class StoryUploadCenter: ObservableObject {
             }
         }
         reset()
+    }
+
+    /// 作る画面へ戻せるか（言葉の判定で断られ、残りの全部に焼き込む前の1枚がある）
+    var canTakeBackForEditing: Bool {
+        guard case .failed = phase, needsEditing, !pending.isEmpty else { return false }
+        return pending.allSatisfy { $0.editShot != nil }
+    }
+
+    /// 作る画面へ戻す中身（残りの写真と、全部で1つの欄）
+    struct TakenBack {
+        let shots: [StoryDraftStore.ShotInput]
+        let caption: String
+        let location: String
+        let song: Photo.Song?
+        let durationSec: Int
+        let archive: Bool
+        let allowReplies: Bool
+        /// 元の下書きの印（作る画面がこの下書きの続きとして開く。出したら片づく）
+        let draftStamp: String?
+    }
+
+    /// 言葉の判定で断られた残りを、作る画面へ戻す（2026-11-26 判断）。**並びからは外す**——戻した画面の
+    /// 「ストーリーに投稿」でまた並びに入る。出せたぶんがあれば元の下書きは片づける（`discard` と同じ決まり）
+    func takeBackForEditing() -> TakenBack? {
+        guard canTakeBackForEditing, let first = pending.first else { return nil }
+        let posted = total - pending.count
+        let back = TakenBack(shots: pending.compactMap(\.editShot), caption: first.caption, location: first.location,
+                             song: first.song, durationSec: first.durationSec, archive: first.archive,
+                             allowReplies: first.allowReplies, draftStamp: posted > 0 ? nil : draftToClear)
+        discard()
+        return back
     }
 
     /// ログインしている人が変わった（ログアウト・別の人でログイン・退会）。
@@ -267,6 +306,7 @@ final class StoryUploadCenter: ObservableObject {
                 guard myGeneration == generation else { return }
                 let reason = (error as? LocalizedError)?.errorDescription
                     ?? L("投稿できませんでした", "Couldn't post")
+                needsEditing = APIError.isContentRejected(error)
                 let message = StoryQueue.partialFailure(posted: total - pending.count,
                                                         total: total, reason: reason)
                 phase = .failed(message: message, remaining: pending.count)
@@ -295,6 +335,7 @@ final class StoryUploadCenter: ObservableObject {
         ownerId = nil
         currentUserId = nil
         draftToClear = nil
+        needsEditing = false
         phase = .idle
         clearStorage()
     }

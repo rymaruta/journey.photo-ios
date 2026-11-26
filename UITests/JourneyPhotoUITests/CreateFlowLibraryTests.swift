@@ -19,9 +19,11 @@ final class CreateFlowLibraryTests: JPUITestCase {
     override func setUp() {
         continueAfterFailure = true
         // `setUp` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶので、そこで XCUIApplication を触る（2026-11-25 Swift 6）
-        MainActor.assumeIsolated { XCUIApplication.jp().resetAuthorizationStatus(for: .photos) }
+        // 許可を戻すだけなので `jp()` を使わない（`jp()` は後始末を足す。後始末の中で呼ぶと
+        // 「後始末を取り出した後に足した」で落ちる・run 1857）
+        MainActor.assumeIsolated { XCUIApplication().resetAuthorizationStatus(for: .photos) }
         addTeardownBlock {
-            XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
+            XCUIApplication().resetAuthorizationStatus(for: .photos)
         }
     }
 
@@ -56,8 +58,10 @@ final class CreateFlowLibraryTests: JPUITestCase {
         shoot(app, "40d-投稿の入口（許可の前）")
 
         // 2. 許す → 一覧（4列・正方形・先頭がカメラ）
+        // 組み込みの写真選びの「写真へのプライベートアクセス」の札が出ていたら先に閉じる（`StoryLibraryFirstTests` と同じ・run 1861）
+        dismissPrivateAccessNotice(app)
         allow.tap()
-        guard allowFullPhotoAccess() else { return unreached(app, "写真の許可の札に答えられない") }
+        guard allowFullPhotoAccess(app, allow: allow) else { return unreached(app, "写真の許可の札に答えられない") }
         let camera = app.buttons["post.library.camera"].firstMatch
         guard camera.waitForExistence(timeout: 15) else { return unreached(app, "許可したのに一覧（カメラのマス）が出ない") }
         let items = app.buttons.matching(identifier: "post.library.item")
@@ -183,24 +187,49 @@ final class CreateFlowLibraryTests: JPUITestCase {
         shoot(app, "40l-投稿（投稿しました　カードにする）")
     }
 
-    /// 写真の許可の札（SpringBoard）で「すべて許可」を押す（`StoryLibraryFirstTests` と同じ言葉）
-    private func allowFullPhotoAccess() -> Bool {
+    /// 写真の許可の札（SpringBoard）で「すべて許可」を押す（`StoryLibraryFirstTests` と同じ言葉・同じ扱い）。
+    /// 許可の札が来ないときは、アプリの中の「写真へのプライベートアクセス」の札に塞がれている。1回だけ閉じて押し直す
+    private func allowFullPhotoAccess(_ app: XCUIApplication, allow: XCUIElement) -> Bool {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let labels = ["フルアクセスを許可", "すべての写真へのアクセスを許可", "Allow Full Access", "Allow Access to All Photos"]
         var answered = false
-        for _ in 0..<3 {
+        var retapped = false
+        for _ in 0..<4 {
             let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: answered ? 3 : 10) else { break }
+            guard alert.waitForExistence(timeout: answered ? 3 : 10) else {
+                guard !answered, !retapped, dismissPrivateAccessNotice(app), allow.waitForExistence(timeout: 3) else { break }
+                retapped = true
+                allow.tap()
+                continue
+            }
             guard let label = labels.first(where: { alert.buttons[$0].exists }) else {
                 let seen = (0..<alert.buttons.count).map { alert.buttons.element(boundBy: $0).label }
                 note("許可の札の言葉", seen.joined(separator: " / "))
                 return false
             }
-            alert.buttons[label].tap()
+            // iOS 27 の許可の札はボタンが入れ子で同じ識別子を2つ持つ（run 1859）。1つに絞って押す
+            alert.buttons[label].firstMatch.tap()
             answered = true
             Thread.sleep(forTimeInterval: 1)
         }
         return answered
+    }
+
+    /// 組み込みの写真選びの「写真へのプライベートアクセス」（英語は Private Access to Photos）の札を「OK」で閉じる。
+    /// 札はアプリの中（SpringBoard ではない）に出る。出ていなければ何もしない
+    @discardableResult
+    private func dismissPrivateAccessNotice(_ app: XCUIApplication) -> Bool {
+        let title = NSPredicate(format: "label CONTAINS %@ OR label CONTAINS[c] %@", "プライベートアクセス", "Private Access")
+        let notice = app.descendants(matching: .any).matching(title).firstMatch
+        guard notice.waitForExistence(timeout: 3) else { return false }
+        let ok = app.buttons["OK"].firstMatch
+        guard ok.waitForExistence(timeout: 2) else {
+            note("プライベートアクセスの札", "OK が見つからない: \(notice.label)")
+            return false
+        }
+        ok.tap()
+        Thread.sleep(forTimeInterval: 1)
+        return true
     }
 
     // MARK: - 記録

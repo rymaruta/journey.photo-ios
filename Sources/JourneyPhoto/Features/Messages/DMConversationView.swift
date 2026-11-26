@@ -967,9 +967,11 @@ struct DMConversationView: View {
                 phase = .unavailable
             } else if DMText.returnsToField(code: refused.code) {
                 // 吹き出しにせず、入力に戻す（URL・上限・ブロック中など。押し直しても通らない）
-                if let back = log.withdraw(clientId), draft.isEmpty {
-                    restoredDraft = back
-                    draft = back
+                // 送っている間に打ち足していても、送れなかった文は消さない（後ろに足す・`DMUnsend.draft`・2026-11-26）
+                if let back = log.withdraw(clientId) {
+                    let restored = DMUnsend.draft(current: draft, returning: back)
+                    restoredDraft = restored
+                    draft = restored
                 }
                 fieldError = refused.errorDescription
                 if refused.code == "requestLimit" { await refreshSince() }

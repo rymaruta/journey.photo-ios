@@ -191,7 +191,14 @@ struct StoriesRow: View {
         // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
         .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),
                             isPresented: $showUploadFailure, titleVisibility: .visible) {
-            Button(L("もう一度送る", "Try again")) { uploads.retry() }
+            // 言葉の判定で断られた並び（2026-11-26）は送り直さない。作る画面で開き直して文を直す（開くと戻る・`StoryComposerView`）
+            if uploads.needsEditing {
+                if uploads.canTakeBackForEditing {
+                    Button(L("ストーリーの画面で直す", "Edit the story")) { showComposer = true }
+                }
+            } else {
+                Button(L("もう一度送る", "Try again")) { uploads.retry() }
+            }
             Button(L("やめる", "Stop sending"), role: .destructive) {
                 uploads.discard()
                 // 出せたぶんがあれば並べる

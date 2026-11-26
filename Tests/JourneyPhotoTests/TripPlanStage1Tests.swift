@@ -240,7 +240,8 @@ final class TripPlanStage1Tests: XCTestCase {
     func testDetailWiresAutosaveAndDrag() throws {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
         XCTAssertFalse(detail.contains("private var saveButton"), "右上の保存が残っている")
-        XCTAssertTrue(detail.contains(".onChange(of: draft) { _, _ in scheduleAutosave() }"))
+        XCTAssertTrue(detail.contains(".onChange(of: draft) { _, _ in\n            if TripAutosave.liftsOnEdit(problem) { problem = nil }\n            scheduleAutosave()\n        }"),
+                      "変えたら待って送る（言葉の判定の断りのあとは止めを外す・2026-11-26）")
         XCTAssertTrue(detail.contains("autosave.schedule { _ = await flush() }"), "手を止めてから待って送る（TripAutosaveDebouncer）")
         XCTAssertTrue(detail.contains(".draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item))"))
         XCTAssertTrue(detail.contains("TripPlanEdit.dropped(days, payload: payload, toDay: toDay, toItem: toItem)"))
