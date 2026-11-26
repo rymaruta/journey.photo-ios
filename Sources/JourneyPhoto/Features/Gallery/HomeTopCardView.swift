@@ -294,8 +294,12 @@ struct HomeTopCardView: View {
     }
 
     private func computeChoices() -> [HomeTopCard.Choice] {
-        let all = HomeTopCard.withSwipe(
-            HomeTopCard.cards(now: cardsNow,
+        let today = HomeTopCard.today(cardsNow, in: .current)
+        // 索引から決まる2枚と入口の写真は、材料が変わったときだけ（`HomeTopCardMemo.seasonCards`・`swipeCover`・2026-11-26 判断）
+        let seasonCards = today.map {
+            memo.seasonCards(.init(today: $0, spotsRevision: spotsRevision, wishlist: wishedKeys, quiz: quiz), spots: spots)
+        }
+        let cards = HomeTopCard.cards(now: cardsNow,
                               // ホームに出さない旅・札から消した旅行プランは渡さない（2026-11-12・`HomeHiddenTrips`）
                               plans: HomeHiddenTrips.visible(plansOwner == auth.userId ? plans : [],
                                                              hidden: removal.hiddenTrips, excluding: removal.removedIds),
@@ -305,10 +309,11 @@ struct HomeTopCardView: View {
                               friendWish: PerfTimeline.shared.measure("home.topCard.friendWish") { friendWishHit },
                               // 一冊ができた・1年前は写真・開いた印・今日が変わったときだけ（`HomeTopCardMemo.photoCards`・2026-11-24 札 #594）
                               photoCards: memo.photoCards(.init(myPhotos: myPhotos, openedBookDays: openedBooks,
-                                                                today: HomeTopCard.today(cardsNow, in: .current),
-                                                                timeZone: .current))),
-            spots: spots, today: HomeTopCard.today(cardsNow, in: .current),
-            pool: memo.coverPool(spots: spots, revision: spotsRevision))
+                                                                today: today, timeZone: .current)),
+                              seasonCards: seasonCards)
+        let cover = memo.swipeCover(.init(spotsRevision: spotsRevision, shown: HomeTopCard.swipeShown(cards),
+                                          day: HomeTopCard.swipeDay(today)), spots: spots)
+        let all = HomeTopCard.withSwipe(cards, cover: cover)
         let audience = HomeTopCard.Audience.of(signedIn: auth.userId != nil,
                                                myPhotos: myPhotosKnown ? myPhotos : nil)
         return HomeTopCard.arrange(all, audience: audience)
