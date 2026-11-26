@@ -143,7 +143,8 @@ final class StoryLibraryFirstTests: JPUITestCase {
                 note("許可の札の言葉", seen.joined(separator: " / "))
                 return false
             }
-            alert.buttons[label].tap()
+            // iOS 27 の許可の札はボタンが入れ子で同じ識別子を2つ持つ（`kTCCServicePhotos-allow-button`・run 1855）。1つに絞って押す
+            alert.buttons[label].firstMatch.tap()
             answered = true
             Thread.sleep(forTimeInterval: 1)
         }
