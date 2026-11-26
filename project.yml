@@ -163,6 +163,8 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Sources/JourneyPhoto/JourneyPhoto.Debug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: Sources/JourneyPhoto/JourneyPhoto.Release.entitlements
+          # 試し（2026-11-26・大きさを測るだけの枝。main には入れない）
+          SWIFT_OPTIMIZATION_LEVEL: -Osize
 
   JourneyPhotoTests:
     type: bundle.unit-test
