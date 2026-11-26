@@ -190,7 +190,8 @@ struct PaywallView: View {
             .overlay(alignment: .topTrailing) {
                 if option == .yearly {
                     // 板 v2: 右上にはみ出す真鍮の札に墨の字。黒 2 の縁で札の縁から切り離す（件数バッジと同じ作り）
-                    Text(L("2か月ぶんお得", "2 months free"))
+                    // 2026-11-26（審査 3.1.2）: 英語の「2 months free」は無料の試用と読まれるので「Save 2 months」
+                    Text(L("2か月ぶんお得", "Save 2 months"))
                         .font(JPFont.eyebrow)
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, JPSpace.xs)
@@ -205,7 +206,7 @@ struct PaywallView: View {
         }
         .buttonStyle(.plain)
         .disabled(busy)
-        .accessibilityLabel("\(option.cycleLabel) \(price)" + (option == .yearly ? L("、2か月ぶんお得", ", 2 months free") : ""))
+        .accessibilityLabel("\(option.cycleLabel) \(price)" + (option == .yearly ? L("、2か月ぶんお得", ", save 2 months") : ""))
         .accessibilityAddTraits(on ? [.isSelected] : [])
         .accessibilityIdentifier("paywall.plan.\(option.rawValue)")
     }
@@ -382,8 +383,9 @@ struct ProBenefit: Identifiable, Equatable {
                                "Maps, references and light times on your device — know where and what to shoot, even with no signal")),
             ProBenefit(icon: .chapter,
                        title: L("Pro マークと Pro 限定の章", "Pro mark & Pro-only chapters"),
-                       body: L("名前の横に Pro マーク。季節ごとに届く七宝の章と、道具を使い込んだ証の章",
-                               "A Pro mark next to your name, enamel chapters every season, and chapters for using the tools")),
+                       // 2026-11-26 判断（審査 3.1.2 と 2.1）: 配る仕組みの無い「道具を使い込んだ証の章」は約束しない（`ProChapters` の注記）
+                       body: L("名前の横に Pro マーク。季節ごとに届く七宝の章",
+                               "A Pro mark next to your name and enamel chapters every season")),
             // 2026-10-17: すれちがいの「特別な乗車券」（券面を選べる・`PassTicketFaceStyle`）
             ProBenefit(icon: .card,
                        title: L("特別な乗車券", "Special Pass tickets"),

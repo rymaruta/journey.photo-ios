@@ -157,7 +157,7 @@ struct PostedSummarySheet: View {
         }
     }
 
-    /// 「オンにする」: 説明の画面を挟まず、iPhone の許可へ（理由は行の字で言っている）。端末で1回だけ聞く
+    /// 「続ける」: 説明の画面を挟まず、iPhone の許可へ（理由は行の字で言っている）。端末で1回だけ聞く
     private func turnOnPush() {
         guard !pushAsking else { return }
         pushAsking = true
@@ -190,7 +190,9 @@ enum PostedSummaryText {
     static var title: String { L("投稿しました", "Posted") }
     static var shareCard: String { L("カードを共有", "Share card") }
     static var pushRow: String { L("いいねや返事が来たら知らせる", "Get notified about likes and replies") }
-    static var pushAction: String { L("オンにする", "Turn on") }
+    /// 2026-11-26 判断（審査 5.1.1(iv)）: 押すと iOS の確認が出るので、通知の説明（`PushPrimerText.proceed`）と同じ「続ける」。
+    /// 「オンにする」「許可」とは呼ばない
+    static var pushAction: String { PushPrimerText.proceed }
     /// カバーの行。初めてのカバーで硬貨が届くとき（`Offer.showsCoins`）は枚数も言う（前の `CoverOfferView` と同じ約束）
     static func coverRow(showsCoins: Bool) -> String {
         guard showsCoins else { return L("この写真をカバーに", "Use this photo as your cover") }

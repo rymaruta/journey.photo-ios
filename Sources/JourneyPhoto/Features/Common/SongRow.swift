@@ -22,6 +22,8 @@ struct SongRow: View {
                 if let artist = song.artist, !artist.isEmpty {
                     Text(artist).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                 }
+                // 曲の頁へのリンク（2026-11-26・審査 5.2.5）
+                AppleMusicLink(song: song)
             }
             Spacer()
             Button {

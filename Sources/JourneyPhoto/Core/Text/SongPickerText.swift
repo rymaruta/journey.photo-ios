@@ -33,6 +33,36 @@ enum SongPickerText {
         return songs.filter { seen.insert($0.previewUrl).inserted }
     }
 
+    // MARK: - Apple Music へのリンク（2026-11-26 判断・審査 5.2.5）
+
+    /// 曲が出る所（選ぶ画面の再生バー、写真の曲の行、マイページの BGM、ストーリーの見出し）に置くリンクの字。
+    /// iTunes の試聴を流すときは、曲の Apple Music の頁へのリンクを添える（Apple の試聴の決まり）。
+    /// Apple の決まった印（バッジの画像）はアプリに持っていないので字で出す。ロゴの字（U+F8FF）は使わない
+    static var appleMusicLabel: String { L("Apple Music で聴く", "Listen on Apple Music") }
+    /// 狭い所（再生バー、ストーリーの見出し）で見せる字。読み上げは `appleMusicLabel`
+    static var appleMusicShortLabel: String { "Apple Music" }
+
+    /// 曲の頁を置いてよい所（サーバーの `TRACK_HOSTS` と同じ・`lib/utils/mediaHosts.ts`）
+    static let trackHosts = ["music.apple.com", "itunes.apple.com"]
+
+    /// 開く先。保存した曲の頁（`trackUrl`）が https の Apple の頁ならそれ。無い・おかしい値なら
+    /// Apple Music の検索（曲名と歌手名）。前の曲は `trackUrl` を持たないことがある（`PreviewStorySample` など）
+    static func appleMusicURL(for song: Photo.Song) -> URL? {
+        if let raw = song.trackUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let url = URL(string: raw), url.scheme?.lowercased() == "https",
+           let host = url.host?.lowercased(),
+           trackHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
+            return url
+        }
+        let term = [song.title, song.artist ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !term.isEmpty, var parts = URLComponents(string: "https://music.apple.com/search") else { return nil }
+        parts.queryItems = [URLQueryItem(name: "term", value: term)]
+        return parts.url
+    }
+
     /// 一覧の下の注記（板 23）
     static var previewNote: String {
         L("30秒の試聴だけを使います。", "Only the 30-second preview is used.")

@@ -206,22 +206,21 @@ final class ProBadgeGridTests: XCTestCase {
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 1.1, "24 × 0.05s を1本の列で順に作る")
     }
 
-    /// 🔴 「PRO 限定」の絵: すべて大きい絵（機能の章も 2026-10-10 に板から取り込んだ）。`-s` は使わない
+    /// 🔴 「PRO 限定」の絵: すべて大きい絵。`-s` は使わない（機能の章は配れるまで並べない・2026-11-26）
     func testLockedItemsUseLargeArt() {
         let items = ProChapters.lockedItems(owned: BadgeSet(), now: day(2026, 10))
         XCTAssertEqual(items.map(\.image), [
             "medal-supporter",
             "medal-pro-spring-2027", "medal-pro-summer-2027", "medal-pro-autumn-2026", "medal-pro-winter-2026",
-            "medal-pro-dawn", "medal-pro-summit",
         ])
         for item in items { XCTAssertFalse(item.image.hasSuffix("-s"), item.id) }
     }
 
-    /// 🔴 機能の章の大きい絵が絵の入れ物に在り、**縮める元として十分大きい**（600px 四方・季節の章と同じ）
+    /// 🔴 機能の章の大きい絵が絵の入れ物に残っていて、**縮める元として十分大きい**（600px 四方・季節の章と同じ）。
+    /// 並びからは外した（2026-11-26）が、配る仕組みを作るときに戻すので絵は残す
     func testFeatureChapterLargeArtExists() throws {
         let folder = root.appendingPathComponent("Sources/JourneyPhoto/Assets.xcassets/ProMedals")
-        for feature in ProChapters.featureChapters {
-            let name = feature.largeImage
+        for name in ["medal-pro-dawn", "medal-pro-summit"] {
             XCTAssertFalse(name.hasSuffix("-s"), name)
             let set = folder.appendingPathComponent(name + ".imageset")
             let contents = try String(contentsOf: set.appendingPathComponent("Contents.json"), encoding: .utf8)
@@ -318,9 +317,10 @@ final class ProBadgeGridTests: XCTestCase {
             let text = ProChapters.arrivalNote(item, now: day(2026, 10), timeZone: tokyo)
             switch item.kind {
             case .supporter: XCTAssertEqual(text, "まもなく届きます", "Pro の人にしか出ない一言なので「Pro になると」は言わない")
-            case .feature: XCTAssertEqual(text, "これから配ります", item.id)
             case .season: XCTAssertFalse(text.isEmpty)
             }
+            // 2026-11-26（審査 2.1）: 「これから配ります」はアプリに出さない
+            XCTAssertFalse(text.contains("これから配ります"), item.id)
         }
     }
 

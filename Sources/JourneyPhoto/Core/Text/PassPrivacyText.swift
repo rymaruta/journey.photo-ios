@@ -29,6 +29,9 @@ enum PassPrivacyText {
             ("antenna.radiowaves.left.and.right",
              L("中身は暗号化していません。乗車券の写真、ひとこと、区間（発と着）、居住地を出すかどうか、券面の種類は、近くの Bluetooth 機器なら誰でも読め、写真から持ち主も分かります。「発」を居住地にすると、受け取った人に居住地の都道府県が出ます。中身は乗車券を変えるまで同じです。",
                "Nothing is encrypted. Your ticket photo, note, route (from and to), whether to show where you live and your ticket design can be read by any Bluetooth device nearby, and the photo shows who posted it. If \u{201C}From\u{201D} is set to your home, people who receive your ticket see your prefecture. It stays the same until you change your ticket.")),
+            // 2026-11-26 判断（審査 2.5.4）: 裏でも Bluetooth を使う（`UIBackgroundModes` の bluetooth-central と bluetooth-peripheral）ことを先に言う
+            ("moon",
+             L(PassPrivacyText.backgroundUse.ja, PassPrivacyText.backgroundUse.en)),
             ("clock",
              L("受け取った乗車券は、すれちがうとすぐ届きます。知らせは \(PassPrivacyText.noticeMinutes) 分に1回まで。設定で、夕方 18 時にまとめて受け取ることもできます。",
                "Tickets you receive arrive as soon as you pass. Alerts come at most once every \(PassPrivacyText.noticeMinutes) minutes. In Settings, you can get them together at 6 PM instead.")),
@@ -39,6 +42,21 @@ enum PassPrivacyText {
              L("ブロックした人の乗車券はあなたには出ませんが、あなたの乗車券はブロックした人にも届くことがあります。いつでもオフにできます。",
                "Tickets from people you blocked aren\u{2019}t shown to you, but your ticket may still reach them. Turn it off at any time.")),
         ]
+    }
+
+    /// 裏でも交換すること（審査 2.5.4。説明の点と Bluetooth の確認の文 `NSBluetoothAlwaysUsageDescription` に同じ旨を書く）
+    static let backgroundUse = (
+        ja: "オンの間は、アプリを閉じていても近くの人と交換します。「いつ」を「開いている間」にすると、アプリを開いている間だけになります。",
+        en: "While it\u{2019}s on, tickets are swapped with people nearby even when the app is closed. Set \u{201C}When\u{201D} to \u{201C}While open\u{201D} to swap only while the app is open."
+    )
+
+    /// 説明の主ボタン（2026-11-26・審査 5.1.1(iv)）。「許可」「オンにする」とは呼ばない（押すと iOS の確認が出る）
+    static var introProceed: String { L("続ける", "Continue") }
+
+    /// 説明の下の注記（押すと何が起きるか、やめたい人の戻り方）
+    static var introNote: String {
+        L("「続ける」を押すと、iPhone が Bluetooth の使用を尋ねます。あとから、この画面の切り替えでいつでもオフにできます。",
+          "After you tap Continue, iPhone will ask to use Bluetooth. You can turn it off anytime with the switch on this screen.")
     }
 
     /// 知らせをまとめる間（分・`PassExchange.noticeInterval` から）

@@ -13,16 +13,13 @@ import Foundation
 /// （`BadgeCatalog` の「知らない鍵は出さない」と同じ判断）。新しい年の絵が届いたら
 /// `artYears` と絵（`medal-pro-<季節>-<年>`）を足す。
 ///
-/// ## 機能の章（暁・圏外。構図は 2026-10-18 に外した——`featureChapters` の注記）
+/// ## 機能の章（暁・圏外）は並べない（2026-11-26 判断・審査 3.1.2 と 2.1）
 ///
-/// 第3段階（機能ができてから）配る。鍵はまだ無い——名前の横の画面の「PRO 限定」に
-/// 「まだ持っていない」絵として並べるだけ（板 BadgePicker のとおり）。
-///
-/// 絵は季節の章と同じ作りの大きい絵 600px（`medal-pro-dawn`・`-compose`・`-summit`）。板の
-/// ProBadges の絵をそのまま取り込んだ（2026-10-10 owner「この辺のバッジも実際のを縮小したのにして」）。
-/// 板の秋 2026 の絵がアプリの `medal-pro-autumn-2026` とバイトまで同じなので、同じ出どころ。
-/// 円の割合も測って季節の章と同じ（中心の行で 91.7%・列で 93.0%＝季節の章と同じ値）なので
-/// `discRatio` 0.91 のまま
+/// 道具を使い込んだ証の章は、配る仕組み（鍵・サーバーの付け方）がまだ無い。「PRO 限定」に並べて
+/// 「これから配ります」と出すと、課金の画面の約束（Pro で手に入る）が果たされていない形に読まれる。
+/// **配れるようになるまで、並びからも課金の画面の文からも外す。** 絵（`medal-pro-dawn`・`-summit`・`-compose`、
+/// 600px・板 ProBadges から 2026-10-10 に取り込んだ物）は絵の入れ物に残してある。配る仕組みを作るときに、
+/// 鍵と一緒に並びへ戻す
 enum ProChapters {
 
     /// 名前の横で円が占める割合（素材の README: 91%）
@@ -122,41 +119,21 @@ enum ProChapters {
         }
     }
 
-    /// 機能の章（第3段階で配る）。名前と絵だけ
-    struct FeatureChapter: Equatable {
-        let id: String
-        let ja: String
-        let en: String
-        var name: String { L(ja, en) }
-        /// 大きい絵（600px・季節の章と同じ作り・2026-10-10 に板から取り込んだ）。表示の画素ちょうどに縮めて出す
-        var largeImage: String { "medal-pro-\(id)" }
-    }
-
-    /// 2026-10-18 判断（owner「お任せします」）: **構図の章を外した。** 作例を重ねて撮る（構図を重ねて撮る）が
-    /// 2026-10-17 に全員無料になったので、「PRO 限定」に並べると Pro の特典に見えてしまう。絵
-    /// （`medal-pro-compose`）は残してある——誰でも取れるメダルにするかは、配る仕組み（第3段階）を作るときに決める
-    static let featureChapters: [FeatureChapter] = [
-        FeatureChapter(id: "dawn", ja: "暁", en: "Dawn"),
-        FeatureChapter(id: "summit", ja: "圏外", en: "Off-grid"),
-    ]
-
     /// 名前の横の画面の「PRO 限定」に並べる1つ
     struct LockedItem: Equatable, Identifiable {
         enum Kind: Equatable {
             case supporter
             case season(Chapter)
-            case feature
         }
 
         let id: String
         let name: String
         let kind: Kind
-        /// 出す絵。サポーター・季節の章は**大きい絵**（表示の画素ちょうどに縮めて出す・板 BadgePicker）、
-        /// 機能の章も大きい絵（2026-10-10 に板から取り込んだ）
+        /// 出す絵。サポーター・季節の章とも**大きい絵**（表示の画素ちょうどに縮めて出す・板 BadgePicker）
         let image: String
     }
 
-    /// 「PRO 限定」の並び（板 BadgePicker: サポーター → 季節の章4つ → 機能の章3つ）。
+    /// 「PRO 限定」の並び（板 BadgePicker: サポーター → 季節の章4つ。機能の章は配れるまで並べない）。
     /// **持っているものは外す**（それは「持っているバッジ」に並ぶ）。絵の無い季節の章は出さない
     static func lockedItems(owned badges: BadgeSet, now: Date = Date()) -> [LockedItem] {
         var items: [LockedItem] = []
@@ -167,9 +144,6 @@ enum ProChapters {
         for chapter in upcoming(now: now) where hasArt(chapter) && badges[chapter.key] == nil {
             items.append(LockedItem(id: chapter.key, name: chapter.shortName, kind: .season(chapter),
                                     image: chapter.imageBase))
-        }
-        for feature in featureChapters {
-            items.append(LockedItem(id: feature.id, name: feature.name, kind: .feature, image: feature.largeImage))
         }
         return items
     }
@@ -193,15 +167,12 @@ enum ProChapters {
     ///
     /// - 季節の章: 「2026年12月から届きます」。もう始まっている季節は「いまの季節の章です。まもなく届きます」
     ///   （2026-10-09 判断: 過ぎた月を「から届きます」と言わない）
-    /// - 機能の章: 「これから配ります」
     /// - サポーター章: 「まもなく届きます」（この一言は Pro の人にしか出ない——Pro でない人は押すと
     ///   Pro の案内。「Pro になると届きます」は Pro の人には話が合わないのでやめた・2026-10-09 確かめ役の指摘）
     static func arrivalNote(_ item: LockedItem, now: Date = Date(), timeZone: TimeZone = japan) -> String {
         switch item.kind {
         case .supporter:
             return L("まもなく届きます", "It arrives soon")
-        case .feature:
-            return L("これから配ります", "Coming later")
         case .season(let chapter):
             let month = startMonth(chapter.season)
             var calendar = Calendar(identifier: .gregorian)

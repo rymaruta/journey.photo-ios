@@ -4,7 +4,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// **Apple Weather の印（ Weather）**（WeatherKit の表示の決まり・2026-11-25 審査 5.2.5 の差し戻し・札 #604）。
+/// **Apple Weather の印**（WeatherKit の表示の決まり・2026-11-25 審査 5.2.5 の差し戻し・札 #604）。
 ///
 /// 天気はサーバーが WeatherKit の REST で取る（`api-user/src/lightForecast.ts`）。アプリは WeatherKit の部品
 /// （`WeatherService`）を持たない——持つには App ID の WeatherKit の能力と権限（entitlement）が要り、署名のプロファイルが
@@ -34,8 +34,9 @@ enum WeatherAttribution {
         base.appendingPathComponent("attribution").appendingPathComponent(language)
     }
 
-    /// 読めないときの字の印（Apple のロゴの字 U+F8FF は Apple の端末のシステムの字で出る）
-    static var textMark: String { L("\u{F8FF} 天気", "\u{F8FF} Weather") }
+    /// 読めないときの字の印。2026-11-26 判断（審査 5.2.5）: Apple のロゴの字（U+F8FF）は使わない
+    /// （Apple の商標の決まりで、字の中にロゴを置かない）。サービスの名前（出典の口の `serviceName` と同じ）を字で出す
+    static var textMark: String { "Apple Weather" }
 
     /// 出典の口の答えを読む。**印の画像は weatherkit.apple.com の https だけ**受ける（ほかの置き場の画像は出さない）
     static func decode(_ data: Data) -> WeatherAttributionMarks? {

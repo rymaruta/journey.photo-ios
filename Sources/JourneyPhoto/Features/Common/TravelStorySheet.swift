@@ -356,7 +356,7 @@ struct TravelStorySheet: View {
                                               options: [.localOnly: true,
                                                         .expirationDate: Date().addingTimeInterval(600)])
                 // 知らせはアプリの共通の部品（`ToastOverlay`）で。読み上げにも伝える
-                let note = L("コピーしました。インスタのストーリーで貼り付けられます",
+                let note = L("コピーしました。Instagram のストーリーで貼り付けられます",
                              "Copied. Paste it into your Instagram story")
                 toasts.show(note)
                 UIAccessibility.post(notification: .announcement, argument: note)

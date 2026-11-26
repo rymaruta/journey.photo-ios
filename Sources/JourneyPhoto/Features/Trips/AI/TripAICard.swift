@@ -49,6 +49,8 @@ struct TripAICard: View {
     var showsBand = true
     let redo: () -> Void
     let openPro: () -> Void
+    /// 「この答えを報告」（2026-11-26・審査 1.2 と 4.7）。AI が書いた理由のときだけ渡す（`TripAICard.offersReport`）
+    var report: (() -> Void)? = nil
     /// 開いているか（2026-11-16 判断・使い勝手の見直し A6）。**はじめは1行に畳む**——開いた札は理由の数行と
     /// 直しのチップで日程を1画面ぶん下へ押していた（最初に見える場所 約1.5か所）。押すと開き、もう一度押すと畳む
     @State private var open = false
@@ -66,6 +68,18 @@ struct TripAICard: View {
     /// 畳んだ行の読み上げ（眉と1行。区切りは日本語「、」・英語「, 」）
     nonisolated static func foldedSpoken(reason: String) -> String? {
         foldedLine(reason: reason).map { $0.eyebrow + L("、", ", ") + $0.text }
+    }
+
+    /// 報告の道を出すか。**AI が書いた理由だけ**（AI なしで組んだ回の理由はアプリが書いた決まり文）
+    nonisolated static func offersReport(_ note: TripAINote) -> Bool {
+        note.mode == .ai && foldedLine(reason: note.reason) != nil
+    }
+
+    /// 報告して隠したときの札（理由を外す。AI なしで組んだ帯は残す）
+    nonisolated static func withoutReason(_ note: TripAINote) -> TripAINote {
+        var hidden = note
+        hidden.reason = ""
+        return hidden
     }
 
     /// 札に出す物があるか（理由か、AI なしで組んだ理由の帯）。無ければ画面は札を置かない
@@ -114,6 +128,12 @@ struct TripAICard: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(L("押すと開きます", "Opens the details"))
             .accessibilityIdentifier("tripAI.folded")
+            // 長押しでも報告できる（開いた札の「…」と同じ）
+            .contextMenu {
+                if let report {
+                    Button(action: report) { Label(AIAnswerReport.action, systemImage: "flag") }
+                }
+            }
             }
             band
         }
@@ -131,6 +151,19 @@ struct TripAICard: View {
                         .foregroundStyle(WebTheme.accent)
                 }
                 Spacer(minLength: 0)
+                // 「…」（2026-11-26・審査 1.2 と 4.7）: この答えを報告
+                if let report {
+                    Menu {
+                        Button(action: report) { Label(AIAnswerReport.action, systemImage: "flag") }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(WebTheme.text3)
+                            .webTappable()
+                    }
+                    .accessibilityLabel(L("並べた理由の操作", "Actions for this reason"))
+                    .accessibilityIdentifier("tripAI.menu")
+                }
                 // 畳む（開いた札の右上・当たり 44）
                 Button { open = false } label: {
                     Image(systemName: "chevron.up")
