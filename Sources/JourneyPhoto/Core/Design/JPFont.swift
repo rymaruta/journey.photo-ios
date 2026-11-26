@@ -4,11 +4,11 @@ import SwiftUI
 ///
 /// | 役割 | 書体 | 同梱 |
 /// |---|---|---|
-/// | 見出し（写真の題・画面の題・名前） | Shippori Mincho B1 Bold | JIS 第1水準まで（2.9 MB・`Tools/make-display-font.py`） |
+/// | 見出し（写真の題・画面の題・名前） | Shippori Mincho B1 Bold | JIS 第1水準まで（2.7 MB・`Tools/make-display-font.py`。はじめから効く機能の字形だけ・2026-11-26） |
 /// | 本文・ボタン・注記 | SF Pro ＋ ヒラギノ角ゴ（システム） | しない |
 /// | 数字（撮影情報・距離・件数）・眉ラベル | SF Pro（システム）＋等幅の数字（`.monospacedDigit()`）。regular / medium、統計の大きい数字は semibold | しない（2026-10-02 に IBM Plex Mono から替えた） |
 /// | ワードマーク | New York Bold 22・白1色（`docs/BRAND.md`） | しない |
-/// | ストーリーの文字の「手書き風」 | Klee One SemiBold | JIS 第1水準まで（4.0 MB・同じスクリプト）。`TextOverlay.Face` だけが使う |
+/// | ストーリーの文字の「手書き風」 | Klee One SemiBold | JIS 第1水準まで（2.2 MB・同じスクリプト）。`TextOverlay.Face` だけが使う |
 /// | ストーリーの文字の「マーカー」「丸文字」 | Yusei Magic・Hachi Maru Pop | JIS 第1水準まで（1.3 MB・1.8 MB・同じスクリプト）。`TextOverlay.Face` だけが使う |
 ///
 /// **どれも `relativeTo:` を付けて、文字サイズの設定（Dynamic Type）に追従させる。**
