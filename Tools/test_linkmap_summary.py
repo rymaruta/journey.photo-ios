@@ -16,7 +16,7 @@ MAP = f"""# Path: {APP}/UninstalledProducts/iphoneos/JourneyPhoto.app/JourneyPho
 # Object files:
 [  0] linker synthesized
 [  1] {APP}/JourneyPhoto.build/Release-iphoneos/JourneyPhoto.build/Objects-normal/arm64/JourneyPhoto-1.o
-[  2] {APP}/aws-sdk-swift.build/Release-iphoneos/AWSCognitoIdentityProvider.build/Objects-normal/arm64/Models.o
+[  2] /Users/runner/Library/Developer/Xcode/DerivedData/JourneyPhoto-x/Build/Intermediates.noindex/ArchiveIntermediates/JourneyPhoto/BuildProductsPath/Release-iphoneos/AWSCognitoIdentityProvider.o
 [  3] /Applications/Xcode.app/Contents/Developer/usr/lib/libcrt.a(aws_crt.o)
 [  4] /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/lib/libSystem.tbd
 # Sections:

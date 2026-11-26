@@ -7,7 +7,8 @@
 配る版は記号が消してあり、どの部品がどれだけ持っているか分からない。リンクの地図には、
 残った記号ごとの大きさと、それを持ってきた .o が書いてあるので、.o の置き場から部品の名前を引いて足す。
 
-- 部品の名前は .o の道筋の `/<名前>.build/Objects-normal/` から取る（Swift Package のターゲット・アプリ本体とも）。
+- 部品の名前は .o の道筋の `/<名前>.build/Objects-normal/`（アプリ本体）か、`BuildProductsPath/<構成>/<名前>.o`
+  （Swift Package のターゲットをまとめた .o）から取る。
   `libfoo.a(bar.o)` の形は `libfoo.a`。どれにも当たらないものは「その他」
 - 数えるのは `# Symbols:` の節だけ（`# Dead Stripped Symbols:` は捨てられた分なので数えない）
 - 出すのは「部品ごと（大きい順）」と「区画（__TEXT,__text など）ごと」。数は KB（1000 でなく 1024 で割る）
@@ -24,6 +25,10 @@ SECTION_RE = re.compile(r"^0x([0-9A-Fa-f]+)\s+0x([0-9A-Fa-f]+)\s+(\S+)\s+(\S+)\s
 def module_of(path):
     """.o の道筋から部品の名前を引く。"""
     m = re.search(r"/([^/]+)\.build/Objects-normal/", path)
+    if m:
+        return m.group(1)
+    # Swift Package のターゲットは、まとめた1つの .o（`BuildProductsPath/Release-iphoneos/Amplify.o`）で来る（run 1871）
+    m = re.search(r"/BuildProductsPath/[^/]+/([^/]+)\.o$", path)
     if m:
         return m.group(1)
     m = re.search(r"/([^/()]+\.a)\(", path)
