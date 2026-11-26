@@ -155,6 +155,8 @@ final class PostUploadCenter: ObservableObject {
     func retry(_ jobId: UUID? = nil) {
         guard let job = jobs.first(where: { jobId == nil ? ($0.failure != nil && !$0.sending) : $0.id == jobId }),
               job.failure != nil, !job.sending, job.model.canSubmit,
+              // 直さないと通らない失敗（アルバムが消えた・言葉の判定の断り）は送り直さない（2026-11-26）
+              canRetry(job),
               // 🔴 持ち主でない人の「もう一度」では送らない（持ち主の分からない投稿も）
               ownedByCurrentUser(job.ownerId) else { return }
         job.failure = nil
@@ -211,7 +213,7 @@ final class PostUploadCenter: ObservableObject {
         editRequest = nil
     }
 
-    /// 送れずに持っている投稿が「もう一度」で直るか（アルバムが消えた回は直らない）
+    /// 送れずに持っている投稿が「もう一度」で直るか（アルバムが消えた回・言葉の判定で断られた回は直らない）
     func canRetry(_ job: Job?) -> Bool {
         guard let job else { return false }
         return !job.model.failureNeedsEditing
@@ -338,7 +340,7 @@ enum PostUploadOutcome: Equatable {
     case posted
     case postedWithNote(String)
     case failed(String)
-    /// 「もう一度」では直らない失敗（選んだアルバムが消えた）。投稿の画面で直す
+    /// 「もう一度」では直らない失敗（選んだアルバムが消えた・言葉の判定で断られた）。投稿の画面で直す
     case failedNeedsEditing(String)
 
     /// 失敗の知らせの言葉（案 B2「送れませんでした　もう一度」）

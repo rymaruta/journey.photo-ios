@@ -2732,6 +2732,9 @@ struct StoryViewerView: View {
             } else {
                 message = L("送りました", "Sent")
             }
+        } catch where APIError.isContentRejected(error) {
+            // 言葉の判定の断り（2026-11-26）: 欄の下に出す。書いた文は欄に残す（打ち直させない）
+            replyRefusal = APIError.contentRejectedText()
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
         }

@@ -414,7 +414,11 @@ struct TripPlanDetailView: View {
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
         // 変えたら、手を止めてから少し待って送る（`TripAutosave.delayNanoseconds`）
-        .onChange(of: draft) { _, _ in scheduleAutosave() }
+        // 言葉の判定で断られたあとは、直したら止めを外す（同じ文は送り直さない・`TripAutosave.liftsOnEdit`）
+        .onChange(of: draft) { _, _ in
+            if TripAutosave.liftsOnEdit(problem) { problem = nil }
+            scheduleAutosave()
+        }
         // 🔴 **裏に回るときは待たずに送る**（確かめ役の指摘・2026-11-10: 2 秒の待ちの間にアプリを閉じると直しが消えた）。
         // 裏で少しだけ続けさせてもらう（`beginBackgroundTask`）
         // background のときだけ（inactive と background の2回で2本にしない・確かめ役の指摘 F）

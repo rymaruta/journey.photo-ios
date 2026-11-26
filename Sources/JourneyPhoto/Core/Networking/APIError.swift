@@ -33,6 +33,8 @@ enum APIError: LocalizedError, Equatable {
                 return L("ログインの有効期限が切れました。ログインし直してください",
                          "Your session expired. Please sign in again.", language: language)
             }
+            // 言葉の判定の断り。サーバーの文は日本語だけなので、英語の画面でも分かる文を出す
+            if isContentRejected { return Self.contentRejectedText(language: language) }
             // 🔴 **本文があれば本文を出す（日本語の画面だけ）。** api-user の 403 は上限（写真の枚数・
             // アルバム・ハイライト・ブロック）や「返信を受け付けていません」を
             // `{ error }` で返す。固定の文に置き換えると、上限の人に
@@ -176,6 +178,32 @@ enum APIError: LocalizedError, Equatable {
     /// アカウントを消してしまう**。文が変わったら退会の扱いに入らない側へ倒れる（消す側へは倒れない）
     var isAccountGone: Bool {
         if case .server(410, let message) = self { return message == Self.accountGoneMessage }
+        return false
+    }
+
+    /// サーバーが「使えない言葉が含まれている」と断った本文の `code`（2026-11-26 から・api-user の言葉の判定）。
+    /// 対象はコメント・投稿・プロフィール・DM・グループ・ストーリー・旅行プラン・ハイライト・アルバムの名前など、利用者が書く文
+    static let contentRejectedCode = "content_rejected"
+
+    /// `content_rejected` の回に `APIError.server` が持つ文（`APIClient.failureMessage` が入れる）。
+    /// 画面に出すのは `contentRejectedText`（言語ごと）。**書いた文は消さずに入力欄に残す**——言葉を変えれば送れる
+    static let contentRejectedMessage = "使えない言葉が含まれています。言葉を変えてもう一度お試しください。"
+
+    static func contentRejectedText(language: String = Locale.preferredAppLanguage) -> String {
+        L(contentRejectedMessage,
+          "This contains words that aren't allowed. Please change them and try again.", language: language)
+    }
+
+    /// 言葉の判定で断られた（`content_rejected`）。**送り直しても同じ文では通らない**——再送の箱は送り直さない
+    var isContentRejected: Bool {
+        if case .server(400, let message) = self { return message == Self.contentRejectedMessage }
+        return false
+    }
+
+    /// どの失敗の形でも（`APIError`・メッセージの断り `DMService.Refused`）、言葉の判定の断りか
+    static func isContentRejected(_ error: Error?) -> Bool {
+        if let api = error as? APIError { return api.isContentRejected }
+        if let refused = error as? DMService.Refused { return refused.code == contentRejectedCode }
         return false
     }
 

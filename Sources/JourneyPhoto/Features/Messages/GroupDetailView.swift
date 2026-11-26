@@ -33,6 +33,8 @@ struct GroupDetailView: View {
     @State private var notice: String?
     @State private var showRename = false
     @State private var renameText = ""
+    /// 名前を断られた理由（言葉の判定・2026-11-26）。名前の欄を、打った名前のまま開き直して上に出す
+    @State private var renameProblem: String?
     @State private var showAdd = false
     @State private var confirmLeave = false
     @State private var removeTarget: GroupMember?
@@ -141,8 +143,10 @@ struct GroupDetailView: View {
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
-            Text(L("名前はメンバー全員に見えます。空にすると名前を外します。", "Everyone in the group sees the name. Leave it empty to remove it."))
+            Text(renameProblem ?? L("名前はメンバー全員に見えます。空にすると名前を外します。", "Everyone in the group sees the name. Leave it empty to remove it."))
         }
+        // 欄を閉じたら理由を外す（次にふつうに開いたときに前の理由を出さない）
+        .onChange(of: showRename) { _, shown in if !shown { renameProblem = nil } }
         .alert(L("グループを抜けますか", "Leave this group?"), isPresented: $confirmLeave) {
             Button(L("抜ける", "Leave"), role: .destructive) { Task { await leave() } }
             Button(Labels.Common.cancel, role: .cancel) {}
@@ -345,6 +349,11 @@ struct GroupDetailView: View {
         do {
             let detail = try await environment.groups.rename(groupId, to: trimmed.isEmpty ? nil : trimmed)
             if let m = detail.membership { apply(m) }
+        } catch where APIError.isContentRejected(error) {
+            // 言葉の判定の断り: 打った名前を消さずに欄を開き直す（打ち直させない）
+            renameText = raw
+            renameProblem = GroupText.message(for: error, fallback: APIError.contentRejectedText())
+            showRename = true
         } catch {
             errorMessage = GroupText.message(for: error, fallback: L("名前を変えられませんでした", "Couldn't rename"))
         }

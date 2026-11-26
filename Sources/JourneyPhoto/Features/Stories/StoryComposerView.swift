@@ -626,7 +626,12 @@ struct StoryComposerView: View {
             }
             // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
             // ここでも出口を出す（ホームの輪が見えない人のため）
-            if case .failed = uploads.phase {
+            if case .failed = uploads.phase, prepared == nil, !hasAuto, uploads.canTakeBackForEditing {
+                // 言葉の判定で断られた残り（2026-11-26）: 尋ねずに、書いた文ごとこの画面へ戻して直してもらう
+                autoSlotOwned = true
+                takeBackRejected()
+                return
+            } else if case .failed = uploads.phase {
                 showPendingFailure = true
                 // 下書きの問いは出ない＝答えていない。消さずに次へ持ち越す
                 if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
@@ -674,9 +679,12 @@ struct StoryComposerView: View {
         }
         .confirmationDialog(L("送れなかったストーリーがあります", "A story didn't finish sending"),
                             isPresented: $showPendingFailure, titleVisibility: .visible) {
-            Button(L("もう一度送る", "Try again")) {
-                uploads.retry()
-                dismiss()
+            // 言葉の判定で断られた並びは送り直さない（同じ文では通らない・`StoryUploadCenter.needsEditing`）
+            if !uploads.needsEditing {
+                Button(L("もう一度送る", "Try again")) {
+                    uploads.retry()
+                    dismiss()
+                }
             }
             Button(L("やめる", "Stop sending"), role: .destructive) { uploads.discard() }
             Button(Labels.Common.cancel, role: .cancel) {}
@@ -3155,6 +3163,25 @@ struct StoryComposerView: View {
     }
 
 
+    /// 言葉の判定で断られた残りを、この画面へ戻す（2026-11-26 判断）。**書いた文・投票・文字の札は送る前の形のまま**
+    /// （焼き込む前の1枚・`StoryUploadCenter.Job.editShot`）。自動の書きかけの枠を通して戻す（下書きと同じ戻し方・写しを作らない）
+    private func takeBackRejected() {
+        guard let back = uploads.takeBackForEditing() else { return }
+        Task {
+            let saved = await autoDrafts.saveInBackground(
+                shots: back.shots, caption: back.caption, location: back.location, song: back.song,
+                durationSec: back.durationSec, archive: back.archive, allowReplies: back.allowReplies,
+                basedOn: back.draftStamp, savedAt: DraftLibrary.storyStamp(Date()))
+            guard saved else {
+                message = L("送れなかったストーリーを戻せませんでした", "Couldn't bring back the story that wasn't sent")
+                return
+            }
+            restoreDraft(from: autoDrafts)
+            // 戻した理由を欄の上に出す（`restoreDraft` は知らせを消すので、そのあとに置く）
+            message = APIError.contentRejectedText()
+        }
+    }
+
     /// 送る前の索引の待ちをやめる（閉じる・下書きに保存する・画面が消える）。**待ちが明けても出さない**
     private func stopWaitingToPost() {
         spotWait?.cancel()
@@ -3314,7 +3341,7 @@ struct StoryComposerView: View {
         // 「撮影地の位置を付ける」がオフなら写真の座標は送らない（スポットを指すときだけスポットの座標・2026-10-18）
         let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex,
                                         attachesPhotoLocation: attachesLocation)
-        let jobs = zip(shots, coords).map { shot, shotCoords in
+        var jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 // 曲の札は作る画面と同じ形・同じジャケットで焼く（読めていなければ ♪ の四角・画面と同じ）
                 // 動画の1本は表紙の1コマをそのまま持つ（重ねは書き出した動画に焼いてある）
@@ -3335,6 +3362,11 @@ struct StoryComposerView: View {
                     .map { StoryUploadCenter.Video(fileURL: $0, fileType: StoryVideoRules.exportFileType) },
                 // 紹介した写真の id（札 #541）。紹介の札の1枚だけ
                 sharedPhotoId: shot.sharedPhotoId)
+        }
+        // 言葉の判定で断られたときに、この画面へ戻せる形を持たせる（動画の1本は戻せないので持たせない・2026-11-26）
+        let inputs = shotInputs
+        for i in jobs.indices where i < shots.count && i < inputs.count && shots[i].video == nil {
+            jobs[i].editShot = inputs[i]
         }
         // 🔴 動画のストーリーが静止画の投稿になっていないか、最後にもう一度確かめる(上の確かめをすり抜けた回の保険)
         guard zip(shots, jobs).allSatisfy({ ($0.video != nil) == ($1.video != nil) }) else {

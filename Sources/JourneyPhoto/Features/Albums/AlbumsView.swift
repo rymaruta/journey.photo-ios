@@ -20,6 +20,8 @@ struct AlbumsView: View {
     @State private var showRename = false
     @State private var renamingId = ""
     @State private var renameTitle = ""
+    /// 名前を断られた理由（言葉の判定・2026-11-26）。名前の欄を、打った名前のまま開き直して上に出す（作る・名前を変える）
+    @State private var nameProblem: String?
     /// 消す前の確認。**表示と対象を別々に持つ**（名前変更と同じ理由——
     /// ダイアログが閉じる合図で対象を nil にすると、「消す」の中身が走るときに
     /// 対象が消えていることがある）
@@ -83,9 +85,18 @@ struct AlbumsView: View {
             Button(Labels.Common.save) {
                 let id = renamingId
                 let title = renameTitle
-                Task { await model.rename(id, title: title, environment: environment) }
+                Task {
+                    // 言葉の判定で断られたら、打った名前のまま開き直す
+                    if let problem = await model.rename(id, title: title, environment: environment) {
+                        renameTitle = title
+                        nameProblem = problem
+                        showRename = true
+                    }
+                }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            if let nameProblem { Text(nameProblem) }
         }
         .sheet(item: $openedToken) { opened in
             NavigationStack { InviteView(token: opened.token) }
@@ -115,7 +126,12 @@ struct AlbumsView: View {
         }
         .alert(L("アルバムを作る", "New album"), isPresented: $showCreate) {
             createAlertButtons
+        } message: {
+            if let nameProblem { Text(nameProblem) }
         }
+        // 欄を閉じたら理由を外す（次にふつうに開いたときに前の理由を出さない）
+        .onChange(of: showCreate) { _, shown in if !shown { nameProblem = nil } }
+        .onChange(of: showRename) { _, shown in if !shown { nameProblem = nil } }
         .task { await model.load(environment: environment) }
         .refreshable { await model.load(environment: environment) }
     }
@@ -538,7 +554,14 @@ struct AlbumsView: View {
             guard !model.isCreating else { return }
             let title = newTitle
             newTitle = ""
-            Task { await model.create(title: title, environment: environment) }
+            Task {
+                // 言葉の判定で断られたら、打った名前のまま開き直す（打ち直させない）
+                if let problem = await model.create(title: title, environment: environment) {
+                    newTitle = title
+                    nameProblem = problem
+                    showCreate = true
+                }
+            }
         }
         Button(Labels.Common.cancel, role: .cancel) { newTitle = "" }
     }
@@ -635,39 +658,52 @@ final class AlbumsViewModel: ObservableObject {
         }
     }
 
-    func create(title: String, environment: AppEnvironment) async {
-        guard !isCreating else { return }
+    /// 作る。**言葉の判定で断られたら、その理由を返す**（画面が名前の欄を打った名前のまま開き直す・2026-11-26）。
+    /// それ以外の失敗は今までどおり知らせ（`flash`）に出して nil
+    @discardableResult
+    func create(title: String, environment: AppEnvironment) async -> String? {
+        guard !isCreating else { return nil }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         // **黙って戻らない。** 空のまま「作る」を押すと、アラートが閉じて何も起きなかった
-        guard !trimmed.isEmpty else { return flash(Self.nameRequired) }
+        guard !trimmed.isEmpty else { flash(Self.nameRequired); return nil }
         isCreating = true
         defer { isCreating = false }
         let myEra = era
         do {
             let album = try await environment.albums.create(title: trimmed)
-            guard myEra == era else { return }
+            guard myEra == era else { return nil }
             writes.created.append(.init(value: album, at: Date()))
             // 🔴 **既に並んでいれば足さない。** 作っている間に始めた読み込みが先に返ると、
             // 作ったアルバムはもう一覧に居る。そこへ足すと同じ id が2つ並んでいた
             // （ForEach の id が重なる）
             albums.removeAll { $0.id == album.id }
             albums.insert(album, at: 0)
+            return nil
         } catch {
-            guard myEra == era else { return }
+            guard myEra == era else { return nil }
+            if let problem = Self.nameProblem(error) { return problem }
             flash((error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create"))
+            return nil
         }
+    }
+
+    /// 名前の欄を開き直して出す理由（言葉の判定の断りだけ）。ほかの失敗は nil
+    nonisolated static func nameProblem(_ error: Error) -> String? {
+        APIError.isContentRejected(error) ? APIError.contentRejectedText() : nil
     }
 
     /// 名前を変える。**画面はサーバーが受けてから直す**
     /// （先に直すと、断られたときに画面だけ新しい名前になる）。
-    func rename(_ id: String, title: String, environment: AppEnvironment) async {
+    /// 言葉の判定で断られたら、その理由を返す（`create` と同じ）
+    @discardableResult
+    func rename(_ id: String, title: String, environment: AppEnvironment) async -> String? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return flash(Self.nameRequired) }
+        guard !trimmed.isEmpty else { flash(Self.nameRequired); return nil }
         let myEra = era
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
             let saved = try await environment.albums.rename(id: id, title: trimmed)
-            guard myEra == era else { return }
+            guard myEra == era else { return nil }
             writes.renamed[id] = .init(value: saved, at: Date())
             albums = albums.map { album in
                 guard album.id == id else { return album }
@@ -675,10 +711,13 @@ final class AlbumsViewModel: ObservableObject {
                              memberCount: album.memberCount, inviteToken: album.inviteToken,
                              inviteExpiresAt: album.inviteExpiresAt)
             }
+            return nil
         } catch {
-            guard myEra == era else { return }
+            guard myEra == era else { return nil }
+            if let problem = Self.nameProblem(error) { return problem }
             flash((error as? LocalizedError)?.errorDescription
                 ?? L("名前を変えられませんでした", "Couldn't rename"))
+            return nil
         }
     }
 

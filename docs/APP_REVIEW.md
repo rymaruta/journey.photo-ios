@@ -10,7 +10,7 @@ App Store Connect の「App Review に関する情報」に入れる文と、そ
 
 ## Notes に貼る文面
 
-審査官は英語を読むので、**貼るのは英語**（3,895字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+審査官は英語を読むので、**貼るのは英語**（3,994字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
 2026-11-23 に AI の行を同意の画面（1.1.119）に合わせ、2026-11-24 にログインの行を Apple と Google のある 1.2.x に合わせた。
 2026-11-26 に、申請し直す前に直した: 通知の尋ね方（初めての投稿かフォローのあとに説明とボタン1つ）、Sandbox ではサポーターのバッジが付かないこと、
 Sandbox の Apple ID の定期購入が買ったアカウントに残ること、曲の試聴（iTunes Search API の30秒と Apple Music へのリンク）、
@@ -21,14 +21,15 @@ ID とパスワードはここに書かず、「サインイン情報」の欄�
 ### 英語（貼る）
 
 ```
-Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an account (email, Apple or Google). The demo account is in the sign-in fields. It has one public photo and mutually follows an account run by our team, which sent it a message and is in its trip plan (one chat message). Feel free to report or block that account.
+Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an account (email, Apple or Google). The demo account is in the sign-in fields. It has one public photo and mutually follows an account run by our team, which sent it a message and is in its trip plan (one chat message). You may report or block it.
 
 USER-GENERATED CONTENT (1.2)
 - Terms banning objectionable content are accepted on first launch.
+- Text in posts, comments, profiles, messages, stories and trip plans is checked on our server; abusive words are blocked.
 - Photos and comments: "..." > Report (8 reasons + note) or Block. Reported or blocked content disappears for the reporter at once. Unblock: Settings > Blocked people.
 - Stories: Report and Block in the viewer; "..." on each story reply.
 - Profiles: "..." > Report or Block.
-- Messages (1:1, Home top right): in a conversation, "..." > Report or Block. Reports include the latest 20 messages. Before a request is accepted: 3 text messages max, no links or photos.
+- Messages (1:1, Home top right): in a conversation, "..." > Report or Block. Reports include the latest 20 messages. Until a request is accepted: 3 texts max, no links or photos.
 - Trip plan chat (members invited by link): long-press a message > Report or Block. Members can leave.
 - Pass cards: Report, Block and Remove on each card.
 - Reports reach journey.photo.official@gmail.com; we review them within 24 hours and remove violations.
@@ -67,10 +68,11 @@ IN-APP PURCHASE (3.1.2)
 ### 日本語（確かめる用）
 
 ```
-Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはアカウントが必要です（メールアドレス、Apple、Google のどれかでの登録）。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに仲間として入り、会話に1通あります。そのアカウントは通報やブロックを試してかまいません。
+Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはアカウントが必要です（メールアドレス、Apple、Google のどれかでの登録）。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに仲間として入り、会話に1通あります。そのアカウントは通報やブロックをしてかまいません。
 
 ユーザー生成コンテンツ（1.2）
 - 初回起動で、不適切な内容を認めない旨を含む規約への同意を求めます。
+- 投稿、コメント、プロフィール、メッセージ、ストーリー、旅行プランの文は、サーバーで確かめ、ひどい言葉は保存しません。
 - 写真とコメント：「…」から通報（理由8種と補足）、ブロック。通報、ブロックした内容は、その人の画面からその場で消えます。解除は設定 → ブロックした人。
 - ストーリー：閲覧画面に通報とブロック。ストーリーへの返信は各行の「…」。
 - プロフィール：「…」から通報、ブロック。
@@ -110,19 +112,15 @@ App 内課金（3.1.2）
 - 旅のトランクの硬貨と部品は購入できません（投稿で配られます）。
 ```
 
-### 入ったら足す文
+### 言葉の判定（2026-11-26 に入れた）
 
-サーバーの別の担当が、投稿の前に言葉を判定する仕組みを足している（2026-11-26 時点で本番に無い）。
-**本番に出たら**、上の「英語（貼る）」の「USER-GENERATED CONTENT (1.2)」の1行目の下に、次の1行を足す
-（日本語の方にも同じ意味の行を足す）。判定するのが投稿とコメントのどちらまでかは、入った仕組みに合わせて直す。
-足しても 4,000 字に収まることは `Tools/test_asc_submit.py` が確かめる。
-
-```
-- Post and comment text is checked on our server before publishing; abusive words are blocked.
-```
-
-日本語: 「投稿とコメントの文は、載せる前にサーバーで確かめ、ひどい言葉は載せません。」
-足したら、下の「ガイドライン別の対応」の「不適切な内容を出さない仕組み」の行の「事前の審査は無い」も直す。
+サーバーが、利用者の書いた文にひどい言葉があると保存せずに断るようになった（400、`code: content_rejected`。本番に出ている）。
+対象は投稿（題、説明、撮影地、カテゴリ、タグ）、コメント、プロフィール、DM とグループ、ストーリー（写真の上の文字、投票、ひとこと、撮影地）と返信、
+旅行プラン（作る、直す、会話）、ハイライトとアルバムの名前。上の「英語（貼る）」の「USER-GENERATED CONTENT (1.2)」の2行目に入れた
+（日本語の方も同じ）。字数を空けるため、審査用アカウントの行とメッセージの行を短くした（言っていることは同じ）。
+アプリは断られると「使えない言葉が含まれています。言葉を変えてもう一度お試しください。」を出し、書いた文は入力欄に残す（`APIError.isContentRejected`）。
+貼る文に入っていて 4,000 字に収まることは `Tools/test_asc_submit.py` が確かめる。
+判定する範囲が変わったら、この行も合わせて直す。
 
 ### すれちがいの動画
 
@@ -174,7 +172,7 @@ URL が入るまでは今の一文のままにする（無い URL を貼らな�
 | 1.2 UGC | 規約への同意 | 初回起動時の同意画面 | 合っている | `Features/Legal/LegalGateView.swift`、`App/RootView.swift` |
 | 1.2 UGC | 通報 | 写真、コメント、ストーリー、ストーリーへの返信、プロフィール、メッセージ、**旅行プランの会話（1.1.90 で足した、#597）**、すれちがいのカード。理由は8種 | 合っている | `ReportSheet` を使う画面（Gallery、PhotoDetail、StoryViewer、DMConversation、DMRequests、TripShareViews、PassBook、PassViewer）、`ModerationService.ReportReason`。本番の `POST /trip-share/{id}/report` は未ログインで 401（口がある）を 2026-11-15 に確かめた |
 | 1.2 UGC | ブロック | 通報と同じ所とプロフィールから。解除は設定 | 合っている | `ModerationService.swift`、`BlockedUsersView.swift` |
-| 1.2 UGC | 不適切な内容を出さない仕組み | 通報とブロックをしたものは、押した人の一覧から**端末の側でその場で落とす**。公開の写真一覧はビルド時に焼いた静的 JSON なので、運営が消したものはサイトの作り直しで消える | 合っている（事前の審査は無い） | `PublicGalleryService.setHidden`、`BlockFilter` |
+| 1.2 UGC | 不適切な内容を出さない仕組み | 通報とブロックをしたものは、押した人の一覧から**端末の側でその場で落とす**。公開の写真一覧はビルド時に焼いた静的 JSON なので、運営が消したものはサイトの作り直しで消える | 合っている（文はサーバーで言葉を判定して、ひどい言葉は保存しない・2026-11-26。写真の事前の審査は無い） | `PublicGalleryService.setHidden`、`BlockFilter` |
 | 1.2 UGC | 連絡先 | 設定の「問い合わせ」。サイトの規約と同じ宛先 | 合っている | `LegalConsent.contactEmail` |
 | 5.1.1(v) | アプリの中でアカウントを削除 | 設定 → アカウントの削除（確認語の入力つき）。サーバーの `DELETE /user/account` のあと Cognito の利用者も消す。Pro の解約は App Store でと案内する | 合っている | `DeleteAccountView.swift`、`AuthStore.swift`、`AuthGateway.deleteUser`。本番の口は未ログインで 401 |
 | 5.1.1 | 要らないログインを求めない | 閲覧、検索、地図、観光スポットはログイン不要 | 合っている | `RootView.swift` |

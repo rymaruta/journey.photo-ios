@@ -348,7 +348,7 @@ actor APIClient {
         }
         guard (200..<300).contains(http.statusCode) else {
             Self.errorBodySink?.set(data)
-            let failure = APIError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            let failure = APIError.server(status: http.statusCode, message: Self.failureMessage(from: data))
             if http.statusCode == 503 || http.statusCode == 429 {
                 throw Throttled(underlying: failure,
                                 retryAfter: Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After")))
@@ -414,6 +414,14 @@ actor APIClient {
             return nil
         }
         return code
+    }
+
+    /// `APIError.server` に入れる文。**言葉の判定で断られた（`content_rejected`）回だけ、アプリの決まった文に替える**
+    /// （2026-11-26 判断）。`APIError.server` は `code` を持たないので、ここで決まった文にしておけば
+    /// どの送り口も `APIError.isContentRejected` で見分けられ、画面の文（日本語・英語）も1か所で決まる
+    static func failureMessage(from data: Data) -> String {
+        if errorCode(from: data) == APIError.contentRejectedCode { return APIError.contentRejectedMessage }
+        return errorMessage(from: data)
     }
 
     /// api-user のエラー本文は `{ "error": "..." }`（`http.ts` の `jsonError`）。

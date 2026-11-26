@@ -36,6 +36,14 @@ enum TripAutosave {
         case conflict
     }
 
+    /// 直したら止めを外して送ってよい断りか。**言葉の判定の断り（`content_rejected`・2026-11-26）だけ**——
+    /// 同じ文は送り直さず（`flushNow` は断られたあと待つ）、文を直したら次の自動保存で送る。
+    /// ほかの断りは今までどおり「もう一度試す」を待つ
+    static func liftsOnEdit(_ problem: Problem?) -> Bool {
+        if case .failed(let text)? = problem { return text == APIError.contentRejectedText() }
+        return false
+    }
+
     /// 送ってよいか。変えていて、送っている最中でなく、止めている事情（別の端末の変更）が無いとき
     static func shouldSend(dirty: Bool, busy: Bool, problem: Problem?) -> Bool {
         dirty && !busy && problem != .conflict

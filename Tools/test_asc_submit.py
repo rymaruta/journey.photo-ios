@@ -447,7 +447,7 @@ class Test(unittest.TestCase):
         self.assertLessEqual(len(sub.review_notes()), sub.MAX_TEXT)
 
     def test_review_notes_say_what_reviewers_trip_on(self):
-        """申請し直す前に直した審査メモ（2026-11-26）。消すと落ちる。入ったら足す文を足しても 4,000 字に収まる"""
+        """申請し直す前に直した審査メモ（2026-11-26）。消すと落ちる。言葉の判定の行を入れても 4,000 字に収まる"""
         notes = sub.review_notes()
         for line in (
             "After the first post or follow, a short explanation appears with one button that leads to the iOS prompt; "
@@ -460,14 +460,13 @@ class Test(unittest.TestCase):
             "iTunes Search API", "Apple Music", '"Report this answer"', "an account (email, Apple or Google)",
         ):
             self.assertIn(line, notes)
+        # 言葉の判定（サーバーの `content_rejected`・2026-11-26 から本番）。今の範囲を言う
+        self.assertIn("- Text in posts, comments, profiles, messages, stories and trip plans is checked on our server; "
+                      "abusive words are blocked.", notes)
+        self.assertLessEqual(len(notes), sub.MAX_TEXT)
         doc = sub.REVIEW_DOC.read_text(encoding="utf-8")
-        m = sub.re.search(r"^### 入ったら足す文\s*\n.*?```[^\n]*\n(.*?)\n```", doc, sub.re.S | sub.re.M)
-        self.assertIsNotNone(m)
-        draft = m.group(1).strip()
-        self.assertTrue(draft.startswith("- "))
-        self.assertNotIn(draft, notes)  # まだ本番に無いので、貼る文には入れない
-        self.assertLessEqual(len(notes) + 1 + len(draft), sub.MAX_TEXT)
-
+        self.assertNotIn("### 入ったら足す文", doc, "入れ終えた文の節を残さない")
+        self.assertIn(f"（{len(notes):,}字。", doc, "頭の字数を貼る文に合わせる")
 
 if __name__ == "__main__":
     unittest.main()

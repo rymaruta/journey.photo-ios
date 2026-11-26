@@ -540,9 +540,11 @@ struct GroupConversationView: View {
                 _ = log.withdraw(clientId)
                 phase = .unavailable
             } else if GroupText.returnsToField(code: refused.code) {
-                if let back = log.withdraw(clientId), draft.isEmpty {
-                    restoredDraft = back
-                    draft = back
+                // 送っている間に打ち足していても、送れなかった文は消さない（後ろに足す・`DMUnsend.draft`・2026-11-26）
+                if let back = log.withdraw(clientId) {
+                    let restored = DMUnsend.draft(current: draft, returning: back)
+                    restoredDraft = restored
+                    draft = restored
                 }
                 fieldError = refused.groupMessage
             } else {

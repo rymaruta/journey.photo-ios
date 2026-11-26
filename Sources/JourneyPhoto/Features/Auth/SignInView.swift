@@ -775,9 +775,16 @@ struct SignInView: View {
             return true
         } catch {
             // 入れられなくてもログインは成功のまま（あとから編集で直せる）。
-            // 控えは残すので、次のログインでもう一度試せる
-            return false
+            // 控えは残すので、次のログインでもう一度試せる。
+            // **言葉の判定で断られた名前は控えを捨てる**（2026-11-26）——同じ名前はログインのたびに断られ続ける。
+            // 名前はプロフィールの編集で直せる
+            return Self.dropsPendingName(after: error)
         }
+    }
+
+    /// 預かっていた表示名を入れられなかったあと、控えを捨てるか（言葉の判定の断りだけ・送り直しても通らない）
+    nonisolated static func dropsPendingName(after error: Error) -> Bool {
+        APIError.isContentRejected(error)
     }
 
     /// 控えてある UUID で確認画面に戻る。コードも送り直す。
