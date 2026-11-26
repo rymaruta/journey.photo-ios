@@ -18,12 +18,15 @@ enum TripBookCard {
     struct Lines: Equatable {
         /// 眉ラベル（写真の上なので白で描く）
         let eyebrow: String
+        /// 題（「蔵王キツネ村の旅」）。**地名の括弧（県・市）は入れない**——下の `region` の行に分ける
         let title: String
-        /// 「2026.09.12 — 09.14 · 3日間」
+        /// 題の下の小さい行（「宮城県白石市」）。撮影地の名前に括弧の地域が無ければ空
+        let region: String
+        /// 「2026.09.12 — 09.14　3日間」（間は en space）
         let period: String
-        /// 「24枚 · 撮影地 5 · 移動（直線）312 km」。数えられない距離は載せない
+        /// 「24枚　撮影地 5　移動（直線）312 km」（間は en space）。数えられない距離は載せない
         let stats: String
-        /// 右下の名前
+        /// いちばん下のサイトの名前
         let footer: String
     }
 
@@ -42,11 +45,33 @@ enum TripBookCard {
             stats.append(L("移動（直線）\(TripBook.distanceText(distance)) km",
                            "\(TripBook.distanceText(distance)) km (straight line)"))
         }
+        let place = splitPlace(LocationMatch.display(trip.place))
         return Lines(eyebrow: "TRIP BOOK",
-                     title: TripBook.tripTitle(of: trip),
+                     title: place.region.isEmpty ? TripBook.tripTitle(of: trip)
+                                                 : L("\(place.name)の旅", "Trip to \(place.name)"),
+                     region: place.region,
                      period: "\(TripBook.dateRange(from: trip.start, to: trip.end))\u{2002}\(TripBook.daysLabel(trip.days))",
                      stats: stats.joined(separator: "\u{2002}"),
                      footer: "Journey Photo")
+    }
+
+    /// 画面に出す撮影地の形（`LocationMatch.display`）を、名前と、末尾の括弧の中の地域に分ける。
+    ///
+    /// 🔴 2026-11-26 owner（実機の画面写真）: 題「蔵王キツネ村（宮城県白石市）の旅」が
+    /// 「…（宮城県白」「石市）の旅」と**地名の途中で折れた**。1080 幅の明朝 84 では1行に入らず、
+    /// UIKit は和文を字の間で折る。題は「蔵王キツネ村の旅」、地域は題の下の小さい行にする
+    /// （載せる文字は同じ・足しも作りもしない）。末尾が括弧でない名前はそのまま（地域は空）
+    static func splitPlace(_ display: String) -> (name: String, region: String) {
+        let text = display.trimmingCharacters(in: .whitespacesAndNewlines)
+        for (open, close) in [("（", "）"), (" (", ")")] where text.hasSuffix(close) {
+            guard let start = text.range(of: open, options: .backwards) else { continue }
+            let name = String(text[..<start.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let region = String(text[start.upperBound..<text.index(before: text.endIndex)])
+                .trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, !region.isEmpty else { continue }
+            return (name, region)
+        }
+        return (text, "")
     }
 
     /// 表紙の写真を枠いっぱいに切り抜いて置く位置（はみ出しは切る）。
@@ -68,30 +93,85 @@ enum TripBookCard {
 
     /// 左右と下の余白（px）
     static let margin: Double = 72
+    /// 字の大きさ（px・1080 幅の絵の上）。板「TripBookShare」B の表紙カード（216 幅・題は明朝 22）を
+    /// 5 倍した釣り合いに寄せ、行が多い（地域・数字・サイト名）ぶん少し詰めた（2026-11-26 判断）
+    enum Font {
+        /// 題（明朝）。**1行に入る大きさまで縮める**（`titleFit`）
+        static let title: Double = 104
+        static let titleMinimum: Double = 64
+        /// 題の下の地域の行。1行に入るまで縮める
+        static let region: Double = 38
+        static let regionMinimum: Double = 28
+        static let eyebrow: Double = 28
+        static let period: Double = 36
+        static let stats: Double = 32
+        static let footer: Double = 28
+    }
+
     /// 題は2行まで。**長い撮影地名で上にはみ出さない**（67ae0a7 のレビュー）
     static let titleMaxLines = 2
-    /// 眉ラベルと題・題と期間・期間と数字の間（px）
-    static let gaps: [Double] = [20, 22, 18]
-    /// 暗くする段の数（多いほど段が見えない）
-    static let shadeSteps = 48
-    /// 文字の上から、さらにこれだけ上から暗くし始める（px）
-    static let shadeLead: Double = 220
 
-    /// 文字のかたまりの上端。下の余白から上へ積む（眉ラベル・題・期間・数字の高さ）
-    static func textTop(canvasHeight: Double, heights: [Double]) -> Double {
+    /// 題の大きさと折った行。**語の途中では折らない**（`ShareCardText.fit`: 折るのは空白・括弧・読点の所だけ）。
+    /// 和文の名前は切れ目が無いので1行に入るまで縮め、下限でも入らなければ末尾を「…」で切る
+    static func titleFit(_ title: String, width: Double, measure: (String, CGFloat) -> CGFloat) -> ShareCardText.Fitted {
+        ShareCardText.fit(title, maxWidth: width, preferredSize: Font.title, minimumSize: Font.titleMinimum,
+                          step: 2, maxLines: { _ in titleMaxLines }, measure: measure)
+    }
+
+    /// 地域の行（1行・縮めても入らなければ末尾を「…」）
+    static func regionFit(_ region: String, width: Double, measure: (String, CGFloat) -> CGFloat) -> ShareCardText.Fitted {
+        ShareCardText.fit(region, maxWidth: width, preferredSize: Font.region, minimumSize: Font.regionMinimum,
+                          maxLines: { _ in 1 }, measure: measure)
+    }
+
+    /// 行の間（px）。眉ラベル→題・題→地域・地域（無ければ題）→期間・期間→数字・数字→サイト名
+    static let gapAfterEyebrow: Double = 16
+    static let gapAfterTitle: Double = 6
+    static let gapBeforePeriod: Double = 26
+    static let gapAfterPeriod: Double = 10
+    static let gapBeforeFooter: Double = 28
+
+    /// 文字の上から、さらにこれだけ上から暗くし始める（px）
+    static let shadeLead: Double = 260
+
+    /// 文字のかたまりの上端。下の余白から上へ積む（行の高さと、その間の合計）
+    static func textTop(canvasHeight: Double, heights: [Double], gaps: [Double]) -> Double {
         let total = heights.reduce(0, +) + gaps.reduce(0, +)
         return max(margin, canvasHeight - margin - total)
     }
 
     /// 暗くし始める高さ。**文字の上から決める**（題が2行でも眉ラベルが明るい写真の上に乗らない）。
-    /// 少なくとも下の4割は暗くする（一冊の画面の表紙と同じ見え方）
+    /// 少なくとも下の半分は暗くする（板「TripBookShare」の表紙カードは下 55% を暗くする）
     static func shadeTop(textTop: Double, canvasHeight: Double) -> Double {
-        max(0, min(canvasHeight * 0.6, textTop - shadeLead))
+        max(0, min(canvasHeight * 0.5, textTop - shadeLead))
     }
 
-    /// 段ごとの暗さ（上は薄く、下は 0.85）
-    static func shadeAlpha(step: Int) -> Double {
-        0.85 * Double(min(max(step, 0), shadeSteps - 1) + 1) / Double(shadeSteps)
+    /// いちばん下の暗さ（板の表紙カードは 0.8。白の小さい字が明るい写真の上でも読めるよう少し濃く）
+    static let shadeMaxAlpha: Double = 0.85
+    /// 文字の上端での暗さ。ここより下に白の字が乗る
+    static let shadeAlphaAtText: Double = 0.55
+
+    /// 暗くする**ひと続きのグラデーション**の止め（位置は暗くし始める所から下端までの 0〜1、暗さは黒の濃さ）。
+    ///
+    /// 🔴 2026-11-26 owner（実機の画面写真）: 下の4割が白→灰→黒の帯になり、**写真が消えていた**（キツネの耳の先しか
+    /// 見えない）。前は 48 段の帯を `UIRectFill` で塗っていた。`UIRectFill` は**置き換え（copy）で塗る**ので、
+    /// 半透明の黒が写真の画素を「半透明の黒」に置き換え、透明を持つ絵を JPEG にすると白の地に重なった色になった。
+    /// いまは写真の上に**重ねて**描く（`TripBookCardRenderer.shade` の `drawLinearGradient`）。
+    ///
+    /// 形: 上の端は傾き 0 から入り（境目を見せない・smoothstep）、文字の上端で `shadeAlphaAtText`、
+    /// そこから下端の `shadeMaxAlpha` まで真っすぐ濃くする
+    static func shadeStops(top: Double, textTop: Double, bottom: Double) -> [(location: Double, alpha: Double)] {
+        let span = bottom - top
+        guard span > 0 else { return [(0, shadeMaxAlpha), (1, shadeMaxAlpha)] }
+        let knee = min(max((textTop - top) / span, 0), 1)
+        guard knee > 0 else { return [(0, shadeAlphaAtText), (1, shadeMaxAlpha)] }
+        let easeSteps = 8
+        var stops = (0...easeSteps).map { i -> (location: Double, alpha: Double) in
+            let t = Double(i) / Double(easeSteps)
+            return (knee * t, shadeAlphaAtText * t * t * (3 - 2 * t))
+        }
+        if knee < 1 { stops.append((1, shadeMaxAlpha)) }
+        return stops
     }
 
     /// 枠を埋めるのに要る大きさ（元より大きくはしない）。縮めて展開するときの目標
