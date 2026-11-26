@@ -33,6 +33,13 @@ struct ExternalSignInMemory {
         defaults.object(forKey: Self.key(provider)) as? Bool
     }
 
+    /// Google のボタンを出すか（2026-11-26 判断・審査 4.8）。**Apple のボタンを出せるときだけ出す。**
+    /// ほかの会社のアカウントでログインできるなら、同じ大きさで Apple でサインインも並べる決まり。
+    /// Apple が使えない回（サーバーが Apple を止めている、答えを覚えていない）に Google だけが出る形を作らない
+    static func showsGoogle(google: Bool, apple: Bool) -> Bool {
+        google && apple
+    }
+
     /// 最初に描く形（覚えが無ければ出さない）
     func initiallyShown(_ provider: ExternalSignInProvider) -> Bool {
         remembered(provider) ?? false

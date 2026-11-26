@@ -109,6 +109,8 @@ struct MiniPlayerBar: View {
                     .accessibilityAction(named: L("左の端へ", "Move to left edge")) { move(to: .leading) }
                     .accessibilityAction(named: L("右の端へ", "Move to right edge")) { move(to: .trailing) }
             }
+            // 曲の頁へのリンク（2026-11-26・審査 5.2.5）。曲選びの中は黒い面なので真鍮、全体のバーは写真の上なので白
+            AppleMusicLink(song: song, ground: inSongPicker ? .dark : .photo, compact: true)
             Button {
                 player.stop()
             } label: {

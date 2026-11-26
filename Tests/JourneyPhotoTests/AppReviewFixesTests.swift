@@ -136,7 +136,9 @@ final class AppReviewFixesTests: XCTestCase {
         XCTAssertEqual(WeatherAttribution.endpoint(language: "ja").absoluteString, "https://weatherkit.apple.com/attribution/ja")
         XCTAssertEqual(WeatherAttribution.language(preferred: "ja"), "ja")
         XCTAssertEqual(WeatherAttribution.language(preferred: "fr"), "en")
-        XCTAssertTrue(WeatherAttribution.textMark.hasPrefix("\u{F8FF}"), "字の印に Apple のロゴが無い")
+        // 2026-11-26（審査 5.2.5）: 字の印に Apple のロゴの字（U+F8FF）を使わない
+        XCTAssertFalse(WeatherAttribution.textMark.contains("\u{F8FF}"), "字の印に Apple のロゴの字が残っている")
+        XCTAssertEqual(WeatherAttribution.textMark, "Apple Weather")
     }
 
     /// 一覧の頭に印と法的な出典を出す（下の注記の後ろだけにしない）

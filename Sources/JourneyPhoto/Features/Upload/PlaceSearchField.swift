@@ -124,6 +124,13 @@ struct PlaceSearchField: View {
                 }
                 .buttonStyle(.borderless)
             }
+            // 地名の候補の出どころ（2026-11-26・審査 5.2）。候補はサーバーが OpenStreetMap（Nominatim）から引いている
+            if !suggestions.isEmpty {
+                Text(PlaceSearchCredit.text)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityIdentifier("place.osmCredit")
+            }
 
             if isSearching {
                 Text(L("探しています…", "Searching…")).font(.caption).foregroundStyle(.secondary)

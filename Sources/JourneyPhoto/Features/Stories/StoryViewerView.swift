@@ -1178,6 +1178,10 @@ struct StoryViewerView: View {
                 .accessibilityShowsLargeContentViewer()
             }
             Spacer(minLength: 0)
+            // 曲の頁へのリンク（2026-11-26・審査 5.2.5）。曲の試聴を流しているストーリーだけ。写真の上なので白
+            if let song = story.song, StoryPlayback.songURL(for: story) != nil {
+                AppleMusicLink(song: song, ground: .photo, compact: true)
+            }
             // 上の「…」は人の投稿（通報とブロックの入口・審査 1.2。人のハイライトも）と、
             // **自分のハイライト**（足元に「…」が無く、止める・文字を隠す・音を消す口がここにしか無い）。
             // 自分のストーリー（ハイライト以外）は足元の「…」が同じシートを開くので出さない

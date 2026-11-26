@@ -811,7 +811,11 @@ struct MyPageView: View {
     @ViewBuilder
     private func bgmLine(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
-            ProfileBgmCard(song: song)
+            // 曲の頁へのリンクを枠のすぐ下に（2026-11-26・審査 5.2.5）。枠の中の行は全体が再生のボタンなので、中に入れない
+            VStack(alignment: .trailing, spacing: JPSpace.xxs) {
+                ProfileBgmCard(song: song)
+                AppleMusicLink(song: song)
+            }
         }
     }
 

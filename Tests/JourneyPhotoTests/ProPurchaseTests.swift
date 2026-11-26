@@ -595,21 +595,21 @@ final class ProBadgeTests: XCTestCase {
                        ["proSpring2027", "proSummer2027", "proAutumn2027", "proWinter2026"])
     }
 
-    /// 板の「PRO 限定」の並び: サポーター → 季節の章 → 暁・圏外。持っているものは外す
-    /// （構図は作例が無料になったので 2026-10-18 に外した）
+    /// 板の「PRO 限定」の並び: サポーター → 季節の章。持っているものは外す
+    /// （構図は作例が無料になったので 2026-10-18 に外した。暁・圏外は配れるまで並べない・2026-11-26）
     func testLockedItems() {
         let none = ProChapters.lockedItems(owned: BadgeSet(), now: day(2026, 10))
-        XCTAssertEqual(none.map(\.name), ["サポーター", "春 2027", "夏 2027", "秋 2026", "冬 2026", "暁", "圏外"])
+        XCTAssertEqual(none.map(\.name), ["サポーター", "春 2027", "夏 2027", "秋 2026", "冬 2026"])
         let owned = BadgeSet([EarnedBadge(key: "supporter", tier: 1, at: nil),
                               EarnedBadge(key: "proAutumn2026", tier: 1, at: nil)])
         XCTAssertEqual(ProChapters.lockedItems(owned: owned, now: day(2026, 10)).map(\.id),
-                       ["proSpring2027", "proSummer2027", "proWinter2026", "dawn", "summit"])
+                       ["proSpring2027", "proSummer2027", "proWinter2026"])
     }
 
-    /// 🔴 構図の章は「PRO 限定」に並べない（作例を重ねて撮るは 2026-10-17 から全員無料・2026-10-18 判断）
-    func testComposeChapterIsNotProLocked() {
-        XCTAssertFalse(ProChapters.featureChapters.contains { $0.id == "compose" })
-        XCTAssertFalse(ProChapters.lockedItems(owned: BadgeSet(), now: day(2026, 10)).contains { $0.id == "compose" })
+    /// 🔴 配る仕組みの無い機能の章（構図・暁・圏外）は「PRO 限定」に並べない（2026-10-18 構図、2026-11-26 暁と圏外・審査 3.1.2 と 2.1）
+    func testFeatureChaptersAreNotProLocked() {
+        let ids = ProChapters.lockedItems(owned: BadgeSet(), now: day(2026, 10)).map(\.id)
+        for id in ["compose", "dawn", "summit"] { XCTAssertFalse(ids.contains(id), id) }
     }
 
     func testCatalogKnowsProKeys() {

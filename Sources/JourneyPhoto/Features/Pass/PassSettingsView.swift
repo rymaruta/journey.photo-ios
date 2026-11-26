@@ -4,7 +4,7 @@ import CoreBluetooth
 
 /// すれちがいの設定（板 PassSettings）。入口は設定の「すれちがい」の節（板の戻り先が設定）。
 ///
-/// - **既定はオフ。** オンにする時は先に説明（`PassIntroSheet`）を出し、「オンにする」を押してから
+/// - **既定はオフ。** オンにする時は先に説明（`PassIntroSheet`）を出し、「続ける」を押してから
 ///   電波を出す（そこで初めて iPhone が Bluetooth の使用を尋ねる）
 /// - 乗車券を選ぶまでは電波を出さない（オンにして選んでいなければ、そのまま選ぶ画面へ進む）
 /// - 「いつ」: いつでも／旅のあいだ（家から 50km 以上離れた日だけ）／開いている間
@@ -433,11 +433,14 @@ struct PassSegment: View {
     }
 }
 
-/// オンにする時の説明（写真の無い画面なので、主ボタンは真鍮の塗りに墨）
+/// オンにする時の説明（写真の無い画面なので、主ボタンは真鍮の塗りに墨）。
+///
+/// 2026-11-26 判断（審査 5.1.1(iv)・`PushPrimerView` と同じ形）: 主ボタンは「続ける」だけ。「やめる」は置かず、下に引いても閉じない。
+/// 説明のあとは必ず iOS の Bluetooth の確認へ進む（そこで「許可しない」を選べる）。やめたい人は設定の切り替えで戻せる。
+/// 前は「オンにする」と「やめる」が並んでいた（1.1.119 で差し戻された通知の説明と同じ形）
 struct PassIntroSheet: View {
 
     let confirm: () -> Void
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -457,30 +460,30 @@ struct PassIntroSheet: View {
                         point(item.symbol, item.text)
                     }
                 }
-                Text(L("「オンにする」を押すと、iPhone が Bluetooth の使用を尋ねます。",
-                       "After you tap Turn on, iPhone will ask to use Bluetooth."))
+                Text(PassPrivacyText.introNote)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .fixedSize(horizontal: false, vertical: true)
-                VStack(spacing: JPSpace.xs) {
-                    Button(action: confirm) {
-                        Text(L("オンにする", "Turn on")).jpPillButton(.main(onPhoto: false))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("pass.intro.confirm")
-                    Button { dismiss() } label: {
-                        Text(L("やめる", "Not now")).jpPillButton(.outline)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("pass.intro.cancel")
-                }
             }
             .padding(.horizontal, JPSpace.l)
             .padding(.top, JPSpace.xl)
             .padding(.bottom, JPSpace.l)
         }
+        .safeAreaInset(edge: .bottom) {
+            Button(action: confirm) {
+                Text(PassPrivacyText.introProceed).jpPillButton(.main(onPhoto: false))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("pass.intro.confirm")
+            .padding(.horizontal, JPSpace.l)
+            .padding(.bottom, JPSpace.xs)
+            .background(WebTheme.background)
+        }
         .webScreen()
         .presentationDetents([.large])
+        // 下に引いて閉じさせない（審査 5.1.1(iv)・説明のあとは必ず iOS の確認へ）。つまみも出さない
+        .presentationDragIndicator(.hidden)
+        .sheetSwipeGuard(.hold)
     }
 
     private func point(_ symbol: String, _ text: String) -> some View {

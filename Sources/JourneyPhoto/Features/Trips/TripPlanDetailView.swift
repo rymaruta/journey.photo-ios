@@ -42,6 +42,9 @@ struct TripPlanDetailView: View {
     @ObservedObject private var outsideChanges = TripPlanChanges.shared
     /// AI で作ったプラン（札 #621）: 並べた理由・押すだけの直し・替える・元に戻す（アプリを開いている間だけ）
     @ObservedObject private var aiNotes = TripAINotes.shared
+    /// 報告して隠した AI の理由（2026-11-26・審査 1.2 と 4.7）
+    @ObservedObject private var aiReports = AIAnswerReports.shared
+    @State private var aiReportTarget: AIAnswerReportTarget?
     @StateObject private var aiRunner = TripAIRunner()
     /// AI の組み直しと替えるの前の日程（「元に戻す」で1つずつ戻す。画面を出たら消える）
     @State private var aiHistory: [TripReplan.Step] = []
@@ -321,6 +324,7 @@ struct TripPlanDetailView: View {
         }
         .task(id: plan?.share?.memberIds ?? []) { await loadShare() }
         .onAppear { adoptAINote() }
+        .aiAnswerReport($aiReportTarget)
         .sheet(item: $aiSwap) { target in
             let note = aiNotes.note(planId)
             let used = Set(days.flatMap(\.items).compactMap { item -> String? in
@@ -782,12 +786,23 @@ struct TripPlanDetailView: View {
                 if let place = aiNotes.note(planId)?.autoPlace {
                     TripAIAutoPlaceLine(place: place)
                 }
-                if let note = aiNotes.note(planId), TripAICard.hasContent(note) {
-                    TripAICard(note: note, usage: aiRunner.usage, working: replanWorking != nil,
-                               online: !connectivity.isOffline,
-                               showsBand: replanNotice == nil && replanWorking == nil,
-                               redo: { runReplan(label: L("整えて", "Tidy up"), request: "整えて", typed: false) },
-                               openPro: { aiShowPro = true })
+                if let raw = aiNotes.note(planId) {
+                    // 報告した AI の理由は隠す（AI なしで組んだ帯は残す）
+                    let reportKey = AIAnswerReports.tripKey(planId, reason: raw.reason)
+                    let hidden = TripAICard.offersReport(raw) && aiReports.isHidden(reportKey)
+                    let note = hidden ? TripAICard.withoutReason(raw) : raw
+                    if hidden { AIAnswerHiddenLine() }
+                    if TripAICard.hasContent(note) {
+                        TripAICard(note: note, usage: aiRunner.usage, working: replanWorking != nil,
+                                   online: !connectivity.isOffline,
+                                   showsBand: replanNotice == nil && replanWorking == nil,
+                                   redo: { runReplan(label: L("整えて", "Tidy up"), request: "整えて", typed: false) },
+                                   openPro: { aiShowPro = true },
+                                   report: TripAICard.offersReport(note) ? {
+                                       aiReportTarget = AIAnswerReportTarget(id: reportKey, source: .tripPlan,
+                                                                             question: nil, answer: note.reason)
+                                   } : nil)
+                    }
                 }
 
                 // 組み直す（札 #667・案1の模型）。観光スポットが1つでも入っているプランだけ（組み直す物が無いのに出さない）

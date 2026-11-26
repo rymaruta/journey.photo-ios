@@ -93,3 +93,9 @@ enum PlaceSpotSuggestions {
         }
     }
 }
+
+/// 地名の候補の出どころの表示（2026-11-26 判断・審査 5.2）。地名の検索（`/geocode/search`）はサーバーが
+/// OpenStreetMap の Nominatim を引いている。OpenStreetMap の決まり（ODbL）で、候補を見せる所に出典を出す
+enum PlaceSearchCredit {
+    static let text = "\u{00A9} OpenStreetMap contributors"
+}

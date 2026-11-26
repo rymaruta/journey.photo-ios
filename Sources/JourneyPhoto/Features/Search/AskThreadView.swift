@@ -45,6 +45,9 @@ struct AskThreadView: View {
     @State private var openPlanId: String?
     /// 旅行プランにするで保存している最中
     @State private var makingPlan = false
+    /// 報告する答え（2026-11-26・審査 1.2 と 4.7・`AIAnswerReportFlow`）
+    @State private var reportTarget: AIAnswerReportTarget?
+    @ObservedObject private var reports = AIAnswerReports.shared
 
     /// 大きな字（およそ 1.3 倍から）: 札は縦に積み、一手は縦に並べる（版3「大きな字」）
     private var largeText: Bool { dynamicType >= .xxLarge }
@@ -70,7 +73,8 @@ struct AskThreadView: View {
                 let isLatest = index == engine.thread.count - 1 && engine.pending == nil
                 if inScreen, !isLatest, !expanded.contains(exchange.id) {
                     AskFoldRow(question: exchange.question,
-                               summary: AskFold.summary(exchange.answer, names: names(exchange.answer)),
+                               summary: reports.isHidden(exchange.id) ? AIAnswerReport.hiddenLine
+                                   : AskFold.summary(exchange.answer, names: names(exchange.answer)),
                                onOpen: { expanded.insert(exchange.id) })
                 } else {
                     if inScreen || index > 0 { questionBubble(exchange.question) }
@@ -121,6 +125,7 @@ struct AskThreadView: View {
         }
         .fullScreenCover(isPresented: $showPro) { PaywallView(origin: .ask) }
         .modifier(AskActFlow(request: $actRequest, openPlanId: $openPlanId))
+        .aiAnswerReport($reportTarget)
     }
 
     /// 詳細を読み足す観光スポット: 畳んでいない答え（いちばん新しい答えと開いた答え。画面の外の帯では全部）に出ている、まだ索引だけの行
@@ -163,7 +168,10 @@ struct AskThreadView: View {
         VStack(alignment: .leading, spacing: 12) {
             // 使い切った帯は、いちばん新しい答えにだけ1本
             if isLatest, let reason = a.limit { limitBand(reason) }
-            if a.engine == .refused {
+            if reports.isHidden(exchange.id) {
+                // 報告した答えは隠す（2026-11-26・審査 1.2）
+                AIAnswerHiddenLine()
+            } else if a.engine == .refused {
                 // 断りは頭の文だけ（一手も次に頼めることも出さない・回数は使わない）。明朝 18。
                 // 2026-11-20 判断: 続けて聞く欄を自動で選ばない（キーボードが断りの1行を覆う）
                 AskLead(text: a.text, small: true)
@@ -205,6 +213,14 @@ struct AskThreadView: View {
                         .accessibilityIdentifier("search.ask.note")
                 }
                 // 2026-11-22 判断: 答えごとの「どこで答えたか」の1行は出さない（送ることは送る前の同意の画面で知らせる・2026-11-23）
+                // AI が書いた答えには報告の道（2026-11-26・審査 1.2 と 4.7）。送るのは頼んだ文と AI の答えだけ
+                if AIAnswerReport.offersReport(a) {
+                    AIAnswerReportButton {
+                        reportTarget = AIAnswerReportTarget(
+                            id: exchange.id, source: .ask, question: exchange.question,
+                            answer: AIAnswerReport.askAnswerText(a) { engine.spotsById[$0]?.name })
+                    }
+                }
             }
         }
         .accessibilityElement(children: .contain)

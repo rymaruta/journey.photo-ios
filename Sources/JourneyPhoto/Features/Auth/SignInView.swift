@@ -271,7 +271,7 @@ struct SignInView: View {
     /// いまの形。見せられる高さと、出すもの（欄の数、Apple と Google、上の一文、字の大きさ）で決める
     private var density: SignInLayout.Density {
         SignInLayout.density(viewport: viewportHeight, signUp: mode == .signUp,
-                             externalCount: (appleAvailable ? 1 : 0) + (googleAvailable ? 1 : 0),
+                             externalCount: (appleAvailable ? 1 : 0) + (googleShown ? 1 : 0),
                              hasReason: reason != nil, largeText: typeSize > .large)
     }
 
@@ -382,7 +382,7 @@ struct SignInView: View {
     /// 主ボタンを見える所の下端へ送り（打っている欄はそのすぐ上）、右下のキーで次の欄へ、最後の欄で送る（`AuthFieldFlow`）
     private var credentialsSection: some View {
         VStack(alignment: .leading, spacing: metrics.gap) {
-            if appleAvailable || googleAvailable {
+            if appleAvailable || googleShown {
                 externalSection
                     .transition(.opacity)
             }
@@ -557,10 +557,15 @@ struct SignInView: View {
             appleButton
                 .transition(.opacity)
         }
-        if googleAvailable {
+        if googleShown {
             googleButton
                 .transition(.opacity)
         }
+    }
+
+    /// Google のボタンを出すか。**Apple のボタンを出せるときだけ**（`ExternalSignInMemory.showsGoogle`・審査 4.8）
+    private var googleShown: Bool {
+        ExternalSignInMemory.showsGoogle(google: googleAvailable, apple: appleAvailable)
     }
 
     /// サーバーに使えるかを聞き、覚えて、描き方が変わるときだけ替える（動きを減らす設定ならすぐ替える）
