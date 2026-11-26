@@ -24,9 +24,11 @@ final class StoryLibraryFirstTests: JPUITestCase {
         continueAfterFailure = true
         // 前の回が許可を残していても、許可の前から始める
         // `setUp` は XCTestCase のとおりアクタに属さない。XCTest はメインスレッドで呼ぶので、そこで XCUIApplication を触る（2026-11-25 Swift 6）
-        MainActor.assumeIsolated { XCUIApplication.jp().resetAuthorizationStatus(for: .photos) }
+        // 許可を戻すだけなので `jp()` を使わない（`jp()` は後始末を足す。後始末の中で呼ぶと
+        // 「後始末を取り出した後に足した」で落ちる・run 1857）
+        MainActor.assumeIsolated { XCUIApplication().resetAuthorizationStatus(for: .photos) }
         addTeardownBlock {
-            XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
+            XCUIApplication().resetAuthorizationStatus(for: .photos)
         }
     }
 
