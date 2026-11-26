@@ -25,6 +25,9 @@ packages:
   # Amplify は 2.64.0 以上（札 #733・2026-11-25）。2.64.0 は smithy-swift 0.268.0 を使い、その CBOR の `switch` は
   # `default:` を持つので、aws-crt-swift 0.64.5 の `CBORType` の新しい場合でも組める。前は smithy-swift 0.242.0 が
   # 組めず aws-crt-swift を 0.64.3 に止めていた（#646・2026-11-19）。その固定はここで外した
+  # aws-sdk-swift と smithy-swift は Amplify が決める（2026-11-26 に確かめた）。Amplify 2.64.0 の Package.swift は
+  # aws-sdk-swift を `exact: "1.8.31"`、smithy-swift を `exact: "0.268.0"` で固定している。だから最新（1.8.36・0.270.0）が
+  # 出ていても、こちらで下限を足すと解けなくなる。Amplify の次の版が出たら、ここの下限を上げて一緒に上げる
   Amplify:
     url: https://github.com/aws-amplify/amplify-swift
     from: 2.64.0
