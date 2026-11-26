@@ -61,14 +61,25 @@ final class StoryLibraryFirstTests: JPUITestCase {
             return unreached(app, "タブが出ない", tag: tag)
         }
 
-        // ホームの輪の「＋」（自分の輪の右下）。輪が無い形でも同じ所が「ストーリーを追加」になる
+        // ホームの輪の「＋」（自分の輪の右下）。**見えている輪が1つも無いときは、輪の代わりに「ストーリーを追加」の1行**
+        // （`StoriesRow.emptyRow`・`stories.empty.add`）が出る。見本の一覧は公開の新着から作るので、それが読めない回は
+        // 輪が無い形になる（run 1861 の大きい字: 「あなたのストーリー」は無く「ストーリーを追加」の1行があった）。どちらからでも開く
         let mine = app.buttons["あなたのストーリー"].firstMatch
+        let emptyAdd = app.buttons["stories.empty.add"].firstMatch
         // ストーリーの行は一覧を読み終えるまで出ない（`StoriesRow.showsRings`）。読み終えるのは遅くてもアプリの待ち
         // （`APIClient.requestTimeout` 20秒）が切れたとき。20 秒ちょうどで待つのをやめると、その境目で落ちた（run 1859）
-        guard mine.waitForExistence(timeout: 30) else { return unreached(app, "自分の輪が出ない", tag: tag) }
-        Thread.sleep(forTimeInterval: 2)
-        let origin = app.coordinate(withNormalizedOffset: .zero)
-        origin.withOffset(CGVector(dx: mine.frame.minX + Self.plusCenter, dy: mine.frame.minY + Self.plusCenter)).tap()
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !mine.exists, !emptyAdd.exists { Thread.sleep(forTimeInterval: 0.5) }
+        if mine.exists {
+            Thread.sleep(forTimeInterval: 2)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: mine.frame.minX + Self.plusCenter, dy: mine.frame.minY + Self.plusCenter)).tap()
+        } else if emptyAdd.exists {
+            note("ストーリーの行", "輪が無い形（ストーリーを追加の1行）から開く")
+            emptyAdd.tap()
+        } else {
+            return unreached(app, "自分の輪も「ストーリーを追加」の1行も出ない", tag: tag)
+        }
 
         // 1. 許可の前: 前の写真選び（許可が要らない）と「すべての写真をここに並べる」の1行
         let allow = app.buttons["story.library.allow"].firstMatch
