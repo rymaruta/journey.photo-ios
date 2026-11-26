@@ -63,7 +63,9 @@ final class StoryLibraryFirstTests: JPUITestCase {
 
         // ホームの輪の「＋」（自分の輪の右下）。輪が無い形でも同じ所が「ストーリーを追加」になる
         let mine = app.buttons["あなたのストーリー"].firstMatch
-        guard mine.waitForExistence(timeout: 20) else { return unreached(app, "自分の輪が出ない", tag: tag) }
+        // ストーリーの行は一覧を読み終えるまで出ない（`StoriesRow.showsRings`）。読み終えるのは遅くてもアプリの待ち
+        // （`APIClient.requestTimeout` 20秒）が切れたとき。20 秒ちょうどで待つのをやめると、その境目で落ちた（run 1859）
+        guard mine.waitForExistence(timeout: 30) else { return unreached(app, "自分の輪が出ない", tag: tag) }
         Thread.sleep(forTimeInterval: 2)
         let origin = app.coordinate(withNormalizedOffset: .zero)
         origin.withOffset(CGVector(dx: mine.frame.minX + Self.plusCenter, dy: mine.frame.minY + Self.plusCenter)).tap()

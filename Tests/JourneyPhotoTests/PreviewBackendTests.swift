@@ -177,4 +177,11 @@ final class PreviewBackendTests: XCTestCase {
         let r = await reply("GET", ["user", "notifications"], store: store)
         XCTAssertEqual(r.status, 503, "401 にすると取り直し → ログアウトに倒れる")
     }
+
+    /// 見本の答え手が本物の公開の口を読む待ちは、アプリの待ち（20秒）より十分短い（run 1859・2026-11-26）。
+    /// 長いと、staging の口が遅い回にホームのストーリーの行が 20 秒出ず、UI テストが自分の輪を待って落ちた
+    func testPublicReadsGiveUpWellBeforeTheAppTimesOut() {
+        XCTAssertLessThanOrEqual(PreviewBackend.publicReadTimeout, APIClient.requestTimeout / 2)
+        XCTAssertGreaterThan(PreviewBackend.publicReadTimeout, 0)
+    }
 }
