@@ -1063,8 +1063,11 @@ jobs:
           # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
           bash Tools/toolchain.sh generate
 
+      # `size=true` の回は、この段を飛ばして下の「Release の大きさを測る」だけを組む（2026-11-26 判断）。
+      # 両方を組むと 12分 + 26分で 30分を超える（run 1869: Release の Archive は控え無しで約26分・run 1865 の配る Archive も 25分48秒）
       - name: コンパイルだけ（アプリ・単体テスト・UI テストを build-for-testing）
         id: compile
+        if: ${{ !inputs.size }}
         run: |
           set -euo pipefail
           mkdir -p build/logs
@@ -1086,14 +1089,16 @@ jobs:
 
       # **配る形の大きさ**（`size=true` のときだけ・2026-11-26 判断）。上のコンパイルはシミュレーター向けの Debug で、
       # 本体の大きさが配る版と違う。ここで Release を iPhone 向けに Archive する（署名しない・上げない・控えに書かない）。
+      # アプリ本体は組むが、単体テスト・UI テストは組まない。テストの回の前には、いつもの `size` 無しのビルドだけの回を通す。
+      # 時間: 控えから戻す約3分 + Archive 約26分で、30分を少し超えうる（測りたい回だけ・毎回は流さない）
       # 記号を消す・使っていないコードを捨てるのは、配る Archive（`xcode-project build-ipa`）と同じ既定のまま。
       # リンクの地図（`LD_GENERATE_MAP_FILE`）だけ足して、本体を部品ごとに数える（地図は .app に入らない）。
       # 数は要約と成果物 `app-size`（`app-size.txt`・地図）に出す。**落ちても赤にしない**（コンパイルの確認の邪魔をしない）
       - name: Release の大きさを測る
         id: size
-        if: ${{ inputs.size && steps.compile.outcome == 'success' }}
+        if: ${{ inputs.size }}
         continue-on-error: true
-        timeout-minutes: 25
+        timeout-minutes: 32
         run: |
           set -uo pipefail
           mkdir -p build/size
