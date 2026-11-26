@@ -44,6 +44,9 @@ on:
       ascLocales:
         type: string
         default: "ja"
+      size:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       submit:
@@ -100,6 +103,13 @@ on:
         description: "画面写真を入れ替える言語（例 ja,en-US）。ほかの言語には触らない"
         type: string
         default: "ja"
+      # 2026-11-26 判断（アプリの大きさ・owner「アプリ軽くしたい」）: ビルドだけの回（screens=build）で、配る形（Release・iPhone 向け）の
+      # 大きさの内訳も出す。署名しない Archive を1回組み、.app・Assets.car の絵・本体の部品ごと（リンクの地図）を要約に並べる。
+      # 組むのが1回増える（約10〜15分）ので、大きさを確かめたい回だけ true にする。ビルドだけの回でなければ見ない
+      size:
+        description: "ビルドだけの回で、配る形（Release）の大きさの内訳も出す"
+        type: boolean
+        default: false
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -836,24 +846,8 @@ jobs:
           [ -d "$app" ] || { echo ".app が見つかりません"; exit 0; }
           mkdir -p build/logs
           out=build/logs/app-size.txt
-          {
-            echo "ipa: $(du -k "$ipa" | cut -f1) KB（$(basename "$ipa")）"
-            echo ".app: $(du -sk "$app" | cut -f1) KB"
-            echo
-            echo "== .app の直下（大きい順・KB）=="
-            du -sk "$app"/* 2>/dev/null | sort -rn | sed "s|$app/||" | head -40
-            echo
-            echo "== Frameworks（大きい順・KB）=="
-            du -sk "$app"/Frameworks/* 2>/dev/null | sort -rn | sed "s|$app/||" | head -40
-            echo
-            echo "== 1MB を超えるファイル（大きい順・KB）=="
-            find "$app" -type f -size +1024k -exec du -k {} + 2>/dev/null | sort -rn | sed "s|$app/||" | head -40
-            echo
-            echo "== 種類ごと（拡張子・KB）=="
-            find "$app" -type f -exec du -k {} + 2>/dev/null \
-              | awk -F'\t' '{ n = split($2, p, "/"); f = p[n]; e = (index(f, ".") ? f : "(なし)"); sub(/^.*\./, "", e); s[e] += $1 } END { for (e in s) print s[e], e }' \
-              | sort -rn | head -20
-          } | tee "$out"
+          # 中身は `Tools/app-size.sh`（ビルドだけの回の「Release の大きさを測る」と同じ形・2026-11-26 判断）
+          bash Tools/app-size.sh "$app" "$ipa" | tee "$out"
           {
             echo "### アプリの中身の大きさ"
             echo '```'
@@ -1069,8 +1063,11 @@ jobs:
           # XcodeGen は Tools/toolchain.env で決めた版（brew のその日の版にしない・2026-11-25 判断）
           bash Tools/toolchain.sh generate
 
+      # `size=true` の回は、この段を飛ばして下の「Release の大きさを測る」だけを組む（2026-11-26 判断）。
+      # 両方を組むと 12分 + 26分で 30分を超える（run 1869: Release の Archive は控え無しで約26分・run 1865 の配る Archive も 25分48秒）
       - name: コンパイルだけ（アプリ・単体テスト・UI テストを build-for-testing）
         id: compile
+        if: ${{ !inputs.size }}
         run: |
           set -euo pipefail
           mkdir -p build/logs
@@ -1089,6 +1086,69 @@ jobs:
         run: |
           python3 Tools/compile-errors.py build/logs/xcodebuild-build.log >> "$GITHUB_STEP_SUMMARY"
           python3 Tools/compile-errors.py build/logs/xcodebuild-build.log --annotate
+
+      # **配る形の大きさ**（`size=true` のときだけ・2026-11-26 判断）。上のコンパイルはシミュレーター向けの Debug で、
+      # 本体の大きさが配る版と違う。ここで Release を iPhone 向けに Archive する（署名しない・上げない・控えに書かない）。
+      # アプリ本体は組むが、単体テスト・UI テストは組まない。テストの回の前には、いつもの `size` 無しのビルドだけの回を通す。
+      # 時間: 控えから戻す約3分 + Archive 約26分で、30分を少し超えうる（測りたい回だけ・毎回は流さない）
+      # 記号を消す・使っていないコードを捨てるのは、配る Archive（`xcode-project build-ipa`）と同じ既定のまま。
+      # リンクの地図（`LD_GENERATE_MAP_FILE`）だけ足して、本体を部品ごとに数える（地図は .app に入らない）。
+      # 数は要約と成果物 `app-size`（`app-size.txt`・地図）に出す。**落ちても赤にしない**（コンパイルの確認の邪魔をしない）
+      - name: Release の大きさを測る
+        id: size
+        if: ${{ inputs.size }}
+        continue-on-error: true
+        timeout-minutes: 32
+        run: |
+          set -uo pipefail
+          mkdir -p build/size
+          started=$(date +%s)
+          xcodebuild archive \
+            -project JourneyPhoto.xcodeproj -scheme JourneyPhoto -configuration Release \
+            -destination generic/platform=iOS -archivePath build/size/JourneyPhoto.xcarchive \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            LD_GENERATE_MAP_FILE=YES \
+            > build/size/xcodebuild-archive.log 2>&1
+          status=$?
+          echo "組むのに $(( $(date +%s) - started ))秒（終わりの値 ${status}）"
+          if [ "$status" -ne 0 ]; then grep -E "error:|FAILED" build/size/xcodebuild-archive.log | tail -40; exit 1; fi
+          app="build/size/JourneyPhoto.xcarchive/Products/Applications/JourneyPhoto.app"
+          # 地図の置き場は既定のまま（ターゲットごとの作業場所）。置き場を1つに決めると、部品の道具（Mac 向けに組む
+          # swift-argument-parser など）の地図と重なり Archive が落ちる（run 1867）。アプリ本体の分だけ拾う
+          map="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*ArchiveIntermediates*' -path '*/JourneyPhoto.build/*' \
+                 -name 'JourneyPhoto-LinkMap-*-arm64.txt' 2>/dev/null | head -1)"
+          [ -n "$map" ] && cp "$map" build/size/JourneyPhoto-LinkMap.txt
+          xcodebuild -project JourneyPhoto.xcodeproj -target JourneyPhoto -configuration Release -sdk iphoneos -showBuildSettings 2>/dev/null \
+            | grep -E '^ +(SWIFT_OPTIMIZATION_LEVEL|SWIFT_COMPILATION_MODE|GCC_OPTIMIZATION_LEVEL|DEAD_CODE_STRIPPING|STRIP_INSTALLED_PRODUCT|STRIP_STYLE|STRIP_SWIFT_SYMBOLS|DEPLOYMENT_POSTPROCESSING|COPY_PHASE_STRIP|DEBUG_INFORMATION_FORMAT|ASSETCATALOG_COMPILER_OPTIMIZATION|LLVM_LTO|ONLY_ACTIVE_ARCH|ARCHS) =' \
+            > build/size/build-settings.txt
+          {
+            echo "== 本体のビルド設定（Release・iPhone）=="
+            cat build/size/build-settings.txt
+            echo
+            bash Tools/app-size.sh "$app" "" "build/size/JourneyPhoto-LinkMap.txt"
+          } | tee build/size/app-size.txt
+          {
+            echo "### 配る形（Release）の大きさ"
+            echo '```'
+            cat build/size/app-size.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # .app と Archive は成果物に残さない（大きい・配る物ではない）
+          rm -rf build/size/JourneyPhoto.xcarchive
+
+      - name: 大きさの内訳を残す
+        if: ${{ always() && steps.size.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-size
+          path: |
+            build/size/app-size.txt
+            build/size/build-settings.txt
+            build/size/*-LinkMap.txt
+            build/size/xcodebuild-archive.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       # 自分のコードの警告を数えて要約に並べる（2026-11-25 判断・Swift 6 へ移す作業）。
       # Linux の模型では SDK の型の並行処理の決まりが本物と違うので、本物の数はここで見る

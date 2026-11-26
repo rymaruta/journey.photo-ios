@@ -108,7 +108,15 @@ def main():
     options = subset.Options()
     options.name_IDs = ["*"]            # 著作権・ライセンスの文を落とさない
     options.name_languages = ["*"]
-    options.layout_features = ["*"]     # palt・vert をそのまま
+    # **はじめから効く機能だけ残す**（2026-11-26 判断・アプリの大きさ）。fontTools の既定の組
+    # （ccmp・liga・kern・palt・halt・vert・vrt2・vpal など、文字を組むときに使われ得るもの）にする。
+    # 前は "*" で全部残していて、異体字（jp78・jp83・trad・nlck・expt・hojo）・全角半角（fwid・hwid・pwid）・
+    # 字形の選び直し（aalt・salt・ss01）のためだけの字形を抱えていた（Klee One は 3,882 字に 8,487 字形）。
+    # これらは iOS の文字の組み（CoreText・SwiftUI の Text）では、コードで頼まない限り使われない。
+    # アプリはどの書体にも機能を頼んでいない（`featureSettings`・`kCTFontFeature` を使っていない）ので、
+    # 画面に出る字形は前と同じ。削れた大きさ: Klee One 3,983,084 → 2,326,724・明朝 3,157,944 → 2,868,404 バイト
+    # （マーカー・丸文字は数 KB）。機能を頼むコードを足すときは、その機能をここの組に足して作り直す
+    options.layout_features = list(subset.Options._layout_features_default)
     options.notdef_outline = True
     options.glyph_names = False
     options.hinting = True
