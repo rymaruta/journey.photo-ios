@@ -26,8 +26,12 @@ iPhone では版の文・ビルド・審査の情報を入れにくいので、C
   3. ビルド: その版の、処理済み（VALID）で期限の切れていない最新のビルドを選ぶ（PATCH …/relationships/build）
   4. 審査の情報の Notes（`docs/APP_REVIEW.md` の「英語（貼る）」）を入れる（PATCH /v1/appStoreReviewDetails/{id}・notes だけ）
   5. 段階的リリース（7日）を付ける（無ければ POST /v1/appStoreVersionPhasedReleases・`docs/APP_REVIEW.md` の推奨）
-  6. 定期購入が「提出の準備ができた」なら、版と一緒に審査に出す（POST /v1/subscriptionSubmissions）
+  6. 定期購入が「提出の準備ができた」なら、版と一緒に審査に出す（POST /v1/subscriptionSubmissions）。
+     先に、進んでいる審査の申請が無いかを見る（版を出せないのに定期購入だけ出さない）。初めての定期購入を
+     単独で出すのは止める（Apple の決まりで版と一緒にしか出せない）。販売をやめた定期購入は問題として出す
   7. 審査に出す: reviewSubmissions を作り（下書きがあれば使い回す）、版を足して、submitted=true
+  下見では、さらに読むだけで確かめる: 説明文の利用規約のリンクか EULA の欄、プライバシーポリシーの URL、
+  定期購入でない課金の商品（`listing_problems`）
   使う口は Apple の App Store Connect API の文書（appStoreVersions・appStoreVersionLocalizations・builds・
   appStoreReviewDetails・appStoreVersionPhasedReleases・subscriptionSubmissions・reviewSubmissions・reviewSubmissionItems）
 """
@@ -84,8 +88,12 @@ EDITABLE = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADAT
 SUBMITTED = {"WAITING_FOR_REVIEW", "IN_REVIEW", "READY_FOR_REVIEW", "WAITING_FOR_EXPORT_COMPLIANCE"}
 # 審査の申請（reviewSubmissions）のうち、進んでいるもの。これがあると新しく出さない
 OPEN_SUBMISSION = {"WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES", "CANCELING", "COMPLETING"}
-SUB_OK = {"APPROVED", "WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_BINARY_APPROVAL",
-          "DEVELOPER_REMOVED_FROM_SALE", "REMOVED_FROM_SALE"}
+# 定期購入の状態のうち、そのままでよいもの。販売をやめた状態（DEVELOPER_REMOVED_FROM_SALE・REMOVED_FROM_SALE）は
+# 入れない（2026-11-26 判断）: 審査の人は Pro を買えず、2.1(b)「課金の商品が見つからない」で差し戻される。問題として出す
+SUB_OK = {"APPROVED", "WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_BINARY_APPROVAL"}
+SUB_REMOVED = {"DEVELOPER_REMOVED_FROM_SALE", "REMOVED_FROM_SALE"}
+# 利用規約（EULA）のリンク。説明文にこれが無く、App Store Connect の EULA の欄も空なら警告（審査の 3.1.2）
+TERMS_URL = "journey-photo.com/terms"
 MAX_TEXT = 4000
 
 
@@ -311,21 +319,23 @@ def read_subscriptions(c, aid: str) -> list[dict]:
     return out
 
 
+def safe(fn, what: str):
+    """読むだけの確かめ用。読めなければ「読めませんでした」と出して None（下見を止めない）。"""
+    try:
+        return fn()
+    except (ApiError, Unsure, urllib.error.URLError, KeyError, TypeError, ValueError) as e:
+        print(f"   {what}: 読めませんでした（{tfc.clean(str(e), 80)}）")
+        return None
+
+
 def subscription_details(c, aid: str, subs: list[dict]) -> list[str]:
     """下見のときだけ: 定期購入ごとに、審査に出すのに要るものがそろっているかを読む（読むだけ・2026-11-25 札 #604）。
 
     審査の差し戻し 2.1(b)「Pro の商品が審査に出されていない」を受けて足した。今までは状態（MISSING_METADATA など）しか
     読まず、何が足りないかが分からなかった。読むのは Apple の App Store Connect API の文書の口
     （subscriptionLocalizations・prices・appStoreReviewScreenshot・subscriptionAvailability・
-    subscriptionGroupLocalizations・inAppPurchasesV2）。足りないものを文で返す（`::warning::` で出す）"""
+    subscriptionGroupLocalizations）。足りないものを文で返す（`::warning::` で出す）"""
     missing: list[str] = []
-
-    def safe(fn, what: str):
-        try:
-            return fn()
-        except (ApiError, Unsure, urllib.error.URLError, KeyError, TypeError, ValueError) as e:
-            print(f"   {what}: 読めませんでした（{tfc.clean(str(e), 80)}）")
-            return None
 
     for gid in sorted({x["group"] for x in subs if x.get("group")}):
         glocs = safe(lambda: c.get_all(f"/v1/subscriptionGroups/{gid}/subscriptionGroupLocalizations", {"limit": 50}),
@@ -338,6 +348,8 @@ def subscription_details(c, aid: str, subs: list[dict]) -> list[str]:
     for x in subs:
         pid, sid = x["productId"], x["id"]
         print(f"-- 定期購入 {pid}: {x['state']}")
+        if x["state"] in SUB_REMOVED:
+            missing.append(f"{pid}: 販売をやめています（{x['state']}）。審査の人が買えないので、App Store Connect で販売を戻す")
         locs = safe(lambda: c.get_all(f"/v1/subscriptions/{sid}/subscriptionLocalizations", {"limit": 50}), "表示名と説明")
         if locs is not None:
             names = sorted((y.get("attributes") or {}).get("locale", "?") for y in locs)
@@ -373,6 +385,55 @@ def subscription_details(c, aid: str, subs: list[dict]) -> list[str]:
             print(f"   販売する国や地域: {'決まっている' if avail else '決まっていない'}")
             if not avail:
                 missing.append(f"{pid}: 販売する国や地域が決まっていません")
+    return missing
+
+
+def listing_problems(c, aid: str, locales: dict | None) -> list[str]:
+    """下見のときだけ・読むだけ（2026-11-26 判断）: 審査で差し戻されやすい、アプリの情報の抜けを文で返す。
+
+    - 利用規約: 版の説明文に `TERMS_URL` が無い言語があり、EULA の欄（endUserLicenseAgreement）も空（3.1.2）
+    - プライバシーポリシーの URL（appInfoLocalizations.privacyPolicyUrl）が空の言語（5.1.1）
+    - 定期購入でない課金の商品（inAppPurchasesV2）が1件以上（このアプリは Pro の定期購入だけ。アプリに無い商品は 2.1）
+    `locales` は版の言語（`read_version` の locales）。版がまだ無い（None）ときは説明文を見ない。"""
+    out: list[str] = []
+
+    def read_eula():
+        try:
+            return c.get(f"/v1/apps/{aid}/endUserLicenseAgreement").get("data")
+        except ApiError as e:
+            if getattr(e, "status", None) == 404:  # 決めていないと 404 のことがある
+                return {}
+            raise
+    eula = safe(read_eula, "利用規約（EULA）の欄")
+    if eula is not None:
+        print(f"   利用規約（EULA）の欄: {'あり' if eula else 'なし（Apple の標準の規約）'}")
+    if locales is not None and eula is not None and not eula:
+        lacking = sorted(loc for loc, x in locales.items() if TERMS_URL not in (x.get("description") or ""))
+        print(f"   説明文の利用規約のリンク（{TERMS_URL}）: "
+              + (f"無い言語 {', '.join(lacking)}" if lacking else "すべての言語にあり"))
+        if lacking:
+            out.append(f"利用規約: 説明文（{', '.join(lacking)}）に {TERMS_URL} が無く、EULA の欄も空です。"
+                       "説明文の最後にリンクを足す（docs/APP_STORE_METADATA.md）")
+
+    infos = safe(lambda: c.get_all(f"/v1/apps/{aid}/appInfos", {"fields[appInfos]": "state,appStoreState", "limit": 10}),
+                 "アプリの情報")
+    for info in infos or []:
+        a = info.get("attributes") or {}
+        state = a.get("state") or a.get("appStoreState") or "?"
+        if state == "REPLACED_WITH_NEW_INFO":
+            continue
+        locs = safe(lambda: c.get_all(f"/v1/appInfos/{info['id']}/appInfoLocalizations",
+                                      {"fields[appInfoLocalizations]": "locale,privacyPolicyUrl", "limit": 50}),
+                    "プライバシーポリシーの URL")
+        if locs is None:
+            continue
+        empty = sorted((x.get("attributes") or {}).get("locale", "?") for x in locs
+                       if not ((x.get("attributes") or {}).get("privacyPolicyUrl") or "").strip())
+        print(f"   プライバシーポリシーの URL（アプリの情報 {state}）: "
+              + (f"空の言語 {', '.join(empty)}" if empty else f"{len(locs)} 言語とも入っています"))
+        if empty:
+            out.append(f"プライバシーポリシーの URL が空です（{', '.join(empty)}・アプリの情報 {state}）")
+
     others = safe(lambda: c.get_all(f"/v1/apps/{aid}/inAppPurchasesV2",
                                     {"fields[inAppPurchases]": "productId,state,inAppPurchaseType", "limit": 50}),
                   "定期購入でないアプリ内課金")
@@ -381,7 +442,10 @@ def subscription_details(c, aid: str, subs: list[dict]) -> list[str]:
         for y in others:
             a = y.get("attributes") or {}
             print(f"   {tfc.clean(a.get('productId') or '?', 80)}: {a.get('state', '?')}（{a.get('inAppPurchaseType', '?')}）")
-    return missing
+        if others:
+            out.append(f"定期購入でない課金の商品が {len(others)} 件あります。アプリで売っていないなら App Store Connect で消す"
+                       "（審査でアプリに無い商品と言われる）")
+    return out
 
 
 def screenshot_problems(c, vid: str) -> list[str]:
@@ -485,9 +549,24 @@ def plan_subscriptions(subs: list[dict]) -> tuple[list[dict], list[str]]:
                               "subscription": {"data": {"type": "subscriptions", "id": s["id"]}}}}}})
         elif s["state"] in SUB_OK:
             print(f"   定期購入 {s['productId']}: {s['state']}（このまま）")
+        elif s["state"] in SUB_REMOVED:
+            problems.append(f"定期購入 {s['productId']} は販売をやめています（{s['state']}）。"
+                            "審査の人が Pro を買えないので、App Store Connect で販売を戻す")
         else:
             problems.append(f"定期購入 {s['productId']} の状態が {s['state']} です（App Store Connect で直す）")
     return steps, problems
+
+
+def first_subscription(subs: list[dict]) -> bool:
+    """まだ1つも承認されていない（初めての定期購入）。Apple の決まりで、初めての定期購入は版と一緒にしか審査に出せない。"""
+    return not any(s["state"] == "APPROVED" for s in subs)
+
+
+def submit_subscriptions(w: Writer, c, vid: str, steps: list[dict], subs: list[dict], with_version: bool) -> None:
+    """定期購入を審査に出す。初めての定期購入を、版を出さずに単独で出すのは止める（2026-11-26 判断）。"""
+    if steps and first_subscription(subs) and not with_version:
+        raise Stop("初めての定期購入は単独では審査に出せません。版と一緒に出す（submit=true で流す）")
+    run_steps(w, c, vid, steps)
 
 
 def print_steps(steps: list[dict]) -> None:
@@ -539,8 +618,9 @@ def ensure_version(w: Writer, c, aid: str, target: dict | None, how: str, versio
     return target["id"]
 
 
-def submit(w: Writer, c, aid: str, vid: str) -> str:
-    """審査に出す。進んでいる申請があれば止める。下書き（READY_FOR_REVIEW）があれば使い回す。"""
+def open_draft(c, aid: str) -> str | None:
+    """審査の申請の下書き（READY_FOR_REVIEW）の id か None。進んでいる申請があれば止める。
+    定期購入を出す前に呼ぶ（版を出せないのに定期購入だけ出してしまわないように・2026-11-26 判断）。"""
     subs = c.get_all("/v1/reviewSubmissions", {"filter[app]": aid, "filter[platform]": "IOS", "limit": 50,
                                                "fields[reviewSubmissions]": "state,platform"})
     states_ = [(s["id"], (s.get("attributes") or {}).get("state", "?")) for s in subs]
@@ -550,9 +630,14 @@ def submit(w: Writer, c, aid: str, vid: str) -> str:
     draft = [sid for sid, st in states_ if st == "READY_FOR_REVIEW"]
     if len(draft) > 1:
         raise Stop("審査の申請の下書きが2つ以上あります。止めます")
+    return draft[0] if draft else None
+
+
+def submit(w: Writer, c, aid: str, vid: str, draft: str | None) -> str:
+    """審査に出す（`open_draft` のあとで）。下書きがあれば使い回す。"""
     recheck(c, vid)
     if draft:
-        sid = draft[0]
+        sid = draft
         items = c.get_all(f"/v1/reviewSubmissions/{sid}/items", {"include": "appStoreVersion", "limit": 50})
         has = any(((i.get("relationships") or {}).get("appStoreVersion") or {}).get("data", {}).get("id") == vid
                   for i in items)
@@ -614,11 +699,13 @@ def run(c, a) -> int:
             print(f"-- ビルド\n   今: （版が無い）\n   入れる: {build_label(build)}")
             print(f"-- 審査の Notes\n   入れる: {short(notes, 60)}")
             print_steps(sub_steps)
-            problems = sub_problems + ["画面写真: 版がまだ無い（作ってから storeShots の回で入れる）"]
+            problems = (sub_problems + ["画面写真: 版がまだ無い（作ってから storeShots の回で入れる）"]
+                        + listing_problems(c, aid, None))
         else:
             steps, cur = plan_version(c, target["id"], aid, a.version, notes)
             print_steps(steps + sub_steps)
-            problems = sub_problems + review_problems(cur["review"]) + screenshot_problems(c, target["id"])
+            problems = (sub_problems + review_problems(cur["review"]) + screenshot_problems(c, target["id"])
+                        + listing_problems(c, aid, cur["locales"]))
         if problems:
             print("== このままでは審査に出せません（下見）")
             for p in problems:
@@ -642,10 +729,13 @@ def run(c, a) -> int:
         return 1
     if a.no_submit:
         print("版をそろえました。審査には出していません（submit=false）")
+        if sub_steps and first_subscription(subs):
+            print("::notice::定期購入も出していません。初めての定期購入は版と一緒に出す（submit=true で流す）")
         return 0
+    draft = open_draft(c, aid)
     print_steps(sub_steps)
-    run_steps(w, c, vid, sub_steps)
-    state = submit(w, c, aid, vid)
+    submit_subscriptions(w, c, vid, sub_steps, subs, with_version=True)
+    state = submit(w, c, aid, vid, draft)
     v = c.get(f"/v1/appStoreVersions/{vid}", {"fields[appStoreVersions]": "versionString,appVersionState,appStoreState"})
     print(f"== 審査に出しました: 申請 {state}、版 {a.version} {'、'.join(sorted(states(v['data'])))}")
     return 0

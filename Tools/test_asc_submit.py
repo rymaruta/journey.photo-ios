@@ -8,6 +8,8 @@
 - 書く直前に状態が変わったら（審査に出された）止める
 - 画面写真・審査用のアカウントがそろっていなければ審査に出さない
 - もう審査に出ている版は何も書かずに終える
+- 販売をやめた定期購入は問題として出す。進んでいる申請があるときは定期購入だけを出さない。初めての定期購入を単独で出さない
+- 下見で、利用規約のリンクか EULA、プライバシーポリシーの URL、定期購入でない課金の商品を確かめる（読むだけ）
 """
 import contextlib
 import copy
@@ -40,8 +42,13 @@ class Fake:
         self.writes = []
         self.state_after_reads = None  # 何回か読んだあとに申請用の版の状態を変える
         self.reads = 0
-        self.locs = {"loc-ja": {"locale": "ja", "whatsNew": "前の文", "description": "説明", "keywords": "旅"},
-                     "loc-en": {"locale": "en-US", "whatsNew": "", "description": "desc", "keywords": "trip"}}
+        self.locs = {"loc-ja": {"locale": "ja", "whatsNew": "前の文",
+                                "description": "説明\n利用規約 https://journey-photo.com/terms", "keywords": "旅"},
+                     "loc-en": {"locale": "en-US", "whatsNew": "",
+                                "description": "desc\nTerms https://journey-photo.com/terms", "keywords": "trip"}}
+        self.eula = None  # 404（EULA の欄が空）
+        self.privacy = {"ja": "https://journey-photo.com/privacy", "en-US": "https://journey-photo.com/privacy"}
+        self.iaps = []
         self.review = {"notes": "old notes", "demoAccountRequired": demo, "demoAccountName": DEMO_NAME if demo else "",
                        "demoAccountPassword": PASSWORD if demo else "", "contactFirstName": "A",
                        "contactLastName": "B", "contactPhone": "+81 90", "contactEmail": "a@example.invalid"}
@@ -82,6 +89,10 @@ class Fake:
             return {"data": []}
         if path.startswith("/v1/subscriptions/") and path.endswith("/appStoreReviewScreenshot"):
             return {"data": None}
+        if path == "/v1/apps/app1/endUserLicenseAgreement":
+            if self.eula is None:
+                raise sub.ApiError(404, "NOT_FOUND")
+            return {"data": self.eula}
         if path.startswith("/v1/subscriptions/") and path.endswith("/subscriptionAvailability"):
             if getattr(self, "no_availability", False):
                 raise sub.ApiError(404, "NOT_FOUND")
@@ -114,7 +125,11 @@ class Fake:
         if path.startswith("/v1/subscriptions/") and path.endswith("/subscriptionLocalizations"):
             return [{"id": "sl1", "attributes": {"locale": "en-US"}}]
         if path == "/v1/apps/app1/inAppPurchasesV2":
-            return []
+            return list(self.iaps)
+        if path == "/v1/apps/app1/appInfos":
+            return [{"id": "info-live", "attributes": {"state": "READY_FOR_DISTRIBUTION"}}]
+        if path == "/v1/appInfos/info-live/appInfoLocalizations":
+            return [{"id": f"il-{k}", "attributes": {"locale": k, "privacyPolicyUrl": v}} for k, v in self.privacy.items()]
         if path.endswith("/items"):
             return []
         raise AssertionError(f"知らない GET: {path}")
@@ -342,6 +357,87 @@ class Test(unittest.TestCase):
         self.assertEqual(f.writes, [])
         self.assertNotIn("審査用の画面写真がありません", out)
 
+    def test_removed_from_sale_is_a_problem(self):
+        """販売をやめた定期購入は、そのままでよいとしない（審査の人が Pro を買えない・2026-11-26）"""
+        for state in ("DEVELOPER_REMOVED_FROM_SALE", "REMOVED_FROM_SALE"):
+            self.assertNotIn(state, sub.SUB_OK)
+            f = Fake(subs=state)
+            code, out = go(f, Args(apply=False))
+            self.assertEqual(f.writes, [])
+            self.assertIn(f"::warning::定期購入 pro.monthly は販売をやめています（{state}）", out)
+            self.assertIn("pro.yearly: 販売をやめています", out)
+            f = Fake(subs=state)
+            code, out = go(f, Args(apply=True))
+            self.assertEqual(code, 1, out)
+            self.assertFalse([w for w in f.writes if "reviewSubmission" in w[1]])
+
+    def test_busy_submission_does_not_submit_subscriptions_alone(self):
+        """進んでいる申請があって版を出せないとき、定期購入だけを先に出さない"""
+        f = Fake(subs="READY_TO_SUBMIT")
+        f.submissions["rs-other"] = "WAITING_FOR_REVIEW"
+        code, out = go(f, Args(apply=True))
+        self.assertEqual(code, "stop", out)
+        self.assertFalse([w for w in f.writes if "subscriptionSubmissions" in w[1]])
+
+    def test_first_subscription_alone_stops(self):
+        subs = [{"id": "subm", "productId": "pro.monthly", "state": "READY_TO_SUBMIT", "group": "grp1"}]
+        steps, _ = sub.plan_subscriptions(subs)
+        f = Fake()
+        w = sub.Writer(f, True, {LIVE})
+        with self.assertRaises(sub.Stop) as e:
+            sub.submit_subscriptions(w, f, "ver-edit", steps, subs, with_version=False)
+        self.assertIn("版と一緒に出す", str(e.exception))
+        self.assertEqual(f.writes, [])
+        # 一度承認された定期購入があれば、単独で出してよい
+        approved = subs + [{"id": "suby", "productId": "pro.yearly", "state": "APPROVED", "group": "grp1"}]
+        with contextlib.redirect_stdout(io.StringIO()):
+            sub.submit_subscriptions(w, f, "ver-edit", steps, approved, with_version=False)
+        self.assertEqual([p for m, p, _ in f.writes], ["/v1/subscriptionSubmissions"])
+
+    def test_no_submit_says_first_subscription_goes_with_version(self):
+        f = Fake(subs="READY_TO_SUBMIT")
+        code, out = go(f, Args(apply=True, no_submit=True))
+        self.assertEqual(code, 0, out)
+        self.assertIn("初めての定期購入は版と一緒に出す", out)
+        self.assertFalse([w for w in f.writes if "subscriptionSubmissions" in w[1]])
+
+    def test_dry_run_listing_all_good_has_no_listing_warnings(self):
+        f = Fake()
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertNotIn("利用規約:", out)
+        self.assertNotIn("プライバシーポリシーの URL が空", out)
+        self.assertNotIn("定期購入でない課金の商品が", out)
+        self.assertIn("すべての言語にあり", out)
+
+    def test_dry_run_warns_terms_missing_without_eula(self):
+        f = Fake()
+        f.locs["loc-en"]["description"] = "desc without link"
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertIn("::warning::利用規約: 説明文（en-US）に journey-photo.com/terms が無く", out)
+        # EULA の欄が埋まっていれば、説明文にリンクが無くてもよい
+        f = Fake()
+        f.locs["loc-en"]["description"] = "desc without link"
+        f.eula = {"id": "eula1", "attributes": {"agreementText": "..."}}
+        code, out = go(f, Args(apply=False))
+        self.assertNotIn("::warning::利用規約", out)
+
+    def test_dry_run_warns_empty_privacy_url(self):
+        f = Fake()
+        f.privacy["en-US"] = ""
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertIn("::warning::プライバシーポリシーの URL が空です（en-US", out)
+
+    def test_dry_run_warns_non_subscription_iap(self):
+        f = Fake()
+        f.iaps = [{"id": "iap1", "attributes": {"productId": "coins.100", "state": "MISSING_METADATA",
+                                                "inAppPurchaseType": "CONSUMABLE"}}]
+        code, out = go(f, Args(apply=False))
+        self.assertEqual(f.writes, [])
+        self.assertIn("::warning::定期購入でない課金の商品が 1 件あります", out)
+
     def test_texts_fit_and_have_no_nakaguro(self):
         for loc, text in sub.WHATS_NEW.items():
             self.assertLessEqual(len(text), sub.MAX_TEXT)
@@ -349,6 +445,28 @@ class Test(unittest.TestCase):
             self.assertNotIn("撮影スポット", text)
             self.assertNotIn("撮りどき", text)
         self.assertLessEqual(len(sub.review_notes()), sub.MAX_TEXT)
+
+    def test_review_notes_say_what_reviewers_trip_on(self):
+        """申請し直す前に直した審査メモ（2026-11-26）。消すと落ちる。入ったら足す文を足しても 4,000 字に収まる"""
+        notes = sub.review_notes()
+        for line in (
+            "After the first post or follow, a short explanation appears with one button that leads to the iOS prompt; "
+            "declining keeps the app fully usable.",
+            "Supporter badge is granted for production purchases only; in Sandbox, Pro features work but the badge is not shown.",
+            "A subscription bought with a sandbox Apple ID stays with the account that bought it; after deleting the demo "
+            "account, please use a different sandbox Apple ID to test Pro.",
+            'an explanation with a single "Continue" button and the iOS prompt',
+            "While on, swapping continues with the app closed.",
+            "iTunes Search API", "Apple Music", '"Report this answer"', "an account (email, Apple or Google)",
+        ):
+            self.assertIn(line, notes)
+        doc = sub.REVIEW_DOC.read_text(encoding="utf-8")
+        m = sub.re.search(r"^### 入ったら足す文\s*\n.*?```[^\n]*\n(.*?)\n```", doc, sub.re.S | sub.re.M)
+        self.assertIsNotNone(m)
+        draft = m.group(1).strip()
+        self.assertTrue(draft.startswith("- "))
+        self.assertNotIn(draft, notes)  # まだ本番に無いので、貼る文には入れない
+        self.assertLessEqual(len(notes) + 1 + len(draft), sub.MAX_TEXT)
 
 
 if __name__ == "__main__":
