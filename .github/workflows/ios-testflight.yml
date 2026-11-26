@@ -685,7 +685,9 @@ jobs:
           CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
           # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
           NARROWED: ${{ steps.scope.outputs.full != 'true' }}
-        run: bash Tools/upload-shots.sh build build/ios/test/Test.xcresult
+        # 単体テストが添付した絵（実際に描いた共有の絵など・`TripBookCardRendererTests`）も同じ組に置く（2026-11-26）。
+        # 単体テストが流れなかった回は Unit.xcresult が無く、警告を出して飛ばす（`export-screenshots.sh`）
+        run: bash Tools/upload-shots.sh build build/ios/test/Test.xcresult build/ios/test/Unit.xcresult
 
       # App Store Connect に上げる回（ascVersion）だけ、下の段が作った絵をこの回の一時の場所（`build/` の外・成果物に混ざらない）にも
       # 残させる（`Tools/upload-store-shots.sh` の STORE_SHOTS_KEEP・札 #604・2026-11-23）。S3 から取り直さないため
