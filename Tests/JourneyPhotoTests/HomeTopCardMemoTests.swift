@@ -164,7 +164,8 @@ final class HomeTopCardMemoTests: XCTestCase {
     /// 🔴 札の画面が控えを使う（外すと body のたびに索引を並べ替える）
     func testHomeTopCardViewUsesTheMemo() throws {
         let view = try source("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift")
-        XCTAssertTrue(view.contains("pool: memo.coverPool(spots: spots, revision: spotsRevision)"), "写真の候補の並びを控えから渡していない")
+        // 2026-11-26 から、入口の写真は選んだ1件ごと控える（`memo.swipeCover`。中で写真の候補の並びの控えを使う）
+        XCTAssertTrue(view.contains("let cover = memo.swipeCover("), "入口の写真を控えから出していない")
         XCTAssertTrue(view.contains("memo.visibleShelf(shelfMemoKey(choices))"), "季節の段を控えていない")
         XCTAssertTrue(view.contains("memo.detailNeeds(shelfMemoKey(choices))"), "詳細を取りに行く場所を控えていない")
         // 索引を書き換える所は、必ず書き換えの番号も進める（控えの鍵）

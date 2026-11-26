@@ -13,7 +13,8 @@ import Foundation
 /// - 季節の段と、詳細を取りに行く場所: 今日・索引の書き換え・札の並び・今日の一問・一問の決着が変わったとき
 ///
 /// 札の並びそのもの（旅行プラン・写真・行きたい場所などで決まる）は控えない（材料が多く、取り違えると札が古いまま残る）。
-/// 重かった並べ替えは写真の候補の並びの控えで消える
+/// 重かった並べ替えは写真の候補の並びの控えで消える。2026-11-26 から、索引から決まる2枚（`seasonCards`）と
+/// 入口の写真（`swipeCover`）も控える（並びを組む・並べるのは毎回のまま）
 final class HomeTopCardMemo {
 
     /// 季節の段と詳細の鍵（`HomeSpotShelf.visibleShelf` の材料。索引そのものの代わりに書き換えの番号）
@@ -47,7 +48,24 @@ final class HomeTopCardMemo {
         let timeZone: TimeZone
     }
 
+    /// 索引から決まる2枚の鍵（2026-11-26・`HomeTopCard.seasonCards`）。索引そのものの代わりに書き換えの番号
+    struct SeasonKey: Equatable {
+        let today: Date
+        let spotsRevision: Int
+        let wishlist: Set<String>
+        let quiz: DailyQuiz?
+    }
+
+    /// 入口の写真の鍵（2026-11-26・`HomeTopCard.withSwipe`）。索引の書き換えの番号・使わない場所・日
+    struct SwipeKey: Equatable {
+        let spotsRevision: Int
+        let shown: Set<String>
+        let day: Int
+    }
+
     private let pool = DerivedMemo<Int, SpotSwipe.CoverPool>()
+    private let season = DerivedMemo<SeasonKey, HomeTopCard.SeasonCards>()
+    private let swipe = DerivedMemo<SwipeKey, OfficialSpot?>()
     private let photo = DerivedMemo<PhotoCardsKey, HomeTopCard.PhotoCards?>()
     private let posted = DerivedMemo<[Photo], [LibraryTrips.PostedShot]>()
     private let friendWish = DerivedMemo<FriendWishKey, FriendWish.Hit?>()
@@ -59,6 +77,20 @@ final class HomeTopCardMemo {
     /// 写真の候補の並び（索引の書き換えの番号が変わったときだけ作る）
     func coverPool(spots: [OfficialSpot], revision: Int) -> SpotSwipe.CoverPool {
         pool.value(for: revision) { SpotSwipe.CoverPool(spots: spots) }
+    }
+
+    /// 索引から決まる2枚（行きたい場所のこの季節・今日の観光スポット）。鍵が変わったときだけ計算する（2026-11-26）
+    func seasonCards(_ key: SeasonKey, spots: [OfficialSpot]) -> HomeTopCard.SeasonCards {
+        season.value(for: key) {
+            HomeTopCard.seasonCards(today: key.today, spots: spots, wishlist: key.wishlist, quiz: key.quiz)
+        }
+    }
+
+    /// 撮影スポットを払う入口の写真（鍵が変わったときだけ選ぶ・2026-11-26）
+    func swipeCover(_ key: SwipeKey, spots: [OfficialSpot]) -> OfficialSpot? {
+        swipe.value(for: key) {
+            coverPool(spots: spots, revision: key.spotsRevision).cover(spots: spots, excluding: key.shown, day: key.day)
+        }
     }
 
     /// 季節の段（鍵が変わったときだけ計算する）
@@ -97,4 +129,6 @@ final class HomeTopCardMemo {
     var poolBuilds: Int { pool.computeCount }
     var friendWishComputes: Int { friendWish.computeCount }
     var shelfComputes: Int { shelf.computeCount }
+    var seasonComputes: Int { season.computeCount }
+    var swipeComputes: Int { swipe.computeCount }
 }
