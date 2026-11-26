@@ -80,8 +80,15 @@ extension NotificationGroups {
     /// 片方しか読めない作りにすると、書き方が変わった日に**全部が
     /// 「それ以前」に落ちる**——見出しだけが静かに壊れる形なので、
     /// 最初から両方を試す。
+    ///
+    /// 2026-11-26 判断（アプリを軽く）: **読んだ答えを控える**（`ParsedDates`）。`ISO8601DateFormatter` の読みは重く
+    /// （Mac run 1804 の積みの見本で、ホームの止まりの最中に ICU の `DateFormatSymbols::loadAllSymbols` まで降りていた）、
+    /// 同じ文字列を何度も読んでいた——DM の1通は描くたびに時刻を出すか・前とつなげるか・日の区切りで 4〜8 回、
+    /// ホームの新しい投稿・今週のお題・コメントの見出しも写真ごとに body のたびに読む。文字列が同じなら答えも同じ
     static func parse(_ text: String) -> Date? {
-        withFraction.date(from: text) ?? withoutFraction.date(from: text)
+        ParsedDates.shared.value(for: text) {
+            withFraction.date(from: text) ?? withoutFraction.date(from: text)
+        }
     }
 
     // 2026-11-25 判断（Swift 6）: ISO8601DateFormatter は Sendable と書かれていないが、Apple の文書で複数のスレッドから使ってよい。作った後は設定を変えないので `nonisolated(unsafe)` にする
@@ -97,4 +104,47 @@ extension NotificationGroups {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+}
+
+/// `NotificationGroups.parse` の答えの控え（2026-11-26 判断）。読めなかった文字列も「読めない」と控える。
+/// 増えすぎたら一度に空にする（時刻の文字列は投稿・メッセージごとに違うので、長く使うと際限なく増える）
+final class ParsedDates: @unchecked Sendable {
+    static let shared = ParsedDates()
+
+    /// 控える数の上限。DM の会話・ホームの写真・お知らせを合わせても数千に届かない
+    static let limit = 4096
+
+    private var dates: [String: Date?] = [:]
+    private let lock = NSLock()
+    /// 読んだ回数（テスト用・控えに無かった回）
+    private(set) var misses = 0
+
+    func value(for text: String, _ make: () -> Date?) -> Date? {
+        lock.lock()
+        if let hit = dates[text] {
+            lock.unlock()
+            return hit
+        }
+        lock.unlock()
+        let date = make()
+        lock.lock()
+        if dates.count >= Self.limit { dates.removeAll(keepingCapacity: true) }
+        dates[text] = .some(date)
+        misses += 1
+        lock.unlock()
+        return date
+    }
+
+    /// 控えの数（テスト用）
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return dates.count
+    }
+
+    func removeAll() {
+        lock.lock()
+        dates.removeAll()
+        lock.unlock()
+    }
 }

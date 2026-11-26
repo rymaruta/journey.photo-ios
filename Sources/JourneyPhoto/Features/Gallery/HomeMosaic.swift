@@ -69,7 +69,40 @@ struct HomeMosaic: View {
         HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large,
                      isFirstPost: firstPostIds.contains(photo.id), onReport: onReport,
                      marksAsYours: marked.contains(photo.id))
+            // 並びが描き直されただけでは、札を描き直さない（`HomeFeedTile` の `==`・2026-11-26 判断）
+            .equatable()
     }
+}
+
+/// ホームの札を、**並び（`HomeMosaic`）が描き直されただけでは描き直さない**（2026-11-26 判断・アプリを軽く）。
+///
+/// **数（Mac run 1804・`testUsageSurveyProbe`）**: ホームの外側が描き直されるたびに、並びの `HomeMosaic.@self` が起き
+/// （ホームを速く送る 15 回・写真の詳細の往復 38 回・DM 14 回）、画面に出ている札の body がその数だけ評価し直されていた
+/// （`chg.HomeFeedTile.@self` が 172・154・56 回）。引き金は、ホームが毎回新しく作る `onReport`（閉じた処理は比べられず、
+/// いつも「違う」になる）。札の body は読み上げの文（撮影地・名前・何分前の日付の読み）を毎回作る。
+///
+/// 比べるのは、描く中身を変える値だけにする。`onReport` は比べない——中身はいつも同じ「通報する写真をホームの
+/// `reportTarget` に入れる」で、前の値を使っても同じシートを開く。札自身の状態（`@EnvironmentObject` のログイン）が
+/// 変わったときは、今までどおり描き直す
+extension HomeFeedTile: Equatable {
+    nonisolated static func == (lhs: HomeFeedTile, rhs: HomeFeedTile) -> Bool {
+        lhs.drawnInputs == rhs.drawnInputs
+    }
+
+    /// 親から渡される値のうち、描く中身を変えるもの
+    nonisolated var drawnInputs: HomeFeedTileInputs {
+        HomeFeedTileInputs(photo: photo, siblings: siblings, large: large, isFirstPost: isFirstPost,
+                           marksAsYours: marksAsYours)
+    }
+}
+
+/// ホームの札が親から受け取る値のうち、描く中身を変えるもの（`HomeFeedTile` の `==` が比べる・閉じた処理は入れない）
+struct HomeFeedTileInputs: Equatable {
+    let photo: Photo
+    let siblings: [Photo]
+    let large: Bool
+    let isFirstPost: Bool
+    let marksAsYours: Bool
 }
 
 /// ホームの1枚（板 01c）。写真・撮影地と撮った人の重ね・右下のいいね・複数枚の印

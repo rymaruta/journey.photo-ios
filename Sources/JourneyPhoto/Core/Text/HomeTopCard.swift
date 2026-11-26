@@ -220,6 +220,7 @@ enum HomeTopCard {
                       develop: Choice? = nil,
                       friendWish: FriendWish.Hit? = nil,
                       photoCards: PhotoCards? = nil,
+                      seasonCards: SeasonCards? = nil,
                       timeZone: TimeZone = .current) -> [Choice] {
         // 今日の一問は**今日のテーマの直後**（毎日替わる札どうしを並べる。1年前の振り返りより前）。
         // 取れなかった日は出さない（空き地を作らない）
@@ -237,6 +238,25 @@ enum HomeTopCard {
             // 友達が行きたい場所で撮った（札 #710 の案9）。選ぶ順と並べる順は人ごとの表で決める
             friendWish.map { Choice.friendWish($0) },
         ]
+        let seasonal = seasonCards ?? Self.seasonCards(today: today, spots: spots, wishlist: wishlist, quiz: quiz)
+        // 旅の札 → 季節の札（今月の見ごろ）→ 今日のテーマ → 振り返り（owner・2026-09-29）
+        let season: [Choice?] = [seasonal.wished, seasonal.inSeason]
+        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [mine.yearAgo].compactMap { $0 }
+    }
+
+    /// 撮影スポットの索引から決まる2枚（行きたい場所のこの季節・今日の観光スポット）。
+    ///
+    /// 2026-11-26 判断（アプリを軽く・Mac run 1804 の `testUsageSurveyProbe`）: 札の並び（`home.topCard.choices`）は
+    /// body のたびに 1 回 15〜46ms かかっていた（起動 5 回 229ms・写真の詳細の往復 19 回 298ms・36 回で計 716ms）。
+    /// 写真から決まる2枚と現像・友達の札はもう控えてあり、残りはこの2枚: 行きたい場所の札は索引の全件（いまは 4,733 件）で
+    /// 行ごとに鍵の文字を作って突き合わせ、季節の札は季節の候補（数千件）を日替わりの並びに何度も写し直していた。
+    /// 答えは今日・索引・行きたい場所の鍵・今日の一問で決まるので、`HomeTopCardMemo.seasonCards` がこれを控える
+    struct SeasonCards: Equatable {
+        let wished: Choice?
+        let inSeason: Choice?
+    }
+
+    static func seasonCards(today: Date, spots: [OfficialSpot], wishlist: Set<String>, quiz: DailyQuiz?) -> SeasonCards {
         // **今日の一問の選択肢（4つ）と同じスポットは、その日は季節の札の候補から外す**——名前つきの札と
         // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）。
         // 2026-10-07 判断: 正解だけでなく**外れの選択肢も除く**。外れの場所が名前と写真つきで並ぶと
@@ -247,12 +267,7 @@ enum HomeTopCard {
         let wished = wishlistSeason(today: today, spots: spots, wishlist: wishlist, excluding: quizIds)
         var seasonExcluded = quizIds
         if case .wishlistSeason(let spot, _, _)? = wished { seasonExcluded.insert(spot.spotId) }
-        // 旅の札 → 季節の札（今月の見ごろ）→ 今日のテーマ → 振り返り（owner・2026-09-29）
-        let season: [Choice?] = [
-            wished,
-            inSeason(today: today, spots: spots, excluding: seasonExcluded),
-        ]
-        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [mine.yearAgo].compactMap { $0 }
+        return SeasonCards(wished: wished, inSeason: inSeason(today: today, spots: spots, excluding: seasonExcluded))
     }
 
     /// 自分の写真から決まる2枚（一冊ができた・1年前の今ごろ）。
@@ -281,6 +296,13 @@ enum HomeTopCard {
     ///   - pool: `spots` から作った写真の候補の並び（控えてあれば渡す・2026-11-14 札 #594）。nil ならここで作る
     static func withSwipe(_ choices: [Choice], spots: [OfficialSpot], today: Date?,
                           pool: SpotSwipe.CoverPool? = nil) -> [Choice] {
+        let cover = (pool ?? SpotSwipe.CoverPool(spots: spots))
+            .cover(spots: spots, excluding: swipeShown(choices), day: swipeDay(today))
+        return withSwipe(choices, cover: cover)
+    }
+
+    /// 入口の写真に使わない場所（ほかの札に出ている場所・今日の一問の選択肢）
+    static func swipeShown(_ choices: [Choice]) -> Set<String> {
         var shown = Set<String>()
         for choice in choices {
             switch choice {
@@ -289,9 +311,16 @@ enum HomeTopCard {
             default: break
             }
         }
-        let cover = (pool ?? SpotSwipe.CoverPool(spots: spots))
-            .cover(spots: spots, excluding: shown, day: today.map(dayNumber) ?? 0)
-        return [.swipe(cover: cover)] + choices.filter { $0.slot != "spotSwipe" }
+        return shown
+    }
+
+    /// 入口の写真を日替わりにする日の番号（今日が決まらなければ 0）
+    static func swipeDay(_ today: Date?) -> Int { today.map(dayNumber) ?? 0 }
+
+    /// 選んだ入口の写真で、入口を1枚目に置く（2026-11-26 判断: 写真は `HomeTopCardMemo.swipeCover` が控える。
+    /// 索引の全件を body のたびに数え直さない）
+    static func withSwipe(_ choices: [Choice], cover: OfficialSpot?) -> [Choice] {
+        [.swipe(cover: cover)] + choices.filter { $0.slot != "spotSwipe" }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）
