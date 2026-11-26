@@ -76,9 +76,11 @@ final class StoryLibraryFirstTests: JPUITestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "41c-ストーリーの＋（許可の前）\(tag)")
 
-        // 2. 許す → 一覧（先頭がカメラのマス）
+        // 2. 許す → 一覧（先頭がカメラのマス）。組み込みの写真選びの「写真へのプライベートアクセス」の札が出ていたら先に閉じる
+        // （札が出ている間は、許可の1行を押しても届かない・run 1854）
+        dismissPrivateAccessNotice(app)
         allow.tap()
-        guard allowFullPhotoAccess() else { return unreached(app, "写真の許可の札に答えられない", tag: tag) }
+        guard allowFullPhotoAccess(app, allow: allow) else { return unreached(app, "写真の許可の札に答えられない", tag: tag) }
         let camera = app.buttons["story.library.camera"].firstMatch
         guard camera.waitForExistence(timeout: 15) else {
             return unreached(app, "許可したのに一覧（カメラのマス）が出ない", tag: tag)
@@ -117,14 +119,25 @@ final class StoryLibraryFirstTests: JPUITestCase {
     }
 
     /// 写真の許可の札（SpringBoard）で「すべて許可」を押す。シミュレータの言葉（英語・日本語）と
-    /// iOS の版で文言が違うので、知っている言葉を順に探す。iOS 18 で確かめの札が続いたらそれも押す
-    private func allowFullPhotoAccess() -> Bool {
+    /// iOS の版で文言が違うので、知っている言葉を順に探す。iOS 18 で確かめの札が続いたらそれも押す。
+    ///
+    /// 2026-11-26（run 1854）: iOS の組み込みの写真選び（`PhotosPicker` の inline）が、アプリの中に
+    /// 「写真へのプライベートアクセス」の札（ボタンは「OK」だけ）を出す。SpringBoard の札ではないので、
+    /// 待っても許可の札が来ない。そのときは「OK」で閉じて、許可の1行を押し直す
+    private func allowFullPhotoAccess(_ app: XCUIApplication, allow: XCUIElement) -> Bool {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let labels = ["フルアクセスを許可", "すべての写真へのアクセスを許可", "Allow Full Access", "Allow Access to All Photos"]
         var answered = false
-        for _ in 0..<3 {
+        var retapped = false
+        for _ in 0..<4 {
             let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: answered ? 3 : 10) else { break }
+            guard alert.waitForExistence(timeout: answered ? 3 : 10) else {
+                // 許可の札が来ない: アプリの中のプライベートアクセスの札に塞がれている。1回だけ閉じて押し直す
+                guard !answered, !retapped, dismissPrivateAccessNotice(app), allow.waitForExistence(timeout: 3) else { break }
+                retapped = true
+                allow.tap()
+                continue
+            }
             guard let label = labels.first(where: { alert.buttons[$0].exists }) else {
                 let seen = (0..<alert.buttons.count).map { alert.buttons.element(boundBy: $0).label }
                 note("許可の札の言葉", seen.joined(separator: " / "))
@@ -135,6 +148,23 @@ final class StoryLibraryFirstTests: JPUITestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         return answered
+    }
+
+    /// 組み込みの写真選びの「写真へのプライベートアクセス」（英語は Private Access to Photos）の札を「OK」で閉じる。
+    /// 札はアプリの中（SpringBoard ではない）に出る。出ていなければ何もしない
+    @discardableResult
+    private func dismissPrivateAccessNotice(_ app: XCUIApplication) -> Bool {
+        let title = NSPredicate(format: "label CONTAINS %@ OR label CONTAINS[c] %@", "プライベートアクセス", "Private Access")
+        let notice = app.descendants(matching: .any).matching(title).firstMatch
+        guard notice.waitForExistence(timeout: 3) else { return false }
+        let ok = app.buttons["OK"].firstMatch
+        guard ok.waitForExistence(timeout: 2) else {
+            note("プライベートアクセスの札", "OK が見つからない: \(notice.label)")
+            return false
+        }
+        ok.tap()
+        Thread.sleep(forTimeInterval: 1)
+        return true
     }
 
     // MARK: - 記録
