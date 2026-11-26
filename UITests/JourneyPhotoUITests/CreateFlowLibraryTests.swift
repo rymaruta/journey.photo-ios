@@ -198,7 +198,8 @@ final class CreateFlowLibraryTests: JPUITestCase {
                 note("許可の札の言葉", seen.joined(separator: " / "))
                 return false
             }
-            alert.buttons[label].tap()
+            // iOS 27 の許可の札はボタンが入れ子で同じ識別子を2つ持つ（run 1859）。1つに絞って押す
+            alert.buttons[label].firstMatch.tap()
             answered = true
             Thread.sleep(forTimeInterval: 1)
         }
