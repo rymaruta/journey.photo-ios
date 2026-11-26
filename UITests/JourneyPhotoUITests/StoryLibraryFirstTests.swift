@@ -68,8 +68,8 @@ final class StoryLibraryFirstTests: JPUITestCase {
         let emptyAdd = app.buttons["stories.empty.add"].firstMatch
         // ストーリーの行は一覧を読み終えるまで出ない（`StoriesRow.showsRings`）。読み終えるのは遅くてもアプリの待ち
         // （`APIClient.requestTimeout` 20秒）が切れたとき。20 秒ちょうどで待つのをやめると、その境目で落ちた（run 1859）
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline, !mine.exists, !emptyAdd.exists { Thread.sleep(forTimeInterval: 0.5) }
+        let ringDeadline = Date().addingTimeInterval(30)
+        while Date() < ringDeadline, !mine.exists, !emptyAdd.exists { Thread.sleep(forTimeInterval: 0.5) }
         if mine.exists {
             Thread.sleep(forTimeInterval: 2)
             let origin = app.coordinate(withNormalizedOffset: .zero)
