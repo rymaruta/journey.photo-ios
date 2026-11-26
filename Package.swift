@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 //
 // **Xcode のプロジェクトはこれではない**（`project.yml` から XcodeGen が作る）。
 // ここは「画面を持たない層」だけを切り出したパッケージで、目的はひとつ:
