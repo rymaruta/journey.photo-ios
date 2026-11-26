@@ -138,7 +138,7 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – AI に頼む、旅行プランを作る：それぞれ1日20回、月300回まで（無料は、AI に頼むが1日3回と月10回、旅行プランが1日5回と月30回）。端末の AI が使えない iPhone でも、サーバーの AI で答えます
 – 光と天気の知らせ：行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に
 – 電波なしで使える旅：地図、作例、光の時刻を端末に
-– Pro マークと Pro 限定の章
+– Pro マーク
 – 特別な乗車券：真鍮、漆、革などの券面
 – 旅のトランクをもっと：特別なトランク6型、好きなデザインを2投稿ごとに、手持ち150枚（無料は30枚）
 – 月額500円、年額5,000円。無料の試用はありません
@@ -148,14 +148,14 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 プライバシーポリシー: https://journey-photo.com/privacy
 
 ■ 安心して使うために
-– アカウントが無くても、写真、検索、地図、観光スポットを見られます。投稿、いいね、コメント、フォロー、メッセージには、メールアドレスでの登録が必要です
+– アカウントが無くても、写真、検索、地図、観光スポットを見られます。投稿、いいね、コメント、フォロー、メッセージには、メールアドレス、Apple、Google のどれかでの登録が必要です
 – 写真、コメント、ストーリー、メッセージ、旅行プランの会話、プロフィールは通報でき、相手をブロックできます。ブロックは設定からいつでも解除できます
 – 検索エンジンにプロフィールを出さない設定があります
 – アカウントはアプリ内から削除できます
 – 設定の「意見を送る」から、運営に声を届けられます
 ```
 
-英語（約3,990字。2026-11-15 に AI の節を足し、細かい5行を外して4000字に収めた。2026-11-22 に AI に頼むと文で探すを足し、県の地図と地方からの一覧の2行を外した）:
+英語（3,974字。2026-11-15 に AI の節を足し、細かい5行を外して4000字に収めた。2026-11-22 に AI に頼むと文で探すを足し、県の地図と地方からの一覧の2行を外した。2026-11-26 に登録の行を Apple と Google に合わせ、Pro の「Pro 限定の章」をアプリでも配れるまで外した）:
 
 ```
 Share moments from your trips and find your next destination in everyone's photos. Plan trips, post and keep in touch with travel friends, all in one app. No account is needed to browse.
@@ -214,7 +214,7 @@ JOURNEY PHOTO PRO (OPTIONAL, AUTO-RENEWABLE SUBSCRIPTION)
 - Ask AI and AI trip plans: 20 a day and 300 a month each, on any iPhone
 - Light and weather alerts for places you want to go
 - Offline trips
-- A Pro mark and Pro-only chapters
+- A Pro mark
 - Special Pass ticket designs
 - More from your Travel trunk: 6 special trunks, your own label design every 2 posts, room for 150 labels (30 for free)
 - 500 yen per month or 5,000 yen per year. No free trial. Payment is charged to your Apple ID at confirmation of purchase and renews automatically unless canceled at least 24 hours before the end of the period. Manage or cancel in your App Store account settings. Family Sharing is not supported
@@ -223,7 +223,7 @@ Terms of Use: https://journey-photo.com/terms
 Privacy Policy: https://journey-photo.com/privacy
 
 FEEL SAFE
-- Browse without an account. Posting, likes, comments, follows and messages need an email sign-up
+- Browse without an account. Posting, likes, comments, follows and messages need an account (email, Apple or Google)
 - Report photos, comments, stories, messages, trip plan chats and profiles, and block people. Unblock anytime in Settings
 - Hide your profile from search engines
 - Delete your account in the app

@@ -10,88 +10,126 @@ App Store Connect の「App Review に関する情報」に入れる文と、そ
 
 ## Notes に貼る文面
 
-審査官は英語を読むので、**貼るのは英語**（約3,986字。2026-11-23 に AI の行を同意の画面（1.1.119）に合わせ、2026-11-24 にログインの行を Apple と Google のある 1.2.x に合わせた。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+審査官は英語を読むので、**貼るのは英語**（3,883字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+2026-11-23 に AI の行を同意の画面（1.1.119）に合わせ、2026-11-24 にログインの行を Apple と Google のある 1.2.x に合わせた。
+2026-11-26 に、申請し直す前に直した: 通知の尋ね方（初めての投稿かフォローのあとに説明とボタン1つ）、Sandbox ではサポーターのバッジが付かないこと、
+Sandbox の Apple ID の定期購入が買ったアカウントに残ること、曲の試聴（iTunes Search API の30秒と Apple Music へのリンク）、
+AI の答えと旅行プランの「この答えを報告」。字数を空けるため、ほかの行を短くした（言っていることは同じ）。
+🔴 曲の試聴の行と「この答えを報告」の行は、iOS の別の担当が今足している機能。**その版が出る前に貼らない**（出す版に入っているかを確かめてから）。
 ID とパスワードはここに書かず、「サインイン情報」の欄に入れる（下の「審査用アカウント」）。Notes に書き足すものは無い。
 
 ### 英語（貼る）
 
 ```
-Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an account (email, Sign in with Apple or Google). The demo account is in the sign-in fields. It already has one public photo and follows, and is followed by, an account run by our team. That account sent it a message and is a member of its trip plan, which has one chat message, so you can test Messages and trip plan chat. That account is ours: feel free to report or block it.
+Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an account (email, Apple or Google). The demo account is in the sign-in fields. It has one public photo and mutually follows an account run by our team, which sent it a message and is in its trip plan (one chat message). Feel free to report or block that account.
 
 USER-GENERATED CONTENT (1.2)
-- Terms prohibiting objectionable content must be accepted on first launch.
-- Photos and comments: "..." > Report (8 reasons + note) or Block. Reported or blocked content disappears from the reporter's screens at once. Unblock: My Page > Settings > Blocked people.
-- Stories: Report and Block in the viewer. Story replies: "..." on each reply.
+- Terms banning objectionable content are accepted on first launch.
+- Photos and comments: "..." > Report (8 reasons + note) or Block. Reported or blocked content disappears for the reporter at once. Unblock: Settings > Blocked people.
+- Stories: Report and Block in the viewer; "..." on each story reply.
 - Profiles: "..." > Report or Block.
-- Messages (1:1, with people you follow): open from the chat bubble at the top right of Home, or "Message" on a profile. In a conversation, "..." > Report or Block. A report sends us a copy of the latest 20 messages. Until accepted, a sender can send only 3 text messages and no links or photos.
-- Trip plan chat (people invited by link): long-press a message > Report or Block. A report sends us a copy of the latest 20 messages. Any member can leave the plan.
+- Messages (1:1), from Home (top right) or a profile: in a conversation, "..." > Report or Block. Reports include the latest 20 messages. Before a request is accepted: 3 text messages max, no links or photos.
+- Trip plan chat (members invited by link): long-press a message > Report or Block. Members can leave.
 - Pass cards: Report, Block and Remove on each card.
-- Reports reach journey.photo.official@gmail.com. We review them within 24 hours and remove violating content and accounts.
+- Reports reach journey.photo.official@gmail.com; we review them within 24 hours and remove violations.
 
 ACCOUNT
-- Delete account in-app: My Page > Settings > Delete account. You may delete the demo account.
-- Sign-in: email and password, Sign in with Apple, or Google. Sign in with Apple is offered next to Google (4.8).
+- Delete account: My Page > Settings > Delete account. You may delete the demo account.
+- Sign-in: email, Google, or Sign in with Apple, shown next to Google (4.8).
 
-PERMISSIONS (asked in context, with purpose strings)
-- Camera: posting, story capture, composition overlay, scanning profile QR codes.
-- Microphone: sound for story videos only, asked when recording a video.
-- Photos: add-only to save shots; read access to pick photos and for "trips from photos on this iPhone" (My Page > Trips, asked only after an explanation and "Continue"). Only capture date, rounded location and identifier are read on device; image data is never uploaded.
-- Location (When In Use): current position on the photo map. Never sent to our server. EXIF/GPS is stripped on device before upload; a photo's place is stored rounded to about 1 km.
-- Notifications: asked only after the user taps to turn them on.
+PERMISSIONS (asked in context)
+- Camera: posts, stories, composition overlay, profile QR codes.
+- Microphone: story video sound only, asked when recording.
+- Photos: add-only to save shots; read access to pick photos and for "trips from photos" (asked after an explanation). Only date, rounded place and ID are read on device; images are not uploaded.
+- Location (When In Use): current position on the map, never sent to us. EXIF/GPS is stripped before upload; places are rounded to about 1 km.
+- Notifications: After the first post or follow, a short explanation appears with one button that leads to the iOS prompt; declining keeps the app fully usable.
 
 BACKGROUND BLUETOOTH FOR "PASS" (bluetooth-central, bluetooth-peripheral)
-- Optional and OFF by default. It starts only after My Page > Settings > Pass, an explanation, "Turn on" and the iOS Bluetooth prompt. Turning it off stops advertising and scanning.
-- Used only to swap a small card with nearby devices running this app (one app-specific service UUID). Payload: id of one public photo the user chose, a short note, from/to text, ticket design, and whether to show the prefecture from the profile. No location, contacts or device identifiers.
-- Swapping needs two iPhones with two accounts. One iPhone with the demo account shows the explanation, prompt and off-by-default switch. A screen recording (video URL) of two iPhones can be provided on request.
+- Optional, OFF by default. Starts only after My Page > Settings > Pass, an explanation, "Turn on" and the iOS prompt. Turning it off stops it.
+- Only swaps a small card with nearby devices running this app (one service UUID): id of one chosen public photo, a short note, from/to text, ticket design, prefecture on/off. No location, contacts or device IDs.
+- Swapping needs two iPhones and two accounts; one iPhone shows the explanation, prompt and switch. A screen recording of two iPhones swapping cards can be sent on request.
+
+MUSIC IN STORIES
+- Song search and 30-second previews use the iTunes Search API; each song links to Apple Music. Full tracks are never played.
 
 AI (TRIP PLANS, ASK AI)
-- Runs on device with Apple Intelligence where supported. Otherwise, for Pro users, text is sent to our servers and an AI provider acting on our behalf, only after explicit permission asked before the first send (withdraw anytime in Settings).
+- On device with Apple Intelligence where supported. Otherwise, for Pro users, text goes to our servers and an AI provider acting for us, only after explicit permission before the first send (withdraw in Settings). Daily and monthly limits apply.
+- Every AI answer and AI trip plan has "Report this answer".
 
 IN-APP PURCHASE (3.1.2)
 - Subscription group "Journey Photo Pro": monthly (com.journeyphoto.JourneyPhoto.pro.monthly, 500 JPY) and yearly (com.journeyphoto.JourneyPhoto.pro.yearly, 5,000 JPY). No free trial.
 - Test: My Page > Settings > Pro > pick a plan > "Start Pro" (Sandbox). Restore is under the plans.
-- Travel trunk coins and parts are earned by posting and cannot be bought.
+- Supporter badge is granted for production purchases only; in Sandbox, Pro features work but the badge is not shown.
+- A subscription bought with a sandbox Apple ID stays with the account that bought it; after deleting the demo account, please use a different sandbox Apple ID to test Pro.
+- Coins and trunk parts are earned by posting and cannot be bought.
 ```
 
 ### 日本語（確かめる用）
 
 ```
-Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはアカウントが必要です（メールアドレス、Apple でサインイン、Google のどれかで登録）。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに運営のアカウントが仲間として入り、会話に1通あるので、メッセージと旅行プランの会話を試せます。相手役のアカウントは運営のものなので、通報やブロックを試してかまいません。
+Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはアカウントが必要です（メールアドレス、Apple、Google のどれかでの登録）。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに仲間として入り、会話に1通あります。そのアカウントは通報やブロックを試してかまいません。
 
 ユーザー生成コンテンツ（1.2）
 - 初回起動で、不適切な内容を認めない旨を含む規約への同意を求めます。
-- 写真とコメント：「…」から通報（理由8種と補足）、ブロック。通報、ブロックした内容は、その人の画面からその場で消えます。解除はマイページ → 設定 → ブロックした人。
+- 写真とコメント：「…」から通報（理由8種と補足）、ブロック。通報、ブロックした内容は、その人の画面からその場で消えます。解除は設定 → ブロックした人。
 - ストーリー：閲覧画面に通報とブロック。ストーリーへの返信は各行の「…」。
 - プロフィール：「…」から通報、ブロック。
-- メッセージ（1対1、フォローしている人と）：ホームの右上の吹き出し、またはプロフィールの「メッセージ」から。会話の「…」から通報、ブロック。通報すると直近20通の写しが運営に届きます。承認されるまで、送れるのは文字3通までで、リンクと写真は送れません。
-- 旅行プランの会話（招待リンクで加わった人）：1通を長押しして通報、ブロック。通報すると直近20通の写しが運営に届きます。誰でもプランから抜けられます。
+- メッセージ（1対1）：ホームの右上、またはプロフィールから。会話の「…」から通報、ブロック。通報には直近20通が付きます。承認されるまでは、文字3通までで、リンクと写真は送れません。
+- 旅行プランの会話（招待リンクで加わった人）：1通を長押しして通報、ブロック。仲間はプランから抜けられます。
 - すれちがいのカード：各カードに通報、ブロック、帳から外す。
 - 通報の宛先は journey.photo.official@gmail.com。24時間以内に確かめ、違反した内容とアカウントを消します。
 
 アカウント
-- 削除：マイページ → 設定 → アカウントの削除（アプリ内）。審査用アカウントは消してかまいません。
-- ログイン：メールアドレスとパスワード、Apple でサインイン、Google。Google と並べて Apple でサインインを出しているので、4.8 を満たします。
+- 削除：マイページ → 設定 → アカウントの削除。審査用アカウントは消してかまいません。
+- ログイン：メールアドレス、Google、Apple でサインイン。Apple は Google の隣に出しています（4.8）。
 
-権限（使う場面で尋ね、利用目的の文を付けています）
-- カメラ：投稿、ストーリーの撮影、作例を重ねた撮影、プロフィールの QR の読み取り。
-- マイク：ストーリーの動画の音声だけ。動画を撮るときに尋ねます。
-- 写真：撮った写真の保存（追加のみ）。読み取りは、投稿する写真の選択と「端末の写真から旅」（マイページ → 旅の記録。説明のあと「続ける」を押したときだけ尋ねる）。端末の中で撮影日時、丸めた位置、識別子だけを読み、画像は送りません。
-- 位置情報（使用中のみ）：撮影地マップの現在地。サーバーへは送りません。写真の EXIF と GPS は端末で取り除いてから送り、撮影地は約1kmに丸めて保存します。
-- 通知：利用者がオンにする操作をしたときだけ尋ねます。
+権限（使う場面で尋ねます）
+- カメラ：投稿、ストーリー、作例を重ねた撮影、プロフィールの QR。
+- マイク：ストーリーの動画の音声だけ。撮るときに尋ねます。
+- 写真：撮った写真の保存（追加のみ）。読み取りは、投稿する写真の選択と「端末の写真から旅」（説明のあとで尋ねる）。端末の中で撮影日時、丸めた位置、識別子だけを読み、画像は送りません。
+- 位置情報（使用中のみ）：地図の現在地。サーバーへは送りません。写真の EXIF と GPS は送る前に取り除き、場所は約1kmに丸めます。
+- 通知：初めて投稿したとき、またはフォローしたときに、短い説明とボタン1つを出し、押すと iOS の確認が出ます。断ってもアプリはすべて使えます。
 
 すれちがい乗車券の背景の Bluetooth（bluetooth-central、bluetooth-peripheral）
-- 任意で、初期設定はオフ。マイページ → 設定 → すれちがい乗車券で説明を読み、「オンにする」を押し、iOS の Bluetooth の確認を許可して初めて動きます。オフにすると広告も走査も止まります。
-- 目的は、同じアプリの近くの端末と小さなカードを交換することだけ（専用のサービス UUID）。中身は、選んだ公開写真1枚の id、ひとこと、発と着の字、券面の種類、プロフィールの都道府県を出すかの印。位置、連絡先、端末の識別子は送りません。
-- 交換を試すには iPhone が2台と、アカウントが2つ要ります。審査用アカウントの1台で、説明、許可の確認、初期設定のオフは確かめられます。2台での画面収録（動画の URL）は求められたら送ります。
+- 任意で、初期設定はオフ。マイページ → 設定 → すれちがい乗車券で説明を読み、「オンにする」と iOS の確認のあとで初めて動きます。オフにすると止まります。
+- 同じアプリの近くの端末と小さなカードを交換するだけ（専用のサービス UUID）。中身は、選んだ公開写真1枚の id、ひとこと、発と着の字、券面の種類、都道府県を出すかの印。位置、連絡先、端末の識別子は送りません。
+- 交換には iPhone が2台とアカウントが2つ要ります。1台で、説明、確認、オフのスイッチは見られます。2台で交換する画面収録は、求められたら送ります。
+
+ストーリーの曲
+- 曲の検索と30秒の試聴は iTunes Search API を使います。各曲に Apple Music へのリンクを出します。曲の全体は流しません。
 
 AI（旅行プラン、AI に頼む）
-- 対応する iPhone では端末の AI で動きます。それ以外の iPhone の Pro の人は、文をサーバーに送り、委託先の AI で処理します。初めて送る前に、はっきり許可を求めます（「同意して続ける」と「やめる」）。やめた人には送りません。設定の「公開範囲とプライバシー」で取り消せます。1日と月の回数の上限があります。
+- 対応する iPhone では端末の AI（Apple Intelligence）で動きます。それ以外の iPhone の Pro の人は、初めて送る前にはっきり許可を求め、許した人だけ文をサーバーと委託先の AI に送ります（設定で取り消せます）。1日と月の回数の上限があります。
+- AI の答えと AI の旅行プランのそれぞれに「この答えを報告」があります。
 
 App 内課金（3.1.2）
 - 定期購入「Journey Photo Pro」：月額（com.journeyphoto.JourneyPhoto.pro.monthly、500円）、年額（com.journeyphoto.JourneyPhoto.pro.yearly、5,000円）。無料の試用なし。
 - 試し方：マイページ → 設定 → Pro → プランを選び「Pro をはじめる」（Sandbox）。購入を復元はプランの下。
+- サポーターのバッジは本番の購入だけに付きます。Sandbox では Pro の機能は使えますが、バッジは出ません。
+- Sandbox の Apple ID で買った定期購入は、買ったアカウントに残ります。審査用アカウントを消したあとに Pro を試すときは、別の Sandbox の Apple ID を使ってください。
 - 旅のトランクの硬貨と部品は投稿で配られ、購入できません。
 ```
+
+### 入ったら足す文
+
+サーバーの別の担当が、投稿の前に言葉を判定する仕組みを足している（2026-11-26 時点で本番に無い）。
+**本番に出たら**、上の「英語（貼る）」の「USER-GENERATED CONTENT (1.2)」の1行目の下に、次の1行を足す
+（日本語の方にも同じ意味の行を足す）。判定するのが投稿とコメントのどちらまでかは、入った仕組みに合わせて直す。
+足しても 4,000 字に収まることは `Tools/test_asc_submit.py` が確かめる。
+
+```
+- Text in posts and comments is checked on our server before it is published; abusive words are blocked.
+```
+
+日本語: 「投稿とコメントの文は、載せる前にサーバーで確かめ、ひどい言葉は載せません。」
+足したら、下の「ガイドライン別の対応」の「不適切な内容を出さない仕組み」の行の「事前の審査は無い」も直す。
+
+### すれちがいの動画
+
+すれちがいの交換は iPhone が2台要り、審査の人は試せない。**owner が2台で交換する画面収録を撮って、URL を入れる。**
+撮ったら、「英語（貼る）」の「A screen recording of two iPhones swapping cards can be sent on request.」を
+「A screen recording of two iPhones swapping cards: <video URL>」（<video URL> は撮った動画の URL）に替える（日本語の方も同じように替える）。
+URL が入るまでは今の一文のままにする（無い URL を貼らない）。
 
 **「24時間以内に確かめる」は owner の運用の約束になる**（ガイドライン 1.2 は通報への速い対応を求める）。
 守れないなら、貼る前にこの一文を「promptly」「速やかに」に直す。
@@ -144,7 +182,7 @@ App 内課金（3.1.2）
 | 5.1.2 | プライバシーポリシー | 2026-11-15 版で、メッセージの写真と観光スポット、ストーリーの動画とマイク、旅行プランの会話の通報、意見に添える記録、行った県を足した | 合っている（本番に出したあと） | journey.photo-web #650（本番）、#651（develop） |
 | 5.1.1 / 5.1.2 | 写真の権限 | 選ぶ、保存（追加のみ）、端末の写真から旅（説明の札の「続ける」で初めて尋ねる）。説明文は用途を3つとも書いている | 合っている | `project.yml` の `NSPhotoLibraryUsageDescription`、`NSPhotoLibraryAddUsageDescription`、`DeviceTrips.swift` |
 | 5.1.1 / 5.1.2 | 位置 | 使用中のみ。撮影地マップの現在地、許可済みのときだけ観光スポットを近い順、すれちがいの市区町村名（約1kmに丸めて Apple の地図へ）。サーバーへは送らない。説明文にこの3つを書いてある | 合っている | `NSLocationWhenInUseUsageDescription`、`CurrentLocation.swift`、`PassRadio.swift` |
-| 5.1.1 / 4.5.4 | 通知 | 起動時には尋ねない。通知の画面、設定、すれちがい、光の知らせで「受け取る」を押したときだけ `requestAuthorization` | 合っている | `PushCenter.enable`、呼ぶのは `NotificationsView`、`SettingsView`、`PushPrimerView`、`PassSettingsView`、`LightAlertSettingsRows` |
+| 5.1.1 / 4.5.4 | 通知 | 起動時には尋ねない。初めての投稿かフォローのあとに短い説明とボタン1つを出し（`PushPrimerStore.reachedOut`）、押したときに `requestAuthorization`。通知の画面、設定、すれちがい、光の知らせで「受け取る」を押したときも同じ。断っても使える | 合っている | `PushCenter.enable`、呼ぶのは `PushPrimerView`、`NotificationsView`、`SettingsView`、`PassSettingsView`、`LightAlertSettingsRows` |
 | 5.1.1 | マイク | ストーリーの動画を撮るときだけ | 合っている | `StoryCameraView.swift`（`AVCaptureDevice.requestAccess(for: .audio)`）、`NSMicrophoneUsageDescription` |
 | 2.5.4 | 背景の Bluetooth | すれちがい乗車券だけ。既定はオフ。差し戻されたときの返答は Artifact の 3-4 | 合っている（差し戻しの心配は残る） | `PassRadio.swift`、`UIBackgroundModes` |
 | 3.1.2 | 自動更新の定期購入 | 値段、期間、自動更新の一文、利用規約とプライバシーポリシーのリンク、購入の復元 | 合っている | `PaywallView.swift`、`ProPaywallText` |
@@ -225,7 +263,8 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 - [ ] 年齢制限の質問票（上の表）
 - [ ] 名前、サブタイトル、説明、キーワード、最新情報、サポート URL、プライバシーポリシー URL、カテゴリ（`docs/APP_STORE_METADATA.md`）
 - [ ] Web のプライバシーポリシーが 2026年11月15日版になっている（journey.photo-web #650 が本番に出た）
-- [ ] Notes に上の英語を貼った（すれちがいの動画を付けるなら video URL の一文を URL に替える）
+- [ ] Notes に上の英語を貼った（すれちがいの動画を撮ったら、上の「すれちがいの動画」のとおり URL の一文に替える）
+- [ ] `asc-submit.yml` の下見（`apply=false`）に、利用規約のリンクか EULA、プライバシーポリシーの URL、定期購入でない課金の商品、販売をやめた定期購入の警告が出ていない
 - [ ] 自動更新の定期購入: 説明文か App Store Connect の「使用許諾契約（EULA）」の欄に利用規約のリンク（`https://journey-photo.com/terms`）を入れた（審査 3.1.2）
 - [ ] 課金の商品（`pro.monthly`、`pro.yearly`）を**この版と一緒に審査へ出した**（版の「App 内課金とサブスクリプション」に追加。まだ一度も審査を通っていないなら、版と一緒でないと審査されない）
 - [ ] 輸出コンプライアンスは `ITSAppUsesNonExemptEncryption: false` なので聞かれない。広告識別子は「いいえ」
@@ -246,5 +285,5 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 
 - **背景の Bluetooth（2.5.4）。** すれちがいの説明を求められることがある。返答の下書きは Artifact の 3-4
 - **投稿が少ないと「中身が薄い」と見られることがある。** 審査用アカウントで写真を投稿しておく
-- **すれちがいは iPhone が2台ないと試せない。** 審査用アカウントは1つなので、交換は試せない。動画を求められたら、2台で撮った画面収録を送る
+- **すれちがいは iPhone が2台ないと試せない。** 審査用アカウントは1つなので、交換は試せない。owner が2台で画面収録を撮り、URL を Notes に入れる（上の「すれちがいの動画」）
 - **他社の AI にデータを渡すこと（5.1.2(i)、2025-11 の改定）。** 1.1.119 で、サーバーの AI に初めて送る前に同意の画面（明示の許可）を出す形にした（`AIServerConsent`、PR #702）。設定で取り消せる。2026-11-23 owner 判断で、AI に頼むと旅行プランの画面の注記（「サーバーに送信し、委託先の AI で処理します」）は外した。送ることの知らせはこの同意の画面で行う（画面に常に出る注記は「※AI の回答は間違えることがあります」だけ）
