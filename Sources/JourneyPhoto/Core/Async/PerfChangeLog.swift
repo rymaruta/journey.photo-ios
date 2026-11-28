@@ -25,6 +25,28 @@ enum PerfChangeLog {
         V._printChanges()
     }
 
+    /// `.equatable()` の `==` が「違う」と答えたとき、**渡された値のどれが違ったか**を `chg.<画面>.neq.<値>` で数える
+    /// （2026-11-28・札 #594 の2回目の事実取り。`_printChanges` は `@self` としか言わない）。
+    /// 写真のような値は1段だけ中まで見る（`chg.HomeFeedTile.neq.photo.likes`）。比べるのは値の文字の形
+    /// （`String(reflecting:)`）なので遅いが、**UI テストのときだけ**動く。本番は何もしない
+    nonisolated static func noteDifferences<T>(_ view: String, _ lhs: T, _ rhs: T) {
+        guard PerfRecorder.shared.isEnabled else { return }
+        for key in differences(lhs, rhs, depth: 1) { PerfTimeline.shared.count("chg.\(view).neq.\(key)") }
+    }
+
+    /// 2つの値で違う所の名前（`photo.likes`・`large`）。中を持たない値なら空
+    nonisolated static func differences(_ lhs: Any, _ rhs: Any, depth: Int) -> [String] {
+        let left = Array(Mirror(reflecting: lhs).children), right = Array(Mirror(reflecting: rhs).children)
+        guard left.count == right.count else { return ["count"] }
+        var out: [String] = []
+        for (a, b) in zip(left, right) where String(reflecting: a.value) != String(reflecting: b.value) {
+            let label = a.label ?? "item"
+            let inner = depth > 0 && a.label != nil ? differences(a.value, b.value, depth: depth - 1) : []
+            out += inner.isEmpty ? [label] : inner.map { "\(label).\($0)" }
+        }
+        return out
+    }
+
     /// `_printChanges` の 1 行から数える名前を作る（`chg.GalleryView._auth` など）。形が違えば空。
     ///
     ///     "GalleryView: @self, _auth changed." → ["chg.GalleryView.@self", "chg.GalleryView._auth"]

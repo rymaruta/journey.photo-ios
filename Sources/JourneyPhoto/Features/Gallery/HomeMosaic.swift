@@ -86,7 +86,10 @@ struct HomeMosaic: View {
 /// 変わったときは、今までどおり描き直す
 extension HomeFeedTile: Equatable {
     nonisolated static func == (lhs: HomeFeedTile, rhs: HomeFeedTile) -> Bool {
-        lhs.drawnInputs == rhs.drawnInputs
+        let same = lhs.drawnInputs == rhs.drawnInputs
+        // 違ったら、どの値が違ったかを数える（UI テストのときだけ・2026-11-28 札 #594 の2回目の事実取り）
+        if !same { PerfChangeLog.noteDifferences("HomeFeedTile", lhs.drawnInputs, rhs.drawnInputs) }
+        return same
     }
 
     /// 親から渡される値のうち、描く中身を変えるもの

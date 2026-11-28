@@ -13,7 +13,10 @@ import SwiftUI
 /// 札自身の状態（`@State`・`@EnvironmentObject`・`@ObservedObject`）が変わったときは、今までどおり描き直す
 extension HomeTopCardView: Equatable {
     nonisolated static func == (lhs: HomeTopCardView, rhs: HomeTopCardView) -> Bool {
-        lhs.drawnInputs == rhs.drawnInputs
+        let same = lhs.drawnInputs == rhs.drawnInputs
+        // 違ったら、どの値が違ったかを数える（UI テストのときだけ・`PerfChangeLog.noteDifferences`）
+        if !same { PerfChangeLog.noteDifferences("HomeTopCardView", lhs.drawnInputs, rhs.drawnInputs) }
+        return same
     }
 
     /// 親から渡される値のうち、描く中身を変えるもの
