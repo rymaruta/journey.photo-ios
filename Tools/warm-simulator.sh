@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# UI テストの前に、シミュレーターを起動し、組んだアプリを1回起動して閉じる（2026-10-31・#429 の試し）。
+# テストの前に、シミュレーターを起動し、組んだアプリを1回起動して閉じる（2026-10-31・#429 の試し）。
+# 分けて流す回の UI の組（`.github/actions/mac-test-part/action.yml`）と、単体の段の頭（`Tools/xcode-test.sh unit`・
+# 2026-11-28・札 #610。lockdown の 120秒待ちと通知の最初の1回の遅さを、起動しきってから流して避ける）が呼ぶ。
 #
 #     DEVICE="iPhone 17 Pro Max" bash Tools/warm-simulator.sh build/products
 #
@@ -45,10 +47,12 @@ t2="$(now)"
 xcrun simctl launch "$DEVICE" "$bundle" >/dev/null || echo "::warning::温め: 起動できませんでした"
 launch="$(since "$t2")"
 # 起動のあとの読み込み（一覧・字体・3D の初回の支度）が進むよう、しばらく開いたままにする
-sleep 20
+# （`WARM_OPEN_SECONDS` は Linux の検査が偽の xcrun で流すときだけ 0 にする）
+open_seconds="${WARM_OPEN_SECONDS:-20}"
+sleep "$open_seconds"
 xcrun simctl terminate "$DEVICE" "$bundle" 2>/dev/null || true
 
-line="温め（${DEVICE}・${bundle}）: 起動 ${boot} 秒・入れる ${install} 秒・アプリの起動 ${launch} 秒＋開いたまま 20 秒"
+line="温め（${DEVICE}・${bundle}）: 起動 ${boot} 秒・入れる ${install} 秒・アプリの起動 ${launch} 秒＋開いたまま ${open_seconds} 秒"
 echo "$line"
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "- $line" >> "$GITHUB_STEP_SUMMARY"
 exit 0

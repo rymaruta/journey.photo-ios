@@ -574,6 +574,42 @@ if testflight_yml.exists() and pr_yml.exists():
                 if run.returncode != 0 or not any(got[i:i + len(want)] == want for i in range(len(got))):
                     fail(f"Tools/xcode-test.sh {mode} が xcodebuild に時間の上限を渡していません: "
                          f"{run.returncode} {got} {run.stderr[-300:]}")
+    # **単体の前に、シミュレーターが起動しきるのを待って温める**（2026-11-28・札 #610）。
+    # 単体の段だけで出ていた lockdown の 120秒待ち・通知の最初の1回の遅さ（理由と数は `Tools/xcode-test.sh`）を避ける。
+    # 偽の xcrun・xcodebuild で流し、呼ばれた順に確かめる（単体は温めてから xcodebuild。組む段では起こさない）
+    import subprocess as _sp
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as tmp:
+        calls = Path(tmp, "calls")
+        for tool in ("xcrun", "xcodebuild"):
+            Path(tmp, tool).write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$(basename "$0") $*" >> "$FAKE_CALLS"\n'
+                'case "$*" in *"list devices booted"*) echo "    iPhone Test (X) (Booted)";; esac\n', encoding="utf-8")
+            Path(tmp, tool).chmod(0o755)
+        products = Path(tmp, "Products")
+        Path(products, "Debug-iphonesimulator/JourneyPhoto.app").mkdir(parents=True)
+        Path(products, "a.xctestrun").write_text("", encoding="utf-8")
+        env = {**os.environ, "PATH": f"{tmp}:{os.environ.get('PATH', '')}", "DEVICE": "iPhone Test",
+               "XCODE_LOG": str(Path(tmp, "x.log")), "FAKE_CALLS": str(calls), "WARM_OPEN_SECONDS": "0",
+               "XCTESTRUN": str(Path(products, "a.xctestrun"))}
+        seen = {}
+        for mode, extra in (("build", {"XCTESTRUN": ""}), ("unit", {})):
+            calls.write_text("", encoding="utf-8")
+            args = ["bash", str(ROOT / "Tools/xcode-test.sh"), mode] + ([str(Path(tmp, "u.xcresult"))] if mode == "unit" else [])
+            run = _sp.run(args, capture_output=True, text=True, timeout=120, env={**env, **extra})
+            seen[mode] = [line for line in calls.read_text(encoding="utf-8").splitlines()
+                          if not line.startswith("xcrun simctl list")]
+            if run.returncode != 0:
+                fail(f"Tools/xcode-test.sh {mode} が偽の xcrun で落ちました: {run.stderr[-300:]}")
+        # 組む段の間に起こすと、初めての起動の重い仕事とぶつかって組む段が 3倍に延びた（run 1886）
+        if any(line.startswith("xcrun simctl") for line in seen["build"]):
+            fail(f"Tools/xcode-test.sh build がシミュレーターに触っています（組む段が延びる・run 1886）: {seen['build']}")
+        unit = seen["unit"]
+        firsts = [next((i for i, line in enumerate(unit) if line.startswith(head)), -1)
+                  for head in ("xcrun simctl bootstatus iPhone Test", "xcrun simctl install iPhone Test",
+                               "xcodebuild ")]
+        if -1 in firsts or firsts != sorted(firsts):
+            fail(f"Tools/xcode-test.sh unit が、起動しきるのを待ってアプリを入れてから xcodebuild を呼んでいません: {unit}")
     # 配信時の自動選択と、storeShots の絵に要るテストだけの指定を検査する（2026-11-22・札 #604）。
     scope = step_block(flow, "どこまで流すかを決める") or ""
     for required in ('SCREENS="auto"', 'SCREENS="none"',
