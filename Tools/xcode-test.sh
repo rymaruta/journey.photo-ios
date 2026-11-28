@@ -150,6 +150,32 @@ fi
 
 mkdir -p "$(dirname "$LOG")"
 
+# **組む間にシミュレーターを起こしておき、単体の前に起動しきるのを待って温める**（札 #610・2026-11-28 判断）。
+# 根拠（run 1870・1873・1875・1876・1882 の単体の段）: xcodebuild が自分でシミュレーターを起こしたその足で、
+#   - `com.apple.instruments.deviceservice.lockdown` につなげず 120秒待つ（5回とも単体だけ。1873 は「service hub を bless できない」で
+#     起動の約1分後に失敗）。UI の段では一度も出ない
+#   - 通知の予約を消す最初の1回（`[test-warmup]`）が 40〜114秒
+#   - 起こしてからアプリが立ち上がるまで 3〜4分（348MB を入れる）
+# 単体の段は、ランナーでシミュレーターを**初めて**起こす段で、起こし始めの間はシミュレーターの中の仕組み（DTServiceHub・通知）が
+# まだ揃っていない。UI の段は2回目の起動なので出ない、と読んだ。組む段（10分前後）の間に起こしておき（`BOOT_SIMULATOR=1`・
+# 待たずに裏で）、単体の前に `Tools/warm-simulator.sh` で起動しきるのを待ち、アプリを1回入れて立ち上げておく。
+# 先に起こしておけば、xcodebuild は自分で起こしていないので段の終わりに落とさず、UI の段も起こし直さない
+# （前は UI の段の頭で毎回「起動」から数え直していた）。xcrun の無い所（Linux の検査）では何もしない
+if command -v xcrun >/dev/null 2>&1; then
+    if [ "$mode" = "build" ] && [ "${BOOT_SIMULATOR:-}" = "1" ]; then
+        echo "組む間にシミュレーターを起こします: $DEVICE"
+        ( xcrun simctl boot "$DEVICE" >/dev/null 2>&1 || true ) &
+    fi
+    if [ "$mode" = "unit" ]; then
+        products="$(dirname "${XCTESTRUN:-}")"
+        [ -n "${XCTESTRUN:-}" ] || products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d \
+            -path '*/JourneyPhoto-*/Build/Products' 2>/dev/null | head -1 || true)"
+        if [ -n "$products" ]; then
+            DEVICE="$DEVICE" bash Tools/warm-simulator.sh "$products" | tee -a "$LOG"
+        fi
+    fi
+fi
+
 # **流し始めから最初のテストまでの内訳を数で出す**（札 #610・2026-11-14 判断）。
 # 単体テストの段で、結果の置き場を書いてから最初のテストが始まるまで 78〜526秒と回ごとに大きく違った
 # （run 931・1197・1329・1330）。シミュレーターが起動した時と、テストを載せるアプリが立ち上がった時を
@@ -163,12 +189,13 @@ if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
             booted=1; echo "measured [sim] $mode 始めから起動済み" | tee -a "$LOG"
         fi
         while [ $(( $(date +%s) - started )) -lt $limit ]; do
-            elapsed=$(( $(date +%s) - started ))
+            # 秒は見つけた後に数える（シミュレーターを起こしている間は `simctl list` 自体が1〜2分戻らず、
+            # 前は問い合わせる前の秒を出していた。run 1873 の「起動 67s」は実際には段の頭から約200秒後に出た）
             if [ -z "$booted" ] && xcrun simctl list devices booted 2>/dev/null | grep -qF "$DEVICE ("; then
-                booted=1; echo "measured [sim] $mode 起動 ${elapsed}s" | tee -a "$LOG"
+                booted=1; echo "measured [sim] $mode 起動 $(( $(date +%s) - started ))s" | tee -a "$LOG"
             fi
             if [ -z "$launched" ] && pgrep -f "JourneyPhoto.app/JourneyPhoto" >/dev/null 2>&1; then
-                launched=1; echo "measured [sim] $mode アプリが立ち上がった ${elapsed}s" | tee -a "$LOG"
+                launched=1; echo "measured [sim] $mode アプリが立ち上がった $(( $(date +%s) - started ))s" | tee -a "$LOG"
             fi
             if [ -n "$booted" ] && [ -n "$launched" ]; then break; fi
             sleep 1
