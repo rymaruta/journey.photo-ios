@@ -600,8 +600,7 @@ jobs:
           # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
           # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
           # （この3つは `Tools/xcode-test.sh` の中に書いてある）
-          # 組む間にシミュレーターを起こしておく（`BOOT_SIMULATOR=1`・札 #610。理由と数は `Tools/xcode-test.sh`）
-          DEVICE="$DEVICE" BOOT_SIMULATOR=1 bash Tools/xcode-test.sh build
+          DEVICE="$DEVICE" bash Tools/xcode-test.sh build
 
       # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
       # tests=trueの配信では、ビルド後に変更箇所に応じたUIテストを実行する。

@@ -150,29 +150,25 @@ fi
 
 mkdir -p "$(dirname "$LOG")"
 
-# **組む間にシミュレーターを起こしておき、単体の前に起動しきるのを待って温める**（札 #610・2026-11-28 判断）。
+# **単体の前に、シミュレーターが起動しきるのを待ってアプリを1回立ち上げておく**（札 #610・2026-11-28 判断）。
 # 根拠（run 1870・1873・1875・1876・1882 の単体の段）: xcodebuild が自分でシミュレーターを起こしたその足で、
 #   - `com.apple.instruments.deviceservice.lockdown` につなげず 120秒待つ（5回とも単体だけ。1873 は「service hub を bless できない」で
 #     起動の約1分後に失敗）。UI の段では一度も出ない
 #   - 通知の予約を消す最初の1回（`[test-warmup]`）が 40〜114秒
 #   - 起こしてからアプリが立ち上がるまで 3〜4分（348MB を入れる）
-# 単体の段は、ランナーでシミュレーターを**初めて**起こす段で、起こし始めの間はシミュレーターの中の仕組み（DTServiceHub・通知）が
-# まだ揃っていない。UI の段は2回目の起動なので出ない、と読んだ。組む段（10分前後）の間に起こしておき（`BOOT_SIMULATOR=1`・
-# 待たずに裏で）、単体の前に `Tools/warm-simulator.sh` で起動しきるのを待ち、アプリを1回入れて立ち上げておく。
-# 先に起こしておけば、xcodebuild は自分で起こしていないので段の終わりに落とさず、UI の段も起こし直さない
-# （前は UI の段の頭で毎回「起動」から数え直していた）。xcrun の無い所（Linux の検査）では何もしない
-if command -v xcrun >/dev/null 2>&1; then
-    if [ "$mode" = "build" ] && [ "${BOOT_SIMULATOR:-}" = "1" ]; then
-        echo "組む間にシミュレーターを起こします: $DEVICE"
-        ( xcrun simctl boot "$DEVICE" >/dev/null 2>&1 || true ) &
-    fi
-    if [ "$mode" = "unit" ]; then
-        products="$(dirname "${XCTESTRUN:-}")"
-        [ -n "${XCTESTRUN:-}" ] || products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d \
-            -path '*/JourneyPhoto-*/Build/Products' 2>/dev/null | head -1 || true)"
-        if [ -n "$products" ]; then
-            DEVICE="$DEVICE" bash Tools/warm-simulator.sh "$products" | tee -a "$LOG"
-        fi
+# 単体の段は、ランナーでシミュレーターを**初めて**起こす段で、起こしている途中で流し始めると、中の仕組み（DTServiceHub・通知）が
+# まだ揃っていない。`Tools/warm-simulator.sh` で起動しきる（`bootstatus -b`）のを待ち、アプリを入れて1回立ち上げてから流す。
+# xcodebuild は自分で起こしていないので段の終わりに落とさず、UI の段も起こし直さない。
+# run 1886 で、lockdown の待ち 0回・`[test-warmup]` 14.8ms・単体の段 1277 → 606秒・UI の段の頭は「始めから起動済み」。
+# 🔴 **組む段の間に裏で起こさない。** run 1886 で試したら、初めての起動の重い仕事とぶつかって組む段が 644 → 2168秒に延び
+# （Resolve Package Graph まで 11秒 → 6分、コンパイル 8 → 20分）、回の全体はかえって長くなった。
+# xcrun の無い所（Linux の検査）では何もしない
+if [ "$mode" = "unit" ] && command -v xcrun >/dev/null 2>&1; then
+    products="$(dirname "${XCTESTRUN:-}")"
+    [ -n "${XCTESTRUN:-}" ] || products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d \
+        -path '*/JourneyPhoto-*/Build/Products' 2>/dev/null | head -1 || true)"
+    if [ -n "$products" ]; then
+        DEVICE="$DEVICE" bash Tools/warm-simulator.sh "$products" | tee -a "$LOG"
     fi
 fi
 

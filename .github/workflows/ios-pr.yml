@@ -401,8 +401,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
-          # 組む間にシミュレーターを起こしておく（`BOOT_SIMULATOR=1`・札 #610。理由と数は `Tools/xcode-test.sh`）
-          XCODE_LOG=build-xcodebuild.log BOOT_SIMULATOR=1 bash Tools/xcode-test.sh build
+          XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
 
       # Share-card-only changes use their owning unit suite; all other PRs
       # and manual runs still execute the entire JourneyPhotoTests bundle.
