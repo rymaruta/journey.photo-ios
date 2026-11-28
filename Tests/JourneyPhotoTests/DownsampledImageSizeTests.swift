@@ -179,10 +179,10 @@ final class DownsampledImageSizeTests: XCTestCase {
         XCTAssertTrue(image.contains("WebTheme.surface"))
         // 戻ったときは控えから（取りに行く前に出す・取りに行かない）
         XCTAssertTrue(image.contains("imageURL == url ? image : nil"), "別の URL の State 画像を再利用しない")
-        XCTAssertTrue(image.contains("Self.memory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)"),
+        XCTAssertTrue(image.contains("imageMemory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)"),
                       "必要画素数を満たさないキャッシュ画像を先に表示しない")
-        XCTAssertTrue(image.contains("if let cached = Self.memory.entry(for: url, atLeast: pixels) {"))
-        XCTAssertTrue(image.contains("Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)"))
+        XCTAssertTrue(image.contains("if let cached = imageMemory.entry(for: url, atLeast: pixels) {"))
+        XCTAssertTrue(image.contains("imageMemory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)"))
     }
 
     /// 縮めた絵の控え: URL ごとにいちばん大きく読めた1枚。小さな絵を大きな求めに返さない

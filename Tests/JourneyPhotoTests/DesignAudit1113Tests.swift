@@ -191,7 +191,7 @@ final class DesignAudit1113Tests: XCTestCase {
         XCTAssertEqual(RemoteImage.personSymbol, "person.fill")
         let face = slice(try source("Features/Common/RemoteImage.swift"), from: "struct FaceImage: View {",
                          to: "enum RemoteImageRetry")
-        XCTAssertTrue(face.contains("RemoteImage(url: url, placeholderSymbol: RemoteImage.personSymbol)"))
+        XCTAssertTrue(face.contains("placeholderSymbol: RemoteImage.personSymbol"))
 
         // 顔の URL（アバター・プロフィールの顔）を `RemoteImage` に直に渡している所が無い
         let faceURL = try NSRegularExpression(

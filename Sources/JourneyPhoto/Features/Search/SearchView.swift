@@ -1062,16 +1062,13 @@ struct SearchView: View {
     /// 巡回では、いちばん新しい写真の撮影地（三条市, 日本）が1枚だったので
     /// 導線が出ず、**実機の絵を1枚も撮れなかった**。
     ///
-    /// 1枚だけの地点は今までどおり集約（`TagPhotosView`）へ。
+    /// 1枚だけの地点は今までどおり集約（`TagPhotosView`）へ。どちらにするかは `PopularSpotDestination` が決める
     @ViewBuilder
     private func spotLink<Label: View>(_ spot: DiscoverySections.Spot,
                                        @ViewBuilder label: () -> Label) -> some View {
         NavigationLink {
-            if let place = DerivedSpot.openable(spot.id, in: model.everything) {
-                SpotDetailView(spot: place, photos: model.everything)
-            } else {
-                TagPhotosView(kind: .location(spot.id))
-            }
+            // 行き先の計算は開いたときだけ（`PopularSpotDestination`・2026-11-28 判断）。ここで呼ぶと body のたびに走る
+            PopularSpotDestination(label: spot.id, photos: model.everything)
         } label: {
             label()
         }

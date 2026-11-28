@@ -40,6 +40,11 @@ struct DownsampledRemoteImage: View {
     /// 絵が出るときの動き（`RemoteImage` の `AsyncImage` と同じ 0.15 秒の淡い出を、格子で揃えるため）。
     /// 既定は動き無し（今までの呼び出しは変わらない）。控えから出す絵には付けない（戻ったときに瞬かない）
     var appearAnimation: Animation? = nil
+    /// 出せないとき・URL の無いときに置く記号（`RemoteImage.placeholderSymbol` と同じ）。人の顔は人の影（`FaceImage`）
+    var placeholderSymbol: String = "photo"
+    /// 使う控え。既定は写真の控え（`memory`）。人の顔は件数で切る別の控え（`FaceImage.memory`）——
+    /// 小さな顔が大きな写真に押し出されない・顔が写真の枠を食わない
+    var imageMemory: DecodedImageMemory<UIImage> = DownsampledRemoteImage.memory
 
     /// 縮めて展開した絵の控え（2026-10-28 判断・マイページの送りの重さ）。`@State` の絵は格子のマスが
     /// 画面の外へ出ると捨てられ、戻るたびに取り直し・展開し直していた。URL ごとに1枚、いちばん大きく
@@ -62,12 +67,12 @@ struct DownsampledRemoteImage: View {
         ZStack {
             WebTheme.surface
             // 控えに在れば、取りに行く前から出す（格子へ戻ったときに読み込み中の輪から出直さない）
-            if let image = (imageURL == url ? image : nil) ?? url.flatMap({ Self.memory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)?.image }) {
+            if let image = (imageURL == url ? image : nil) ?? url.flatMap({ imageMemory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)?.image }) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
             } else if DownsampledImagePhase.of(hasImage: false, failed: failed, hasURL: url != nil) == .failed {
-                // URL の無い写真も写真の記号（読み込み中の輪を回し続けない・前の `RemoteImage` と同じ）
-                Image(systemName: "photo")
+                // URL の無い写真も記号（読み込み中の輪を回し続けない・前の `RemoteImage` と同じ）
+                Image(systemName: placeholderSymbol)
                     .font(.title2)
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
@@ -130,7 +135,7 @@ struct DownsampledRemoteImage: View {
         // 同じ大きさ以上で読めていれば読み直さない（幅が少し縮んだだけの回）
         if imageURL == url, image != nil, loadedPixels >= pixels { return }
         // 控えに足りる大きさで在れば、取りに行かず展開もしない
-        if let cached = Self.memory.entry(for: url, atLeast: pixels) {
+        if let cached = imageMemory.entry(for: url, atLeast: pixels) {
             image = cached.image
             imageURL = url
             loadedPixels = cached.pixels
@@ -144,7 +149,7 @@ struct DownsampledRemoteImage: View {
             let decoded = await GridImageDecodeInFlight.shared.image(data: data, for: url, pixels: pixels)
             guard !Task.isCancelled else { return }
             guard let decoded else { throw URLError(.cannotDecodeContentData) }
-            Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
+            imageMemory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
             withAnimation(appearAnimation) {
                 image = decoded.image
                 imageURL = url
@@ -218,8 +223,10 @@ final class DecodedImageMemory<Image> {
 
     private let cache = NSCache<NSString, Entry>()
 
-    init(costLimit: Int = DecodedImageMemory.defaultCostLimit) {
+    /// `countLimit` は持つ枚数の上限（0 は件数で切らない・`NSCache` と同じ）
+    init(costLimit: Int = DecodedImageMemory.defaultCostLimit, countLimit: Int = 0) {
         cache.totalCostLimit = costLimit
+        cache.countLimit = countLimit
     }
 
     /// その URL の控え。`atLeast` を渡せば、その画素数（長い辺）以上で読めたものだけ
@@ -386,5 +393,11 @@ extension DownsampledRemoteImage {
     /// 控えに在る絵だけを返す（取りに行かない）
     static func cached(_ url: URL, pixels: Int) -> UIImage? {
         memory.entry(for: url, atLeast: pixels)?.image
+    }
+
+    /// 縮めて展開した絵の控えを全部空にする（写真と人の顔）。ログアウト（`AuthStore.settleSignedOut`）と設定の「控えを空にする」
+    static func removeAllMemory() {
+        memory.removeAll()
+        FaceImage.memory.removeAll()
     }
 }

@@ -61,6 +61,8 @@ struct JourneyPhotoApp: App {
         // App Store の画面写真の見本（`-JPStoreDemo YES`・Debug のみ・札 #604）。どの通信より先に答え手を入れる
         #if DEBUG
         StoreDemo.install()
+        // UI テストだけ: 前の試験の「フォロー中をどこまで見たか」を空にする（`-JPPreviewForgetFollowingSeen`・2026-11-28）
+        PreviewSession.forgetFollowingSeenIfAsked()
         #endif
         JourneyPhotoApp.configureImageCache()
         PerfRecorder.shared.event("app.init.imageCache")

@@ -57,6 +57,21 @@ enum PreviewSession {
         #endif
     }
 
+    /// 起動のときに、見本の利用者の「フォロー中をどこまで見たか」（`FollowingSeenStore`）を空にする（Debug のみ・UI テストだけ）。
+    /// `-JPPreviewForgetFollowingSeen YES`。2026-11-28 判断（札 #594 の2回目）: 見本の通信の写真の投稿日は毎回同じなので、
+    /// 前の試験でホームを開いて「見た」と覚えると、次の試験ではフォロー中の新しい写真の段が出ず、
+    /// `testCapturesHomeHeaderGapAndFollowingEnd` が試験の順番で落ちていた。Release では何もしない
+    static let forgetFollowingSeenKey = "JPPreviewForgetFollowingSeen"
+
+    static func forgetFollowingSeenIfAsked(defaults: UserDefaults = .standard) {
+        #if DEBUG
+        guard defaults.bool(forKey: forgetFollowingSeenKey),
+              let userId = defaults.string(forKey: defaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !userId.isEmpty else { return }
+        FollowingSeenStore(defaults: defaults).removeData(for: userId)
+        #endif
+    }
+
     /// 鍵を持たずに入っている利用者 ID。入っていなければ `nil`。
     static var userId: String? {
         #if DEBUG

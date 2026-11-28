@@ -457,9 +457,9 @@ final class AuthStore: ObservableObject {
         // 端末の Caches に残りうる。退会の「端末の控えも消す」（`AccountLocalData`）とも
         // 食い違っていた。公開の写真も消えるが、次に開いたときに取り直すだけ
         responseCache.removeAllCachedResponses()
-        // 縮めて展開した絵の控え（`DownsampledRemoteImage.memory`・2026-10-28）も同じ理由で空にする
-        // （限定写真・下書きの絵がメモリに残り、次の人の格子に出うる）
-        DownsampledRemoteImage.memory.removeAll()
+        // 縮めて展開した絵の控え（`DownsampledRemoteImage.memory`・2026-10-28）と人の顔の控え（`FaceImage.memory`・
+        // 2026-11-28）も同じ理由で空にする（限定写真・下書きの絵がメモリに残り、次の人の格子に出うる）
+        DownsampledRemoteImage.removeAllMemory()
         // AI で作っている旅行プランを止め、知らせ・開く先・控え（候補と理由）を次の人に残さない（札 #621）
         TripAIJobs.shared.signOut()
         // 旅行プランの出発の時刻の覚え（プランの番号と日付）も次の人に残さない（札 #677）

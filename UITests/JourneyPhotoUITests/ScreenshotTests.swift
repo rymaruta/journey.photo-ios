@@ -4506,6 +4506,9 @@ final class ScreenshotTests: JPUITestCase {
             // 見本の通信でフォロー中を作る（`PreviewBackend.dmFollowing`: 公開の新着の作者をフォローしていることにする）。
             // 本物の通信だと見本の人はフォロー中の新しい写真が無く、段が出なかった（run 1818）
             app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+            // 前の試験がホームを開いて覚えた「フォロー中をどこまで見たか」を空にする（見本の写真の投稿日は毎回同じなので、
+            // 残っていると新しい写真の段が出ず、試験の順番で結果が変わる・`PreviewSession.forgetFollowingSeenKey`・2026-11-28）
+            app.launchArguments += ["-JPPreviewForgetFollowingSeen", "YES"]
             app.launchArguments += extra
             app.launch()
             defer { app.terminate() }

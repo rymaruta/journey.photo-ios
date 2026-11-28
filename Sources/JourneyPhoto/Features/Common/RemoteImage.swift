@@ -165,11 +165,28 @@ struct RemoteImage: View {
 /// **人の顔**（アイコン）。顔写真が無い・読めない・退会した人（`url` が nil）は人の影（`RemoteImage.personSymbol`）。
 ///
 /// 顔を出す所はどこもこの部品にする（2026-11-13・画面ごとに印が割れていた件）。大きさ・丸く切る・地の色は呼ぶ側
+///
+/// 2026-11-28 判断（札 #594 の2回目）: 顔は**アプリを開いている間だけ、URL ごとにメモリに覚える**（`memory`）。
+/// 前は `RemoteImage`（中身は `AsyncImage`）で、サーバーの顔の画像が `Cache-Control: no-store` なので `URLCache` に残らず、
+/// 一覧・DM・コメントで顔が画面に出るたびに通信し直して展開し直していた。読み込みと縮めて展開するのは写真の格子と同じ部品
+/// （`DownsampledRemoteImage`）で、控えだけ別にする（件数で切る・写真に押し出されない）。
+/// 相手が顔を替えて **URL が変われば**、新しい URL として取りに行く。**URL が同じまま中身だけ替わったときは、
+/// 次にアプリを開いたときに映る**（それまでは前の顔のまま）。ログアウトと設定の「控えを空にする」で空にする
 struct FaceImage: View {
     let url: URL?
 
+    /// 顔の控え。顔は小さい（縮めて 256〜512px・1枚 0.25〜1MB）ので、枚数で 200 まで・大きさで 32MB まで
+    static let memory = DecodedImageMemory<UIImage>(costLimit: memoryCostLimit, countLimit: memoryCountLimit)
+    nonisolated static let memoryCountLimit = 200
+    nonisolated static let memoryCostLimit = 32 * 1024 * 1024
+    /// 顔の画像は四角に近い。縦横比を持たないので、この比までの形と見込んで読む（`DownsampledRemoteImage.assumedRatioLimit`）
+    nonisolated static let assumedRatioLimit: CGFloat = 1.5
+
     var body: some View {
-        RemoteImage(url: url, placeholderSymbol: RemoteImage.personSymbol)
+        DownsampledRemoteImage(url: url, contentMode: .fill, assumedRatioLimit: Self.assumedRatioLimit,
+                               // `RemoteImage` の `AsyncImage` と同じ 0.15 秒の淡い出（控えから出す顔には付かない）
+                               appearAnimation: .easeOut(duration: 0.15),
+                               placeholderSymbol: RemoteImage.personSymbol, imageMemory: Self.memory)
     }
 }
 

@@ -136,7 +136,7 @@ final class MyPageScrollPerfTests: XCTestCase {
     func testClearCacheAlsoClearsTheDecodedImageMemory() throws {
         let view = try source("Sources/JourneyPhoto/Features/Settings/SettingsView.swift")
         let button = String(view[try XCTUnwrap(view.range(of: "URLCache.shared.removeAllCachedResponses()")).lowerBound...].prefix(600))
-        XCTAssertTrue(button.contains("DownsampledRemoteImage.memory.removeAll()"), "控えを空にしても縮めた絵が残る")
+        XCTAssertTrue(button.contains("DownsampledRemoteImage.removeAllMemory()"), "控えを空にしても縮めた絵が残る")
         XCTAssertTrue(button.contains("SettingsActionLabel(title: L(\"控えを空にする\""))
     }
 

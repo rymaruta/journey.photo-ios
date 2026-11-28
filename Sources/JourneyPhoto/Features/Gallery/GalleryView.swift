@@ -526,6 +526,8 @@ struct GalleryView: View {
                                 friendPhotos: dropped.visible(model.allPhotosForTheme),
                                 followingIds: model.followingIds,
                                 scrolledAway: topCardsAway)
+                    // ホームが描き直されただけでは、札を描き直さない（`HomeTopCardView` の `==`・2026-11-28 判断）
+                    .equatable()
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
                     // 札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにし、深く送っている間に
                     // 札の高さが変わって下の写真がずれないようにする
