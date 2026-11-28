@@ -49,6 +49,8 @@ final class NoMiddleDotSweepTests: XCTestCase {
         XCTAssertGreaterThan(files.count, 100)
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
+            // 中黒の無いファイルは、どの文字列にも中黒が無い（文字列を拾う前に飛ばす・札 #610）
+            guard text.contains("・") || text.contains("·") else { continue }
             for literal in Self.literals(text) where literal.contains("・") || literal.contains("·") {
                 let key = "\(file.lastPathComponent)|\(literal)"
                 if !Self.allowed.contains(key) { found.append(key) }
@@ -80,13 +82,18 @@ final class NoMiddleDotSweepTests: XCTestCase {
     static func literals(_ text: String) -> [String] {
         let s = Array(text.unicodeScalars)
         let q = quote
-        let triple = q + q + q
+        // **探す並びは先に字の配列にしておく**（札 #610・2026-11-28 判断）。前は1字進むたびに `starts` が、並びと本文の
+        // 両方を配列に作り直していた。全部のソースを読む2件（この組の見張りと `PlaceTermWordingTests`）が、
+        // Mac の単体テストで 10〜15秒ずつかかっていた（run 1866・1873・1875・1878）。拾う文字列は前と同じ
+        let lineComment = Array("//".unicodeScalars), blockOpen = Array(("/" + "*").unicodeScalars)
+        let blockClose = Array(("*" + "/").unicodeScalars), triple = Array((q + q + q).unicodeScalars)
+        let rawOpen = Array(("#" + q).unicodeScalars), rawClose = Array((q + "#").unicodeScalars)
         var out: [String] = []
         var i = 0
-        func starts(_ p: String, _ at: Int) -> Bool {
-            let ps = Array(p.unicodeScalars)
-            guard at + ps.count <= s.count else { return false }
-            return Array(s[at..<at + ps.count]) == ps
+        func starts(_ p: [Unicode.Scalar], _ at: Int) -> Bool {
+            guard at + p.count <= s.count else { return false }
+            for k in 0..<p.count where s[at + k] != p[k] { return false }
+            return true
         }
         func str(_ a: Int, _ b: Int) -> String {
             var v = String.UnicodeScalarView()
@@ -94,13 +101,13 @@ final class NoMiddleDotSweepTests: XCTestCase {
             return String(v)
         }
         while i < s.count {
-            if starts("//", i) {
+            if starts(lineComment, i) {
                 while i < s.count, s[i] != newline { i += 1 }
                 continue
             }
-            if starts("/" + "*", i) {
+            if starts(blockOpen, i) {
                 i += 2
-                while i < s.count, !starts("*" + "/", i) { i += 1 }
+                while i < s.count, !starts(blockClose, i) { i += 1 }
                 i += 2
                 continue
             }
@@ -111,9 +118,9 @@ final class NoMiddleDotSweepTests: XCTestCase {
                 i = j + 3
                 continue
             }
-            if starts("#" + q, i) {
+            if starts(rawOpen, i) {
                 var j = i + 2
-                while j < s.count, !starts(q + "#", j) { j += 1 }
+                while j < s.count, !starts(rawClose, j) { j += 1 }
                 out.append(str(i + 2, j))
                 i = j + 2
                 continue

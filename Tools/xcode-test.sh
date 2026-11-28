@@ -122,6 +122,20 @@ fi
 
 # **別の台で組んだ品で流す**（2026-10-31・#429）。`XCTESTRUN` に xctestrun の置き場を渡すと、
 # プロジェクトではなくその品で流す（`Tools/test-products.py unpack` が置き場を出す）。組む段では使えない
+#
+# **同じ台で組んだ回も、組む段が書いた xctestrun で流す**（札 #610・2026-11-28 判断）。
+# プロジェクト（`-project -scheme`）で流すと、`test-without-building` でも毎回パッケージの依存を解き直す。
+# run 1878 で単体 51秒・UI 56秒、1866・1870・1873・1875 でも単体 42〜57秒、この「Resolve Package Graph」だけで止まっていた。
+# xctestrun は組む段（`build-for-testing`）がスキームから書いた物で、分けて流す回（#429）はもうこの形で流している。
+# 置き場の xctestrun がちょうど1つのときだけ使う（Xcode が上がって古い物が残っているなど、迷うときはプロジェクトで流す）
+if [ -z "${XCTESTRUN:-}" ] && [ "$mode" != "build" ]; then
+    built="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 4 -type f \
+        -path '*/JourneyPhoto-*/Build/Products/*.xctestrun' 2>/dev/null || true)"
+    if [ -n "$built" ] && [ "$(printf '%s\n' "$built" | wc -l | tr -d ' ')" = "1" ]; then
+        XCTESTRUN="$built"
+        echo "組む段の品で流します: $(basename "$built")"
+    fi
+fi
 if [ -n "${XCTESTRUN:-}" ]; then
     if [ "$mode" = "build" ]; then
         echo "XCTESTRUN は組んだ品で流すとき（unit・ui）だけ渡す" >&2

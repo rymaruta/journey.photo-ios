@@ -555,18 +555,22 @@ final class SignatureShareCardRendererTests: XCTestCase {
             ("Rio de Janeiro", -22.91, -43.20),
             ("Santiago", -33.45, -70.67)
         ]
-        for (name, latitude, longitude) in locations {
+        let jobs = locations.flatMap { location in
+            [SignatureShareCardRenderer.Ratio.portrait, .square, .story].map { (location, $0) }
+        }
+        // 60枚の書き出しは互いに独立した CPU の仕事なので、CPU の数だけ同時に流す（`ConcurrentTestJobs`・札 #610）
+        let rendered = try await ConcurrentTestJobs.map(jobs.count) { index in
+            let ((name, latitude, longitude), ratio) = jobs[index]
             let credit = SignatureShareCardRenderer.Credit(
                 name: "Photographer", username: nil, location: name,
                 coords: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
                 verified: false, proStyle: nil, early: false, badge: nil)
-            for ratio in [SignatureShareCardRenderer.Ratio.portrait, .square, .story] {
-                let rendered = await SignatureShareCardRenderer.render(
-                    source, credit: credit, ratio: ratio)
-                let data = try XCTUnwrap(rendered, "\(name) / \(ratio) must export")
-                XCTAssertNotNil(UIImage(data: data), "\(name) / \(ratio) must decode")
-            }
+            return await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+        }
+        for (((name, _, _), ratio), result) in zip(jobs, rendered) {
+            let data = try XCTUnwrap(result, "\(name) / \(ratio) must export")
+            XCTAssertNotNil(UIImage(data: data), "\(name) / \(ratio) must decode")
         }
     }
 

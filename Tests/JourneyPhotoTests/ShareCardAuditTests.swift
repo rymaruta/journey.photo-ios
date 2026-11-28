@@ -174,16 +174,22 @@ final class ShareCardAuditTests: XCTestCase {
               b.pixels.count == width * height * 4 else { return d }
         // **RGB が同じ画素は先に飛ばす**（札 #610・2026-11-14 判断）。差（3色の差の大きい方）は 0 で、下の 48 に届かないので
         // 結果は前と同じ。run 1332 で、この差の計算が 30件の合計 136.5秒（Debug の組み立てで1画素ずつ6回の読みと引き算）。
-        // 部品の無い所（画像の大半）は書き出しが同じなので、4バイトを1回で比べる（4バイト目は詰め物なので見ない）
+        // 部品の無い所（画像の大半）は書き出しが同じなので、4バイトを1回で比べる（4バイト目は詰め物なので見ない）。
+        // **行の中身がそっくり同じ行は、1画素ずつ見ずに飛ばす**（2026-11-28 判断）。それでも差の計算が 30件の合計で
+        // 123秒（run 1878・`measured [sharecard-time]` の diff の和）で、1画素ずつの比べが Debug の組み立てで重かった。
+        // 全部のバイトが同じなら R・G・B も同じなので、部品と数える画素は前と同じ
+        let rowBytes = width * 4
+        let rgbMask = Self.rgbMask
         a.pixels.withUnsafeBufferPointer { pa in
             b.pixels.withUnsafeBufferPointer { pb in
               pa.withMemoryRebound(to: UInt32.self) { wa in
                 pb.withMemoryRebound(to: UInt32.self) { wb in
                 for y in 0..<height {
+                    if memcmp(pa.baseAddress! + y * rowBytes, pb.baseAddress! + y * rowBytes, rowBytes) == 0 { continue }
                     let inY = CGFloat(y) >= safe.minY && CGFloat(y) < safe.maxY
                     for x in 0..<width {
                         let j = y * width + x
-                        if (wa[j] ^ wb[j]) & Self.rgbMask == 0 { continue }
+                        if (wa[j] ^ wb[j]) & rgbMask == 0 { continue }
                         let i = j * 4
                         let delta = max(abs(Int(pa[i]) - Int(pb[i])), abs(Int(pa[i + 1]) - Int(pb[i + 1])),
                                         abs(Int(pa[i + 2]) - Int(pb[i + 2])))
@@ -386,40 +392,21 @@ final class ShareCardAuditTests: XCTestCase {
         print("measured [sharecard-time] \(style.rawValue) \(ratio) render=" + String(format: "%.2f", spent.render)
               + "s decode=" + String(format: "%.2f", spent.decode) + "s diff=" + String(format: "%.2f", spent.diff)
               + "s contrast=" + String(format: "%.2f", spent.contrast) + "s wall="
-              + String(format: "%.2f", Self.seconds(clock.now - started)) + "s workers=\(Self.workers)")
+              + String(format: "%.2f", Self.seconds(clock.now - started)) + "s workers=\(ConcurrentTestJobs.workers)")
         XCTAssertTrue(failures.isEmpty, "共有カードの崩れ \(failures.count) 件 / \(count) 件:\n" + failures.joined(separator: "\n"))
     }
 
-    /// 同時に流す数（その台の使える CPU の数）
-    static var workers: Int { max(1, ProcessInfo.processInfo.activeProcessorCount) }
-
-    /// 組み合わせを、使える CPU の数だけ同時に書き出して測る。返す並びは `jobs` と同じ（ログと崩れの一覧の順は前と同じ）。
+    /// 組み合わせを、使える CPU の数だけ同時に書き出して測る（`ConcurrentTestJobs`）。返す並びは `jobs` と同じ（ログと崩れの一覧の順は前と同じ）。
     /// **2026-11-14 判断（札 #610）:** run 1332 で、この点検 30件が単体テスト全体（683秒）のうち約 300秒。1件 13 組み合わせを
     /// 1つずつ順に書き出し（2回）・読み込み・画素の差を取っていて、どれも CPU だけを使う独立した仕事だった。
     /// 書き出し（`SignatureShareCardRenderer.render`）は MainActor に縛られず、`ShareCardProbe` は鍵で守られ、
     /// 組み合わせごとに別の記録（`$current` の値）を持つので、同時に流しても互いの記録は混ざらない
     static func measureAll(_ jobs: [(R.Credit, String)], ratio: R.Ratio, style: R.Style) async throws -> [Measure] {
-        var results = [Measure?](repeating: nil, count: jobs.count)
-        try await withThrowingTaskGroup(of: (Int, Measure).self) { group in
-            let first = min(Self.workers, jobs.count)
-            func start(_ index: Int) {
-                let (credit, photoName) = jobs[index]
-                group.addTask {
-                    let photo = try XCTUnwrap(Self.photos[photoName] ?? Self.extraPhotos[photoName])
-                    return (index, try await Self.measure(photo, credit: credit, ratio: ratio, style: style).0)
-                }
-            }
-            for index in 0..<first {
-                start(index)
-            }
-            var next = first
-            while true {
-                guard let done = try await group.next() else { break }
-                results[done.0] = done.1
-                if next < jobs.count { start(next); next += 1 }
-            }
+        try await ConcurrentTestJobs.map(jobs.count) { index in
+            let (credit, photoName) = jobs[index]
+            let photo = try XCTUnwrap(Self.photos[photoName] ?? Self.extraPhotos[photoName])
+            return try await Self.measure(photo, credit: credit, ratio: ratio, style: style).0
         }
-        return try results.map { try XCTUnwrap($0) }
     }
 
     /// 差の計算の速い道（RGB が同じ画素を先に飛ばす・札 #610）が、前の数え方と同じ画素を部品とするか。
@@ -440,6 +427,14 @@ final class ShareCardAuditTests: XCTestCase {
         XCTAssertEqual(d.box, CGRect(x: 1, y: 0, width: 4, height: 1))
         XCTAssertEqual(d.unsafePixels, 2)
         XCTAssertEqual(d.unsafeBox, CGRect(x: 3, y: 0, width: 2, height: 1))
+        // そっくり同じ行（上）を飛ばしても、違う行（下）の部品と数え方は同じ（2026-11-28・行ごとの速い道）
+        let twoRows = Self.partDiff(Bitmap(width: 5, height: 2, pixels: base + base),
+                                    Bitmap(width: 5, height: 2, pixels: base + other),
+                                    safe: CGRect(x: 0, y: 0, width: 3, height: 2))
+        XCTAssertEqual(twoRows.mask, [false, false, false, false, false, false, true, false, true, true])
+        XCTAssertEqual(twoRows.box, CGRect(x: 1, y: 1, width: 4, height: 1))
+        XCTAssertEqual(twoRows.unsafePixels, 2)
+        XCTAssertEqual(twoRows.unsafeBox, CGRect(x: 3, y: 1, width: 2, height: 1))
     }
 
     /// 同時に測った結果が、1つずつ順に測った結果と同じか（記録が組み合わせの間で混ざらない・並びが崩れない）

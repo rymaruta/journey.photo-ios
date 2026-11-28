@@ -49,6 +49,8 @@ final class PlaceTermWordingTests: XCTestCase {
         var left: [String] = []
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
+            // 古い呼び名の無いファイルは、どの文字列にも無い（文字列を拾う前に飛ばす・札 #610）
+            guard text.contains("撮影スポット") else { continue }
             for literal in NoMiddleDotSweepTests.literals(text) where literal.contains("撮影スポット") {
                 let key = "\(file.lastPathComponent): \(literal)"
                 // 古い呼び名を直す側の字（端末の AI の答えの「撮影スポット」を「観光スポット」に替える・#622）
