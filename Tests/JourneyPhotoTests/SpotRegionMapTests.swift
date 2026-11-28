@@ -156,29 +156,35 @@ final class SpotRegionMapTests: XCTestCase {
             .enumerated().map { i, p in try! spot("s\(i)", prefecture: p.0, lat: p.1, lng: p.2) }
     }
 
-    /// 地図の枠を 1pt ごとに押して、区分ごとに当たった点を数える（＝押せる広さ pt²）。
-    ///
-    /// **行ごとに同時に数える**（札 #610・2026-11-14 判断）。Mac の単体テストで、これを4回使う
-    /// `testEveryRegionIsAtLeast44x44` が 35.5秒（run 1332）〜43.3秒（run 1329）で、単体テストで1件の最長だった。
-    /// 当たりの計算（`SpotRegionMap.area(at:)`・`PrefectureMapGeometry.prefecture(at:)`）は値の型だけを読むので、
-    /// 行ごとに別の数え先へ書いて最後に足せば、数は1つずつ順に数えたのと同じ
+    /// 地図の枠を 1pt ごとに押して、区分ごとに当たった点を数える（＝押せる広さ pt²）。行ごとに数えて最後に足す
     private func hitAreas(_ hit: (CGPoint) -> String?, size: CGSize) -> [String: Int] {
-        let rows = Int(size.height), columns = Int(size.width)
-        var perRow = [[String: Int]](repeating: [:], count: rows)
+        let columns = Int(size.width)
+        return eachRow(Int(size.height)) { y in
+            var counts: [String: Int] = [:]
+            for x in 0..<columns {
+                if let area = hit(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { counts[area, default: 0] += 1 }
+            }
+            return counts
+        }.reduce(into: [:]) { total, row in total.merge(row, uniquingKeysWith: +) }
+    }
+
+    /// 地図の枠の行ごとの仕事を同時に流し、行の順に返す（札 #610）。
+    ///
+    /// Mac の単体テストで、地図の枠の全部の点を見る2件が長かった。`testEveryRegionIsAtLeast44x44` が 35.5秒（run 1332）〜
+    /// 43.3秒（run 1329）で単体テストで1件の最長だったので 2026-11-14 に行ごとに同時に数えるようにした。
+    /// 2026-11-28 に、順に見ていた `testCoastPointsBelongToNearestRegion`（15.9〜22.1秒・run 1866〜1878）も同じ形にした。
+    /// 当たりと距離の計算（`SpotRegionMap.area(at:)`・`PrefectureMapGeometry`）は値の型を読むだけで、
+    /// 行ごとに別の置き場へ書くので、結果は1行ずつ順に見たのと同じ
+    private func eachRow<T>(_ rows: Int, _ body: (Int) -> T) -> [T] {
+        var perRow = [T?](repeating: nil, count: rows)
         perRow.withUnsafeMutableBufferPointer { buffer in
             // 行ごとに別の場所へ書くので重ならない。置き場の指し手は Sendable でないので nonisolated(unsafe)（2026-11-25 判断・試験だけ）
             nonisolated(unsafe) let out = buffer
-            // 当たりの計算は値の型を読むだけ（上の注記）。Sendable と書けない閉包なので同じく nonisolated(unsafe)
-            nonisolated(unsafe) let hit = hit
-            DispatchQueue.concurrentPerform(iterations: rows) { y in
-                var counts: [String: Int] = [:]
-                for x in 0..<columns {
-                    if let area = hit(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { counts[area, default: 0] += 1 }
-                }
-                out[y] = counts
-            }
+            // 行の仕事は値の型を読むだけ（上の注記）。Sendable と書けない閉包なので同じく nonisolated(unsafe)
+            nonisolated(unsafe) let body = body
+            DispatchQueue.concurrentPerform(iterations: rows) { y in out[y] = body(y) }
         }
-        return perRow.reduce(into: [:]) { total, row in total.merge(row, uniquingKeysWith: +) }
+        return perRow.map { $0! }
     }
 
     /// 🔴 **どの地方も 44×44（1936pt²）以上押せる**。前（線の内側と 16pt の寄せ）は四国 648・近畿 882・中国 1135・中部 1551 で
@@ -237,9 +243,12 @@ final class SpotRegionMapTests: XCTestCase {
         let labelFrames = map.labelFrames(container: size, in: areas).map(\.frame)
         let viewport = VisitedMapViewport()
         let scale = viewport.scale(content: g.size, container: size)
-        var checked = 0
-        for y in 0..<Int(size.height) {
-            for x in 0..<Int(size.width) {
+        let columns = Int(size.width)
+        // 行ごとに同時に見る（`eachRow`）。行ごとに「見た点の数」と「近い地方にならなかった点」を返し、最後に確かめる
+        let rows = eachRow(Int(size.height)) { y -> (checked: Int, wrong: [String]) in
+            var checked = 0
+            var wrong: [String] = []
+            for x in 0..<columns {
                 let point = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
                 let unit = viewport.unitPoint(forScreen: point, content: g.size, container: size)
                 guard g.piece(at: unit, tolerance: 0) == nil,
@@ -248,11 +257,13 @@ final class SpotRegionMapTests: XCTestCase {
                     .min { $0.d < $1.d }!
                 guard nearest.d <= SpotRegionMap.coastSlack else { continue }
                 checked += 1
-                XCTAssertEqual(map.area(at: point, container: size, in: areas), nearest.id,
-                               "海岸のすぐ外 \(point) が近い地方 \(nearest.id) にならない")
+                let got = map.area(at: point, container: size, in: areas)
+                if got != nearest.id { wrong.append("\(point) が \(got ?? "なし")（近い地方は \(nearest.id)）") }
             }
+            return (checked, wrong)
         }
-        XCTAssertGreaterThan(checked, 1000)
+        XCTAssertEqual(rows.flatMap(\.wrong), [], "海岸のすぐ外の点が、いちばん近い地方にならない")
+        XCTAssertGreaterThan(rows.map(\.checked).reduce(0, +), 1000)
     }
 
     /// 撮影スポットの無い地方の線の内側は何もしない（隣の地方に寄せない）。読み上げの上下の払いは端で止まる
